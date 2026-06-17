@@ -1,0 +1,17 @@
+{
+  "name": "FreelanceFlow",
+  "short_name": "FreelanceFlow",
+  "description": "Finanzas freelance sin hojas de cálculo.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#FFFDF8",
+  "theme_color": "#0F172A",
+  "icons": [
+    {
+      "src": "./img/brand/maskable-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

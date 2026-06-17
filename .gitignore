@@ -1,0 +1,33 @@
+﻿# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local runtime / AI tooling
+.agents/
+.atl/
+.playwright-mcp/
+.codex/
+*.log
+skills-lock.json
+AGENTS.md
+
+# Temporary screenshots / exports
+*-contact-sheet.*
+landing-*.png
+dashboard-*.png
+ff-*.png
+root-brand-contact-sheet.png
+
+# Dependencies/build output for future phases
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+__pycache__/
+.pytest_cache/
+.venv/
+venv/

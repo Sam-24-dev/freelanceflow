@@ -1,0 +1,222 @@
+{
+  "usuario": {
+    "id": "usr_001",
+    "nombre_completo": "Andrés Vélez Moreno",
+    "correo_electronico": "andres.velez@freelanceflow.dev",
+    "pais_residencia": "Ecuador"
+  },
+  "clientes": [
+    {
+      "id": "cli_001",
+      "nombre_razon_social": "Bodega Andina S.A.",
+      "tipo_cliente": "Empresa",
+      "correo_electronico": "contacto@bodegaandina.com.ec"
+    },
+    {
+      "id": "cli_002",
+      "nombre_razon_social": "BrightWave Marketing LLC",
+      "tipo_cliente": "Empresa",
+      "correo_electronico": "hello@brightwavemkt.com"
+    }
+  ],
+  "categorias_gasto": [
+    {
+      "id": "cat_001",
+      "nombre_categoria": "Software y suscripciones",
+      "es_deducible_por_defecto": true
+    },
+    {
+      "id": "cat_002",
+      "nombre_categoria": "Transporte y movilidad",
+      "es_deducible_por_defecto": true
+    },
+    {
+      "id": "cat_003",
+      "nombre_categoria": "Hosting y dominios",
+      "es_deducible_por_defecto": true
+    },
+    {
+      "id": "cat_004",
+      "nombre_categoria": "Equipos y oficina",
+      "es_deducible_por_defecto": true
+    }
+  ],
+  "proyectos": [
+    {
+      "id": "proy_001",
+      "nombre_proyecto": "Rediseño de sitio web corporativo",
+      "cliente_id": "cli_001",
+      "estado": "ACTIVE",
+      "modalidad_cobro": "Tarifa fija"
+    },
+    {
+      "id": "proy_002",
+      "nombre_proyecto": "Mantenimiento mensual plataforma e-commerce",
+      "cliente_id": "cli_001",
+      "estado": "ACTIVE",
+      "modalidad_cobro": "Por horas"
+    },
+    {
+      "id": "proy_003",
+      "nombre_proyecto": "Consultoría frontend para campaña digital",
+      "cliente_id": "cli_002",
+      "estado": "COMPLETED",
+      "modalidad_cobro": "Por horas"
+    }
+  ],
+  "facturas": [
+    {
+      "id": "fac_021",
+      "cliente_id": "cli_001",
+      "proyecto_relacionado_id": "proy_001",
+      "numero_factura": "FAC-0021",
+      "fecha_emision": "2026-06-01",
+      "fecha_vencimiento": "2026-06-16",
+      "moneda": "USD",
+      "estado": "PARTIAL",
+      "total_factura": 1800,
+      "monto_pagado_acumulado": 850,
+      "saldo_pendiente": 950
+    },
+    {
+      "id": "fac_022",
+      "cliente_id": "cli_001",
+      "proyecto_relacionado_id": "proy_002",
+      "numero_factura": "FAC-0022",
+      "fecha_emision": "2026-06-02",
+      "fecha_vencimiento": "2026-06-17",
+      "moneda": "USD",
+      "estado": "PAID",
+      "total_factura": 500,
+      "monto_pagado_acumulado": 500,
+      "saldo_pendiente": 0
+    },
+    {
+      "id": "fac_020",
+      "cliente_id": "cli_001",
+      "proyecto_relacionado_id": "proy_002",
+      "numero_factura": "FAC-0020",
+      "fecha_emision": "2026-05-15",
+      "fecha_vencimiento": "2026-05-30",
+      "moneda": "USD",
+      "estado": "OVERDUE",
+      "total_factura": 300,
+      "monto_pagado_acumulado": 0,
+      "saldo_pendiente": 300
+    }
+  ],
+  "pagos_factura": [
+    {
+      "id": "pay_001",
+      "factura_id": "fac_021",
+      "monto_pagado": 850,
+      "fecha_pago": "2026-06-10",
+      "metodo_pago": "Transferencia bancaria"
+    },
+    {
+      "id": "pay_002",
+      "factura_id": "fac_022",
+      "monto_pagado": 500,
+      "fecha_pago": "2026-06-05",
+      "metodo_pago": "Transferencia bancaria"
+    }
+  ],
+  "gastos": [
+    {
+      "id": "gasto_001",
+      "fecha_gasto": "2026-06-08",
+      "categoria_gasto_id": "cat_001",
+      "monto": 54.99,
+      "moneda": "USD",
+      "proyecto_relacionado_id": "proy_001",
+      "es_deducible": true,
+      "descripcion": "Suscripción mensual a herramienta de diseño"
+    },
+    {
+      "id": "gasto_002",
+      "fecha_gasto": "2026-06-12",
+      "categoria_gasto_id": "cat_002",
+      "monto": 12.5,
+      "moneda": "USD",
+      "proyecto_relacionado_id": "proy_002",
+      "es_deducible": true,
+      "descripcion": "Transporte a reunión con cliente"
+    }
+  ],
+  "movimientos_financieros_mock_auxiliar": [
+    {
+      "id": "mov_001",
+      "mock_auxiliar": true,
+      "origen_oficial": "pago_factura",
+      "origen_id": "pay_001",
+      "tipo": "ingreso",
+      "fecha": "2026-06-10",
+      "monto": 850,
+      "moneda": "USD",
+      "cliente_id": "cli_001",
+      "proyecto_id": "proy_001",
+      "descripcion": "Pago parcial de factura FAC-0021"
+    },
+    {
+      "id": "mov_002",
+      "mock_auxiliar": true,
+      "origen_oficial": "pago_factura",
+      "origen_id": "pay_002",
+      "tipo": "ingreso",
+      "fecha": "2026-06-05",
+      "monto": 500,
+      "moneda": "USD",
+      "cliente_id": "cli_001",
+      "proyecto_id": "proy_002",
+      "descripcion": "Pago completo de factura FAC-0022"
+    },
+    {
+      "id": "mov_003",
+      "mock_auxiliar": true,
+      "origen_oficial": "gasto",
+      "origen_id": "gasto_001",
+      "tipo": "gasto",
+      "fecha": "2026-06-08",
+      "monto": 54.99,
+      "moneda": "USD",
+      "cliente_id": null,
+      "proyecto_id": "proy_001",
+      "categoria_gasto_id": "cat_001",
+      "descripcion": "Suscripción mensual a herramienta de diseño"
+    },
+    {
+      "id": "mov_004",
+      "mock_auxiliar": true,
+      "origen_oficial": "gasto",
+      "origen_id": "gasto_002",
+      "tipo": "gasto",
+      "fecha": "2026-06-12",
+      "monto": 12.5,
+      "moneda": "USD",
+      "cliente_id": "cli_001",
+      "proyecto_id": "proy_002",
+      "categoria_gasto_id": "cat_002",
+      "descripcion": "Transporte a reunión con cliente"
+    }
+  ],
+  "cuentas_mock_auxiliar": [
+    {
+      "id": "aux_cta_001",
+      "mock_auxiliar": true,
+      "nombre_cuenta": "Banco principal",
+      "tipo_cuenta": "banco"
+    },
+    {
+      "id": "aux_cta_002",
+      "mock_auxiliar": true,
+      "nombre_cuenta": "Efectivo",
+      "tipo_cuenta": "efectivo"
+    },
+    {
+      "id": "aux_cta_003",
+      "mock_auxiliar": true,
+      "nombre_cuenta": "Billetera digital",
+      "tipo_cuenta": "billetera_digital"
+    }
+  ]
+}

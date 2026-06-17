@@ -1,0 +1,242 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Dashboard estático de FreelanceFlow para la Fase 1 del frontend.">
+  <title>FreelanceFlow | Dashboard</title>
+  <link rel="icon" type="image/png" href="./img/brand/favicon-32.png">
+  <link rel="apple-touch-icon" href="./img/brand/apple-touch-icon.png">
+
+
+  <!-- Tailwind vía CDN: permitido para agilizar la Fase 1 estática. -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- CSS propio: identidad visual, foco accesible y detalles del prototipo. -->
+  <link rel="stylesheet" href="./assets/css/styles.css">
+</head>
+<body class="app-shell min-h-screen">
+  <!-- Skip link: permite saltar el menú lateral usando teclado o lector de pantalla. -->
+  <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-amber-500 focus:px-4 focus:py-2 focus:font-bold focus:text-slate-950">
+    Saltar al contenido principal
+  </a>
+
+  <div class="min-h-screen lg:grid lg:grid-cols-[18rem_1fr]">
+    <!-- Menú lateral con enlaces reales a las secciones existentes. -->
+    <!-- Menú lateral con enlaces reales a las pantallas físicas del prototipo. -->
+    <aside class="flex flex-col border-r border-white/10 bg-slate-950/95 px-6 py-6 text-white lg:min-h-screen" aria-label="Menú lateral">
+      <header class="mb-8">
+        <p class="text-sm uppercase tracking-[0.35em] text-amber-300">SaaS financiero</p>
+        <h1 class="mt-2 text-2xl font-black tracking-tight">FreelanceFlow</h1>
+        <p class="mt-3 text-sm leading-6 text-slate-300">Control financiero operativo para freelancers.</p>
+      </header>
+
+      <nav aria-label="Navegación principal" class="flex-1">
+        <ul class="space-y-2 text-sm font-semibold">
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="index.html">Inicio</a></li>
+          <li><a class="block rounded-2xl bg-amber-400 px-4 py-3 text-slate-950 shadow-lg shadow-amber-500/20" href="dashboard.html" aria-current="page">Dashboard</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="registro.html">Registro</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="login.html">Login</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="perfil.html">Perfil</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="configuracion_fiscal.html">Configuración fiscal</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="ajustes.html">Ajustes</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="categorias.html">Categorías</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="servicios.html">Servicios</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="propuestas.html">Propuestas</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="facturas.html">Facturas</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="reportes.html">Reportes</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="notificaciones.html">Notificaciones</a></li>
+        </ul>
+      </nav>
+
+      <footer class="mt-8 border-t border-white/10 pt-4 text-xs leading-5 text-slate-400">
+        <p>Prototipo estático · Fase 1</p>
+        <p>Sin backend ni base de datos.</p>
+      </footer>
+    </aside>
+
+    <main id="main-content" class="px-5 py-6 sm:px-8 lg:px-10">
+      <!-- Encabezado del dashboard: presenta contexto, no captura datos. -->
+      <section id="dashboard" class="ledger-card ledger-line mb-8 rounded-[2rem] p-6">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p class="text-sm font-bold uppercase tracking-[0.25em] text-teal-700">Dashboard principal</p>
+            <h2 class="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Hola, <span id="user-name">Freelancer</span></h2>
+            <p class="mt-3 max-w-2xl text-slate-600">Resumen de ingresos, gastos, flujo de caja y cuentas por cobrar usando datos simulados de la Fase 1.</p>
+          </div>
+          <div class="rounded-2xl bg-slate-950 px-5 py-4 text-sm text-slate-50">
+            <p class="font-bold text-amber-300">Período visible</p>
+            <p class="text-slate-300">Junio 2026 · Mock local</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Mensaje accesible para errores de carga del JSON. -->
+      <p id="data-error" class="hidden mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800" role="alert"></p>
+
+      <!-- Tarjetas de resumen: los valores se actualizan desde dashboard.js. -->
+      <section aria-labelledby="summary-title" class="mb-8">
+        <div class="mb-4 flex items-center justify-between gap-4">
+          <h2 id="summary-title" class="text-xl font-black text-white">Tarjetas de resumen</h2>
+          <p class="text-sm text-slate-300">Calculadas desde el JSON simulado</p>
+        </div>
+
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <article class="rounded-[1.25rem] border border-white/10 bg-slate-900 p-5 shadow-xl shadow-slate-950/30">
+            <p class="text-sm font-bold text-slate-300">Ingresos del período</p>
+            <p id="income-total" class="mt-3 text-3xl font-black text-green-400">$0.00</p>
+            <p class="mt-2 text-sm text-slate-400">Pagos de factura registrados.</p>
+          </article>
+
+          <article class="rounded-[1.25rem] border border-white/10 bg-slate-900 p-5 shadow-xl shadow-slate-950/30">
+            <p class="text-sm font-bold text-slate-300">Gastos del período</p>
+            <p id="expenses-total" class="mt-3 text-3xl font-black text-red-400">$0.00</p>
+            <p class="mt-2 text-sm text-slate-400">Gastos cargados por categoría.</p>
+          </article>
+
+          <article class="rounded-[1.25rem] border border-white/10 bg-slate-900 p-5 shadow-xl shadow-slate-950/30">
+            <p class="text-sm font-bold text-slate-300">Flujo de caja neto</p>
+            <p id="cash-flow-total" class="mt-3 text-3xl font-black text-amber-300">$0.00</p>
+            <p class="mt-2 text-sm text-slate-400">Ingresos menos gastos.</p>
+          </article>
+
+          <article class="rounded-[1.25rem] border border-white/10 bg-slate-900 p-5 shadow-xl shadow-slate-950/30">
+            <p class="text-sm font-bold text-slate-300">Saldo por cobrar</p>
+            <p id="pending-total" class="mt-3 text-3xl font-black text-teal-300">$0.00</p>
+            <p class="mt-2 text-sm text-slate-400">Facturas enviadas, parciales o vencidas.</p>
+          </article>
+        </div>
+      </section>
+
+      <!-- Resumen operativo: ayuda a validar que clientes/proyectos/facturas se cargaron. -->
+      <section id="summary" aria-labelledby="ops-title" class="mb-8 grid gap-4 md:grid-cols-3">
+        <h2 id="ops-title" class="sr-only">Resumen operativo</h2>
+        <article class="rounded-3xl bg-amber-400 p-5 text-slate-950">
+          <p class="text-sm font-semibold">Clientes activos en mock</p>
+          <p id="client-count" class="mt-2 text-3xl font-black">0</p>
+        </article>
+        <article class="rounded-3xl bg-teal-500 p-5 text-slate-950">
+          <p class="text-sm font-semibold">Proyectos registrados</p>
+          <p id="project-count" class="mt-2 text-3xl font-black">0</p>
+        </article>
+        <article class="rounded-3xl bg-white p-5 text-slate-950">
+          <p class="text-sm font-semibold text-slate-600">Facturas simuladas</p>
+          <p id="invoice-count" class="mt-2 text-3xl font-black">0</p>
+        </article>
+      </section>
+
+      <!-- Movimientos: corrige la pantalla faltante y mantiene el formulario estático con validación HTML. -->
+      <section id="movements" aria-labelledby="movements-title" class="ledger-card mb-8 rounded-[2rem] p-5">
+        <div class="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p class="text-sm font-bold uppercase tracking-[0.25em] text-amber-600">Movimientos</p>
+            <h2 id="movements-title" class="mt-1 text-2xl font-black text-slate-950">Registrar movimiento</h2>
+            <p class="mt-1 text-sm text-slate-600">Formulario estático para validar campos básicos en el prototipo.</p>
+          </div>
+          <p class="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">Cuenta = mock auxiliar</p>
+        </div>
+
+        <form id="movement-form" action="#movements" method="get" class="grid gap-4 md:grid-cols-5" aria-describedby="movement-form-help">
+          <p id="movement-form-help" class="md:col-span-5 text-sm text-slate-600">Todos los campos marcados son obligatorios. Este formulario no guarda datos en backend: solo demuestra validaciones del lado del cliente.</p>
+
+          <div>
+            <label for="movement-type" class="mb-2 block text-sm font-bold text-slate-800">Tipo</label>
+            <select id="movement-type" name="tipo" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+              <option value="">Selecciona un tipo</option>
+              <option value="ingreso">Ingreso</option>
+              <option value="gasto">Gasto</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="movement-amount" class="mb-2 block text-sm font-bold text-slate-800">Monto</label>
+            <input id="movement-amount" name="monto" type="number" min="0.01" step="0.01" inputmode="decimal" required placeholder="Ej. 250.00" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+          </div>
+
+          <div>
+            <label for="movement-date" class="mb-2 block text-sm font-bold text-slate-800">Fecha</label>
+            <input id="movement-date" name="fecha" type="date" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+          </div>
+
+          <div>
+            <label for="movement-category" class="mb-2 block text-sm font-bold text-slate-800">Categoría</label>
+            <select id="movement-category" name="categoria" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+              <option value="">Selecciona una categoría</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="movement-account" class="mb-2 block text-sm font-bold text-slate-800">Cuenta <span class="font-medium text-slate-500">(mock auxiliar)</span></label>
+            <select id="movement-account" name="cuenta_mock_auxiliar" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+              <option value="">Selecciona una cuenta</option>
+            </select>
+          </div>
+
+          <p id="movement-form-message" class="hidden md:col-span-5 rounded-2xl px-4 py-3 text-sm font-semibold" role="alert" aria-live="polite"></p>
+
+          <div class="md:col-span-5">
+            <button type="submit" class="rounded-xl bg-amber-400 px-5 py-3 text-sm font-black text-slate-950 hover:bg-amber-300">Validar movimiento</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Tabla de últimas transacciones: se llena dinámicamente con JavaScript puro. -->
+      <section id="transactions" aria-labelledby="transactions-title" class="ledger-card mb-8 rounded-[2rem] p-5">
+        <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="transactions-title" class="text-xl font-black text-slate-950">Últimas transacciones</h2>
+            <p class="mt-1 text-sm text-slate-600">Mock auxiliar derivado de pagos de factura y gastos oficiales.</p>
+          </div>
+          <a href="#dashboard" class="text-sm font-bold text-teal-700 hover:text-teal-900">Volver al resumen</a>
+        </div>
+
+        <div class="overflow-x-auto rounded-2xl border border-slate-200">
+          <table class="min-w-full border-collapse bg-white text-left">
+            <caption class="sr-only">Tabla con las últimas transacciones simuladas del dashboard</caption>
+            <thead class="bg-slate-950 text-white">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-sm font-bold">Fecha</th>
+                <th scope="col" class="px-4 py-3 text-sm font-bold">Tipo</th>
+                <th scope="col" class="px-4 py-3 text-sm font-bold">Descripción</th>
+                <th scope="col" class="px-4 py-3 text-sm font-bold">Cliente</th>
+                <th scope="col" class="px-4 py-3 text-sm font-bold">Proyecto</th>
+                <th scope="col" class="px-4 py-3 text-right text-sm font-bold">Monto</th>
+              </tr>
+            </thead>
+            <tbody id="transactions-table-body">
+              <!-- JavaScript inserta aquí las filas del JSON. -->
+            </tbody>
+          </table>
+        </div>
+
+        <p id="transactions-empty-state" class="hidden mt-4 rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
+          Aún no hay transacciones simuladas para mostrar.
+        </p>
+      </section>
+
+      <!-- Clientes: corrige la sección faltante usando datos existentes del JSON. -->
+      <section id="clients" aria-labelledby="clients-title" class="ledger-card mb-8 rounded-[2rem] p-5">
+        <p class="text-sm font-bold uppercase tracking-[0.25em] text-teal-700">Clientes</p>
+        <h2 id="clients-title" class="mt-1 text-2xl font-black text-slate-950">Clientes y contexto financiero</h2>
+        <p class="mt-2 text-sm text-slate-600">Resumen estático de clientes, proyectos asociados y saldo pendiente.</p>
+        <div id="clients-list" class="mt-5 grid gap-4 md:grid-cols-2">
+          <!-- JavaScript inserta aquí las tarjetas de clientes. -->
+        </div>
+      </section>
+
+      <!-- Presupuestos: corrige la sección faltante sin crear lógica nueva de negocio. -->
+      <section id="budget" aria-labelledby="budget-title" class="ledger-card rounded-[2rem] p-5">
+        <p class="text-sm font-bold uppercase tracking-[0.25em] text-amber-600">Presupuestos</p>
+        <h2 id="budget-title" class="mt-1 text-2xl font-black text-slate-950">Gasto por categoría</h2>
+        <p class="mt-2 text-sm text-slate-600">Vista estática para revisar categorías de gasto con datos simulados.</p>
+        <ul id="budget-list" class="mt-5 rounded-2xl border border-slate-200 bg-white px-4">
+          <!-- JavaScript inserta aquí las categorías con gasto acumulado. -->
+        </ul>
+      </section>
+    </main>
+  </div>
+
+  <!-- Script del dashboard: siempre al final para no bloquear el render inicial. -->
+  <script src="./assets/js/dashboard.js"></script>
+</body>
+</html>
