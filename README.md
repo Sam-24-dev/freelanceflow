@@ -131,6 +131,7 @@ Eso pertenece a la siguiente etapa del proyecto.
 
 ```bash
 node --check assets/js/dashboard.js
+node --check assets/js/clientes.js
 ```
 
 También verificar manualmente:

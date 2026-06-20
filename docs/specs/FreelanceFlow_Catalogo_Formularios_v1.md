@@ -668,3 +668,44 @@ No se incluyen formularios para pantallas de solo listado/detalle (P-09, P-11, P
 3. **Multi-moneda**: incluí el campo `moneda` en Cliente, Servicio, Propuesta y Factura asumiendo que el sistema podría soportarlo. Si FreelanceFlow opera en una sola moneda, estos campos se eliminan y simplifican varios formularios.
 4. **Verificación de correo al registrarse**: no confirmé si existe un paso de verificación por email; lo dejé fuera del flujo de FRM-001 hasta que confirmes si aplica.
 5. **Reactivación de Proyecto COMPLETED**: el Context Pack indica que es posible "si el negocio lo requiere y se documenta en historial", pero no especifica el formulario ni el estado destino. No lo incluí como formulario independiente; si decides modelarlo, sería un mini-formulario similar a FRM-017 (motivo + confirmación).
+
+---
+
+## Actualizaci?n acad?mica obligatoria ? M?dulo Clientes (Fase 1)
+
+### FRM-010A ? Cliente / Contacto Principal o Representante Legal
+**Pantalla:** `clientes.html`  
+**Objetivo:** Registrar y editar clientes dentro del prototipo est?tico, tratando los campos personales obligatorios como datos del contacto principal o representante legal del cliente B2B.
+
+| Campo | Tipo | Obligatorio | Regla |
+|---|---|---|---|
+| id | string | Generado | Se genera en frontend al registrar. |
+| nombres | text | S? | No vac?o. |
+| apellidos | text | S? | No vac?o. |
+| identificacion | text | S? | Obligatoria y ?nica entre clientes. |
+| telefono | text | No | Opcional. |
+| celular | text | S? | No vac?o. |
+| correo | email | S? | Formato de correo v?lido. |
+| direccion | text | No | Opcional. |
+| estadoCivil | select | S? | Opciones estrictas: soltero, casado, divorciado, separado, uni?n libre. |
+| estado | select | S? | Opciones estrictas: activo, inactivo. |
+| fecha_registro | date | Generado | Se genera al registrar. |
+| nombre_razon_social | text | S? | Campo B2B conservado del modelo oficial. |
+| tipo_cliente | select | S? | Campo B2B conservado del modelo oficial. |
+
+**Acciones obligatorias:** Registrar, listar, buscar por nombres/apellidos/identificaci?n, consultar detalle, editar, cambiar estado civil y cambiar estado activo/inactivo.
+
+**Validaciones cliente:**
+- `nombres`, `apellidos`, `identificacion`, `celular`, `correo`, `estadoCivil` y `estado` son obligatorios.
+- `identificacion` debe ser ?nica.
+- `correo` debe tener formato v?lido.
+- `estadoCivil` solo acepta: `soltero`, `casado`, `divorciado`, `separado`, `uni?n libre`.
+- `estado` solo acepta: `activo`, `inactivo`.
+
+**Mensajes:**
+- Error: "Completa los campos obligatorios del cliente."
+- Error: "Ya existe un cliente con esa identificaci?n."
+- Error: "Ingresa un correo v?lido."
+- Confirmaci?n: "Cliente guardado correctamente."
+- Confirmaci?n: "Cliente actualizado correctamente."
+

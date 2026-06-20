@@ -1,7 +1,7 @@
 {
   "usuario": {
     "id": "usr_001",
-    "nombre_completo": "Andrés Vélez Moreno",
+    "nombre_completo": "Andr?s V?lez Moreno",
     "correo_electronico": "andres.velez@freelanceflow.dev",
     "pais_residencia": "Ecuador"
   },
@@ -10,13 +10,35 @@
       "id": "cli_001",
       "nombre_razon_social": "Bodega Andina S.A.",
       "tipo_cliente": "Empresa",
-      "correo_electronico": "contacto@bodegaandina.com.ec"
+      "nombres": "Marcela",
+      "apellidos": "R?os Paredes",
+      "identificacion": "1791234567001",
+      "identificacion_fiscal": "1791234567001",
+      "telefono": "+593 2 245 6789",
+      "celular": "+593 99 845 6712",
+      "correo": "marcela.rios@bodegaandina.com.ec",
+      "correo_electronico": "marcela.rios@bodegaandina.com.ec",
+      "direccion": "Av. 6 de Diciembre N34-120, Quito",
+      "estadoCivil": "casado",
+      "estado": "activo",
+      "fecha_registro": "2026-04-02"
     },
     {
       "id": "cli_002",
       "nombre_razon_social": "BrightWave Marketing LLC",
       "tipo_cliente": "Empresa",
-      "correo_electronico": "hello@brightwavemkt.com"
+      "nombres": "Daniel",
+      "apellidos": "Morrison Clark",
+      "identificacion": "EIN-87-1234567",
+      "identificacion_fiscal": "EIN-87-1234567",
+      "telefono": "+1 305 555 0142",
+      "celular": "+1 786 555 0188",
+      "correo": "daniel.morrison@brightwavemkt.com",
+      "correo_electronico": "daniel.morrison@brightwavemkt.com",
+      "direccion": "1200 Brickell Ave, Miami, FL",
+      "estadoCivil": "soltero",
+      "estado": "activo",
+      "fecha_registro": "2026-01-12"
     }
   ],
   "categorias_gasto": [
@@ -44,7 +66,7 @@
   "proyectos": [
     {
       "id": "proy_001",
-      "nombre_proyecto": "Rediseño de sitio web corporativo",
+      "nombre_proyecto": "Redise?o de sitio web corporativo",
       "cliente_id": "cli_001",
       "estado": "ACTIVE",
       "modalidad_cobro": "Tarifa fija"
@@ -58,7 +80,7 @@
     },
     {
       "id": "proy_003",
-      "nombre_proyecto": "Consultoría frontend para campaña digital",
+      "nombre_proyecto": "Consultor?a frontend para campa?a digital",
       "cliente_id": "cli_002",
       "estado": "COMPLETED",
       "modalidad_cobro": "Por horas"
@@ -130,7 +152,7 @@
       "moneda": "USD",
       "proyecto_relacionado_id": "proy_001",
       "es_deducible": true,
-      "descripcion": "Suscripción mensual a herramienta de diseño"
+      "descripcion": "Suscripci?n mensual a herramienta de dise?o"
     },
     {
       "id": "gasto_002",
@@ -140,7 +162,7 @@
       "moneda": "USD",
       "proyecto_relacionado_id": "proy_002",
       "es_deducible": true,
-      "descripcion": "Transporte a reunión con cliente"
+      "descripcion": "Transporte a reuni?n con cliente"
     }
   ],
   "movimientos_financieros_mock_auxiliar": [
@@ -182,7 +204,7 @@
       "cliente_id": null,
       "proyecto_id": "proy_001",
       "categoria_gasto_id": "cat_001",
-      "descripcion": "Suscripción mensual a herramienta de diseño"
+      "descripcion": "Suscripci?n mensual a herramienta de dise?o"
     },
     {
       "id": "mov_004",
@@ -196,7 +218,7 @@
       "cliente_id": "cli_001",
       "proyecto_id": "proy_002",
       "categoria_gasto_id": "cat_002",
-      "descripcion": "Transporte a reunión con cliente"
+      "descripcion": "Transporte a reuni?n con cliente"
     }
   ],
   "cuentas_mock_auxiliar": [

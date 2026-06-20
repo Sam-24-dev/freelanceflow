@@ -51,7 +51,7 @@ function renderDashboard(data) {
   updateText('expenses-total', formatCurrency(totalExpenses));
   updateText('cash-flow-total', formatCurrency(netCashFlow));
   updateText('pending-total', formatCurrency(pendingBalance));
-  updateText('client-count', String((data.clientes ?? []).length));
+  updateText('client-count', String((data.clientes ?? []).filter((client) => client.estado !== 'inactivo').length));
   updateText('project-count', String((data.proyectos ?? []).length));
   updateText('invoice-count', String(invoices.length));
   updateText('user-name', data.usuario?.nombre_completo ?? 'Freelancer');

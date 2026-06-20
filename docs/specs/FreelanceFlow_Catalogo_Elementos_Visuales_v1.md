@@ -378,3 +378,28 @@ No se inventó contenido para P-34, P-35 y P-36: el Context Pack solo los etique
 1. **P-34, P-35, P-36** no tienen contenido funcional confirmado en el documento. Necesito que definas qué reportes son exactamente (¿reporte fiscal estimado, declaración de impuestos, comparativo anual?) antes de poder especificar sus tablas/tarjetas.
 2. **Tipo de visualización en reportes (P-28 a P-31)**: propuse tabla como base y gráfico complementario en Flujo de Caja, pero el documento no confirma si se espera visualización gráfica (líneas, barras) en todos los reportes o solo en algunos. Esto también condiciona el esfuerzo de frontend simulado en Fase 1.
 3. **Multi-moneda**: igual que en el catálogo de formularios, varias tarjetas de métrica (saldo, ingresos, gastos) asumen una moneda consolidada. Si el sistema soporta múltiples monedas simultáneas, estas tarjetas requieren lógica adicional de conversión o segmentación que aún no está definida.
+
+---
+
+## Actualizaci?n acad?mica obligatoria ? Elementos visuales del M?dulo Clientes (Fase 1)
+
+### VIS-008A ? Gesti?n de Clientes
+**Pantalla:** `clientes.html`  
+**Tipo:** Formulario + tabla + panel de detalle.
+
+**Datos exactos por cliente:** `id`, `nombre_razon_social`, `tipo_cliente`, `nombres`, `apellidos`, `identificacion`, `telefono`, `celular`, `correo`, `direccion`, `estadoCivil`, `estado`, `fecha_registro`.
+
+**Acciones disponibles:**
+- Registrar cliente.
+- Listar clientes.
+- Buscar por nombres, apellidos o identificaci?n.
+- Consultar detalle.
+- Editar cliente.
+- Cambiar estado civil.
+- Cambiar estado activo/inactivo.
+
+**Empty states:**
+- Sin clientes: "A?n no has registrado clientes."
+- Sin resultados de b?squeda: "No encontramos clientes con ese criterio."
+- Sin selecci?n de detalle: "Selecciona un cliente para consultar su detalle."
+

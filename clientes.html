@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="M?dulo de clientes de FreelanceFlow para registrar, buscar, editar y consultar clientes en el prototipo est?tico.">
+  <title>FreelanceFlow | Clientes</title>
+  <link rel="icon" type="image/png" href="./img/brand/favicon-32.png">
+  <link rel="apple-touch-icon" href="./img/brand/apple-touch-icon.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="./assets/css/styles.css">
+</head>
+<body class="app-shell min-h-screen">
+  <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-amber-500 focus:px-4 focus:py-2 focus:font-bold focus:text-slate-950">
+    Saltar al contenido principal
+  </a>
+
+  <div class="min-h-screen lg:grid lg:grid-cols-[18rem_1fr]">
+    <aside class="flex flex-col border-r border-white/10 bg-slate-950/95 px-6 py-6 text-white lg:min-h-screen" aria-label="Men? lateral">
+      <header class="mb-8">
+        <p class="text-sm uppercase tracking-[0.35em] text-amber-300">SaaS financiero</p>
+        <p class="mt-2 text-2xl font-black tracking-tight">FreelanceFlow</p>
+        <p class="mt-3 text-sm leading-6 text-slate-300">Control financiero operativo para freelancers.</p>
+      </header>
+
+      <nav aria-label="Navegaci?n principal" class="flex-1">
+        <ul class="space-y-2 text-sm font-semibold">
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="index.html">Inicio</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="dashboard.html">Dashboard</a></li>
+          <li><a class="block rounded-2xl bg-amber-400 px-4 py-3 text-slate-950 shadow-lg shadow-amber-500/20" href="clientes.html" aria-current="page">Clientes</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="registro.html">Registro</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="login.html">Login</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="perfil.html">Perfil</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="configuracion_fiscal.html">Configuraci?n fiscal</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="ajustes.html">Ajustes</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="categorias.html">Categor?as</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="servicios.html">Servicios</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="propuestas.html">Propuestas</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="facturas.html">Facturas</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="reportes.html">Reportes</a></li>
+          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="notificaciones.html">Notificaciones</a></li>
+        </ul>
+      </nav>
+
+      <footer class="mt-8 border-t border-white/10 pt-4 text-xs leading-5 text-slate-400">
+        <p>Prototipo est?tico ? Fase 1</p>
+        <p>Sin backend ni base de datos.</p>
+      </footer>
+    </aside>
+
+    <main id="main-content" class="px-5 py-6 sm:px-8 lg:px-10">
+      <section class="ledger-card ledger-line mb-8 rounded-[2rem] p-6 sm:p-8" aria-labelledby="clients-title">
+        <div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p class="text-sm font-bold uppercase tracking-[0.25em] text-teal-700">M?dulo Clientes</p>
+            <h1 id="clients-title" class="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Clientes y contacto principal</h1>
+            <p class="mt-3 max-w-3xl text-slate-600">Gestiona clientes B2B usando los datos obligatorios del contacto principal o representante legal. Todo funciona en el navegador con datos simulados.</p>
+          </div>
+          <div class="rounded-2xl bg-slate-950 px-5 py-4 text-sm text-slate-50">
+            <p class="font-bold text-amber-300">Alcance Fase 1</p>
+            <p class="text-slate-300">Registro, b?squeda, detalle, edici?n y estados.</p>
+          </div>
+        </div>
+      </section>
+
+      <p id="clients-data-error" class="hidden mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800" role="alert"></p>
+
+      <div class="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.45fr)]">
+        <section class="rounded-[2rem] bg-white p-5 shadow-xl shadow-slate-950/10 sm:p-6" aria-labelledby="client-form-title">
+          <div class="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <p class="text-sm font-bold uppercase tracking-[0.25em] text-amber-700">Formulario</p>
+              <h2 id="client-form-title" class="mt-1 text-2xl font-black text-slate-950">Registrar cliente</h2>
+              <p class="mt-2 text-sm text-slate-600">Los campos marcados con * son obligatorios.</p>
+            </div>
+            <button id="client-clear-button" type="button" class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Nuevo</button>
+          </div>
+
+          <form id="client-form" class="grid gap-4" novalidate>
+            <input id="client-id" name="id" type="hidden">
+
+            <div>
+              <label for="business-name" class="mb-2 block text-sm font-bold text-slate-800">Raz?n social *</label>
+              <input id="business-name" name="nombre_razon_social" type="text" required placeholder="Ej. Bodega Andina S.A." class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+            </div>
+
+            <div>
+              <label for="client-type" class="mb-2 block text-sm font-bold text-slate-800">Tipo de cliente *</label>
+              <select id="client-type" name="tipo_cliente" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+                <option value="Empresa">Empresa</option>
+                <option value="Persona natural">Persona natural</option>
+              </select>
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-2">
+              <div>
+                <label for="first-names" class="mb-2 block text-sm font-bold text-slate-800">Nombres *</label>
+                <input id="first-names" name="nombres" type="text" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+              </div>
+              <div>
+                <label for="last-names" class="mb-2 block text-sm font-bold text-slate-800">Apellidos *</label>
+                <input id="last-names" name="apellidos" type="text" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+              </div>
+            </div>
+
+            <div>
+              <label for="identification" class="mb-2 block text-sm font-bold text-slate-800">Identificaci?n *</label>
+              <input id="identification" name="identificacion" type="text" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-2">
+              <div>
+                <label for="phone" class="mb-2 block text-sm font-bold text-slate-800">Tel?fono</label>
+                <input id="phone" name="telefono" type="tel" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+              </div>
+              <div>
+                <label for="mobile" class="mb-2 block text-sm font-bold text-slate-800">Celular *</label>
+                <input id="mobile" name="celular" type="tel" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+              </div>
+            </div>
+
+            <div>
+              <label for="email" class="mb-2 block text-sm font-bold text-slate-800">Correo *</label>
+              <input id="email" name="correo" type="email" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+            </div>
+
+            <div>
+              <label for="address" class="mb-2 block text-sm font-bold text-slate-800">Direcci?n</label>
+              <input id="address" name="direccion" type="text" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-2">
+              <div>
+                <label for="civil-status" class="mb-2 block text-sm font-bold text-slate-800">Estado civil *</label>
+                <select id="civil-status" name="estadoCivil" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+                  <option value="">Selecciona</option>
+                  <option value="soltero">Soltero</option>
+                  <option value="casado">Casado</option>
+                  <option value="divorciado">Divorciado</option>
+                  <option value="separado">Separado</option>
+                  <option value="uni?n libre">Uni?n libre</option>
+                </select>
+              </div>
+              <div>
+                <label for="client-status" class="mb-2 block text-sm font-bold text-slate-800">Estado *</label>
+                <select id="client-status" name="estado" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+                  <option value="activo">Activo</option>
+                  <option value="inactivo">Inactivo</option>
+                </select>
+              </div>
+            </div>
+
+            <p id="client-form-message" class="hidden rounded-2xl px-4 py-3 text-sm font-semibold" role="alert" aria-live="polite"></p>
+
+            <button id="client-submit-button" type="submit" class="rounded-xl bg-amber-400 px-5 py-3 text-sm font-black text-slate-950 hover:bg-amber-300">Guardar cliente</button>
+          </form>
+        </section>
+
+        <section class="space-y-6" aria-labelledby="client-list-title">
+          <div class="rounded-[2rem] bg-white p-5 shadow-xl shadow-slate-950/10 sm:p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p class="text-sm font-bold uppercase tracking-[0.25em] text-teal-700">Listado</p>
+                <h2 id="client-list-title" class="mt-1 text-2xl font-black text-slate-950">Clientes registrados</h2>
+                <p class="mt-2 text-sm text-slate-600">Busca por nombres, apellidos o identificaci?n.</p>
+              </div>
+              <div class="w-full lg:max-w-sm">
+                <label for="client-search" class="sr-only">Buscar cliente</label>
+                <input id="client-search" type="search" placeholder="Buscar cliente..." class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
+              </div>
+            </div>
+
+            <div class="mt-5 overflow-x-auto rounded-2xl border border-slate-200">
+              <table class="min-w-full divide-y divide-slate-200 text-left">
+                <thead class="bg-slate-950 text-xs uppercase tracking-[0.18em] text-slate-200">
+                  <tr>
+                    <th scope="col" class="px-4 py-3">Cliente</th>
+                    <th scope="col" class="px-4 py-3">Contacto</th>
+                    <th scope="col" class="px-4 py-3">Identificaci?n</th>
+                    <th scope="col" class="px-4 py-3">Estado civil</th>
+                    <th scope="col" class="px-4 py-3">Estado</th>
+                    <th scope="col" class="px-4 py-3 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="clients-table-body" class="divide-y divide-slate-200 bg-white"></tbody>
+              </table>
+            </div>
+            <p id="clients-empty-state" class="hidden mt-4 rounded-2xl border border-dashed border-slate-300 px-4 py-5 text-center text-sm font-semibold text-slate-600">A?n no has registrado clientes.</p>
+            <p id="clients-no-results" class="hidden mt-4 rounded-2xl border border-dashed border-amber-300 bg-amber-50 px-4 py-5 text-center text-sm font-semibold text-amber-900">No encontramos clientes con ese criterio.</p>
+          </div>
+
+          <aside class="rounded-[2rem] bg-slate-950 p-5 text-white shadow-xl shadow-slate-950/20 sm:p-6" aria-labelledby="client-detail-title">
+            <p class="text-sm font-bold uppercase tracking-[0.25em] text-amber-300">Detalle</p>
+            <h2 id="client-detail-title" class="mt-1 text-2xl font-black">Consulta del cliente</h2>
+            <div id="client-detail" class="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
+              Selecciona un cliente para consultar su detalle.
+            </div>
+          </aside>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="./assets/js/clientes.js"></script>
+</body>
+</html>
