@@ -3,58 +3,205 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Pantalla estática de Reportes para la Fase 1 de FreelanceFlow.">
-  <title>FreelanceFlow | Reportes</title>
+  <meta name="description" content="Planificación financiera privada, presupuestos y reportes de FreelanceFlow.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0F172A">
+  <title>FreelanceFlow | Presupuestos y Reportes</title>
   <link rel="icon" type="image/png" href="./img/brand/favicon-32.png">
   <link rel="apple-touch-icon" href="./img/brand/apple-touch-icon.png">
-  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="./assets/css/styles.css">
 </head>
-<body class="app-shell min-h-screen">
-  <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-amber-500 focus:px-4 focus:py-2 focus:font-bold focus:text-slate-950">
-    Saltar al contenido principal
-  </a>
+<body class="reports-app app-shell-page">
+  <a href="#main-content" class="skip-link">Saltar al contenido principal</a>
 
-  <div class="min-h-screen lg:grid lg:grid-cols-[18rem_1fr]">
-    <aside class="flex flex-col border-r border-white/10 bg-slate-950/95 px-6 py-6 text-white lg:min-h-screen" aria-label="Menú lateral">
-      <header class="mb-8">
-        <p class="text-sm uppercase tracking-[0.35em] text-amber-300">SaaS financiero</p>
-        <p class="mt-2 text-2xl font-black tracking-tight">FreelanceFlow</p>
-        <p class="mt-3 text-sm leading-6 text-slate-300">Control financiero operativo para freelancers.</p>
+  <div class="app-layout min-h-screen" data-app-layout>
+    <div class="app-sidebar-slot" data-app-sidebar-slot aria-hidden="true"></div>
+    <div class="app-mobile-appbar" data-app-mobile-header-slot aria-hidden="true"></div>
+
+    <main id="main-content" class="app-main reports-main">
+      <header class="reports-heading">
+        <div>
+          <p class="reports-eyebrow">Planificación financiera</p>
+          <h1>Presupuestos y Reportes</h1>
+          <p>Compara tus metas con los resultados reales y analiza el desempeño del período.</p>
+        </div>
+        <div class="reports-heading-actions">
+          <button id="report-filter-open" class="reports-secondary-button" type="button" aria-haspopup="dialog">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5h16M7 12h10m-7 7h4"/></svg>
+            Filtros
+          </button>
+          <button id="budget-open" class="reports-primary-button" type="button" aria-haspopup="dialog">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4L16.5 3.5Z"/></svg>
+            Editar presupuesto
+          </button>
+          <button id="report-export" class="reports-secondary-button" type="button" title="Descargar el reporte activo en formato CSV">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14"/></svg>
+            Descargar CSV
+          </button>
+        </div>
       </header>
 
-      <nav aria-label="Navegación principal" class="flex-1">
-        <ul class="space-y-2 text-sm font-semibold">
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="index.html">Inicio</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="dashboard.html">Dashboard</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="clientes.html">Clientes</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="registro.html">Registro</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="login.html">Login</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="perfil.html">Perfil</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="configuracion_fiscal.html">Configuración fiscal</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="ajustes.html">Ajustes</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="categorias.html">Categorías</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="servicios.html">Servicios</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="propuestas.html">Propuestas</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="facturas.html">Facturas</a></li>
-          <li><a class="block rounded-2xl bg-amber-400 px-4 py-3 text-slate-950 shadow-lg shadow-amber-500/20" href="reportes.html" aria-current="page">Reportes</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="notificaciones.html">Notificaciones</a></li>
-        </ul>
-      </nav>
-
-      <footer class="mt-8 border-t border-white/10 pt-4 text-xs leading-5 text-slate-400">
-        <p>Prototipo estático · Fase 1</p>
-        <p>Sin backend ni base de datos.</p>
-      </footer>
-    </aside>
-
-    <main id="main-content" class="px-5 py-6 sm:px-8 lg:px-10">
-      <section class="ledger-card ledger-line rounded-[2rem] p-6 sm:p-8" aria-labelledby="module-title">
-        <p class="text-sm font-bold uppercase tracking-[0.25em] text-teal-700">Reportes</p>
-        <h1 id="module-title" class="mt-3 text-3xl font-black tracking-tight text-slate-950">Módulo en construcción - Fase 2</h1>
-        <p class="mt-3 max-w-2xl text-slate-600">Esta pantalla queda conectada para validar navegación física del prototipo. La lógica funcional se implementará en la siguiente etapa.</p>
+      <section class="reports-filter-bar" aria-label="Filtros activos">
+        <label>
+          <span>Período</span>
+          <input id="reports-period" name="period" type="month" value="2026-06" min="2025-01" max="2027-12" autocomplete="off">
+        </label>
+        <label>
+          <span>Cliente</span>
+          <select id="reports-client" name="client" autocomplete="off"><option value="">Todos los clientes</option></select>
+        </label>
+        <label>
+          <span>Proyecto</span>
+          <select id="reports-project" name="project" autocomplete="off"><option value="">Todos los proyectos</option></select>
+        </label>
+        <button id="reports-clear-filters" class="reports-text-button" type="button" hidden>Limpiar filtros</button>
+        <p id="reports-filter-summary" class="reports-filter-summary" aria-live="polite">Junio de 2026 · Todos los clientes · Todos los proyectos</p>
       </section>
+
+      <section class="reports-summary" aria-labelledby="reports-summary-title" aria-busy="true">
+        <h2 id="reports-summary-title" class="sr-only">Resumen financiero</h2>
+        <article class="reports-metric-card reports-metric-goal">
+          <div class="reports-metric-top"><span>Meta de ingresos</span><span class="reports-metric-icon" aria-hidden="true">◎</span></div>
+          <strong id="metric-income-goal">—</strong>
+          <p id="metric-income-goal-copy">Plan definido para el período.</p>
+        </article>
+        <article class="reports-metric-card reports-metric-income">
+          <div class="reports-metric-top"><span>Ingresos reales</span><span id="metric-income-progress" class="reports-metric-chip">—</span></div>
+          <strong id="metric-real-income">—</strong>
+          <div class="reports-mini-progress" aria-hidden="true"><span id="metric-income-progress-bar"></span></div>
+          <p>Cobros recibidos en el período.</p>
+        </article>
+        <article class="reports-metric-card reports-metric-budget">
+          <div class="reports-metric-top"><span>Gastos presupuestados</span><span class="reports-metric-icon" aria-hidden="true">▤</span></div>
+          <strong id="metric-budgeted-expenses">—</strong>
+          <p>Límite total configurado.</p>
+        </article>
+        <article class="reports-metric-card reports-metric-expense">
+          <div class="reports-metric-top"><span>Gastos reales</span><span id="metric-expense-progress" class="reports-metric-chip">—</span></div>
+          <strong id="metric-real-expenses">—</strong>
+          <div class="reports-mini-progress" aria-hidden="true"><span id="metric-expense-progress-bar"></span></div>
+          <p>Salidas registradas en el período.</p>
+        </article>
+        <article class="reports-metric-card reports-metric-net">
+          <div class="reports-metric-top"><span>Flujo neto</span><span id="metric-net-status" class="reports-metric-chip">—</span></div>
+          <strong id="metric-net-flow">—</strong>
+          <p id="metric-net-copy">Ingresos menos gastos.</p>
+        </article>
+      </section>
+
+      <section id="reports-loading" class="reports-status-card" aria-live="polite">
+        <span class="reports-loader" aria-hidden="true"></span>
+        <strong>Preparando tu resumen financiero…</strong>
+      </section>
+
+      <section id="reports-error" class="reports-status-card reports-status-error" role="alert" hidden>
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 4.2 2.8 17.5A2 2 0 0 0 4.5 20h15a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z"/></svg>
+        <div><strong>No pudimos cargar la información financiera.</strong><p>Revisa que los datos simulados estén disponibles e inténtalo nuevamente.</p></div>
+        <button id="reports-retry" class="reports-secondary-button" type="button">Reintentar</button>
+      </section>
+
+      <div id="reports-content" class="reports-content" hidden>
+        <section class="reports-budget-panel" aria-labelledby="budget-title">
+          <header class="reports-section-header">
+            <div><p class="reports-section-eyebrow">Control de límites</p><h2 id="budget-title">Libro de presupuestos</h2></div>
+            <button class="reports-text-button" type="button" data-open-budget>Editar límites</button>
+          </header>
+
+          <div id="budget-empty" class="reports-empty-state" hidden>
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 9h8m-8 4h5"/></svg>
+            <strong>No has definido límites de gasto por categoría.</strong>
+            <p>Agrega límites para detectar a tiempo categorías próximas a excederse.</p>
+            <button class="reports-primary-button" type="button" data-open-budget>Agregar límites</button>
+          </div>
+
+          <div id="budget-table-wrap" class="reports-table-scroll" tabindex="0" aria-label="Tabla de presupuestos; desliza horizontalmente si es necesario">
+            <table class="reports-budget-table">
+              <caption class="sr-only">Presupuesto y gasto real por categoría</caption>
+              <thead><tr><th scope="col">Categoría</th><th scope="col">Presupuestado</th><th scope="col">Ejecutado</th><th scope="col">Disponible / Excedido</th><th scope="col">Consumido</th><th scope="col">Estado</th></tr></thead>
+              <tbody id="budget-table-body"></tbody>
+            </table>
+          </div>
+          <div id="budget-mobile-cards" class="budget-mobile-cards"></div>
+        </section>
+
+        <aside class="reports-access-panel" aria-labelledby="report-access-title">
+          <header class="reports-section-header"><div><p class="reports-section-eyebrow">Análisis</p><h2 id="report-access-title">Explorar reportes</h2></div></header>
+          <div class="reports-access-grid">
+            <button class="report-access-card is-active" type="button" data-report-type="income" aria-pressed="true">
+              <span class="report-access-icon report-access-green" aria-hidden="true">↗</span><span><strong>Ingresos</strong><small>Cobros por cliente</small></span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+            <button class="report-access-card" type="button" data-report-type="expenses" aria-pressed="false">
+              <span class="report-access-icon report-access-red" aria-hidden="true">↘</span><span><strong>Gastos</strong><small>Consumo por categoría</small></span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+            <button class="report-access-card" type="button" data-report-type="cashflow" aria-pressed="false">
+              <span class="report-access-icon report-access-teal" aria-hidden="true">≈</span><span><strong>Flujo de caja</strong><small>Entradas frente a salidas</small></span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+            <button class="report-access-card" type="button" data-report-type="receivables" aria-pressed="false">
+              <span class="report-access-icon report-access-amber" aria-hidden="true">$</span><span><strong>Cuentas por cobrar</strong><small>Facturas pendientes</small></span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+            <button class="report-access-card" type="button" data-report-type="profitability" aria-pressed="false">
+              <span class="report-access-icon report-access-teal" aria-hidden="true">%</span><span><strong>Rentabilidad</strong><small>Resultado por proyecto</small></span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+            <button class="report-access-card" type="button" data-report-type="pnl" aria-pressed="false">
+              <span class="report-access-icon report-access-amber" aria-hidden="true">≡</span><span><strong>Pérdidas y ganancias</strong><small>Estado financiero</small></span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+          </div>
+        </aside>
+
+        <section class="report-preview-panel" aria-labelledby="report-preview-title">
+          <header class="reports-section-header report-preview-header">
+            <div><p class="reports-section-eyebrow">Vista previa del reporte</p><h2 id="report-preview-title">Ingresos</h2><p id="report-preview-description">Cobros recibidos agrupados por cliente.</p></div>
+            <button id="report-preview-export" class="reports-secondary-button" type="button" title="Descargar este reporte en formato CSV"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14"/></svg>Descargar CSV</button>
+          </header>
+          <p id="report-active-filters" class="report-active-filters">Junio de 2026 · Todos los clientes · Todos los proyectos</p>
+          <div id="report-chart" class="report-chart" aria-label="Resumen gráfico del reporte"></div>
+          <div id="report-table-container" class="reports-table-scroll" tabindex="0" aria-label="Tabla del reporte; desliza horizontalmente si es necesario"></div>
+          <div id="report-empty" class="reports-empty-state" hidden>
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 4h10l4 4v12H5zM15 4v5h5M8 14h8m-8 3h5"/></svg>
+            <strong>No hay suficiente información financiera para generar este reporte.</strong>
+            <p>Prueba otro período, limpia los filtros o registra nuevos movimientos.</p>
+            <div><button class="reports-secondary-button" type="button" data-clear-report-filters>Limpiar filtros</button><a class="reports-primary-button" href="transacciones.html">Registrar movimiento</a></div>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
+
+  <button id="reports-panel-backdrop" class="reports-panel-backdrop" type="button" aria-label="Cerrar panel" tabindex="-1"></button>
+
+  <aside id="budget-panel" class="reports-drawer" role="dialog" aria-modal="true" aria-labelledby="budget-panel-title" aria-hidden="true" inert>
+    <header class="reports-drawer-header"><div><p class="reports-eyebrow">Plan del período</p><h2 id="budget-panel-title">Editar presupuesto</h2><p>Define una meta clara y límites de gasto realistas.</p></div><button class="reports-icon-button" id="budget-close" type="button" aria-label="Cerrar presupuesto"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+    <form id="budget-form" class="reports-drawer-form" novalidate>
+      <input id="budget-id" name="id" type="hidden">
+      <fieldset><legend><span>1</span> Meta del período</legend>
+        <div class="reports-form-grid">
+          <label>Periodicidad <strong aria-hidden="true">*</strong><select id="budget-period-type" name="periodo" autocomplete="off" required><option value="Mensual">Mensual</option><option value="Trimestral">Trimestral</option><option value="Anual">Anual</option></select><small class="reports-field-error" data-budget-error="periodo"></small></label>
+          <label>Período <strong aria-hidden="true">*</strong><input id="budget-period-key" name="periodo_clave" type="month" autocomplete="off" required><small class="reports-field-error" data-budget-error="periodo_clave"></small></label>
+          <label>Meta de ingresos <strong aria-hidden="true">*</strong><span class="reports-money-input"><span>$</span><input id="budget-income-goal" name="meta_ingresos" type="number" min="0.01" step="0.01" inputmode="decimal" autocomplete="off" required></span><small class="reports-field-error" data-budget-error="meta_ingresos"></small></label>
+          <label>Meta de horas <small>(opcional)</small><input id="budget-hours-goal" name="meta_horas_facturables" type="number" min="0.25" step="0.25" inputmode="decimal" autocomplete="off"><small class="reports-field-error" data-budget-error="meta_horas_facturables"></small></label>
+        </div>
+      </fieldset>
+      <fieldset><legend><span>2</span> Límites por categoría</legend><p class="reports-form-help">Agrega solo las categorías que quieras controlar este período.</p><div id="budget-limit-rows" class="budget-limit-rows"></div><button id="budget-add-limit" class="reports-secondary-button" type="button">+ Agregar límite</button></fieldset>
+      <p id="budget-form-summary" class="reports-form-summary" role="alert" tabindex="-1" hidden>Revisa los campos señalados antes de guardar.</p>
+      <footer><button id="budget-cancel" class="reports-secondary-button" type="button">Cancelar</button><button class="reports-primary-button" type="submit">Guardar presupuesto</button></footer>
+    </form>
+  </aside>
+
+  <aside id="report-filter-panel" class="reports-drawer reports-filter-drawer" role="dialog" aria-modal="true" aria-labelledby="report-filter-title" aria-hidden="true" inert>
+    <header class="reports-drawer-header"><div><p class="reports-eyebrow">Detalle del reporte</p><h2 id="report-filter-title">Filtrar información</h2><p>Acota el análisis sin perder el contexto del período.</p></div><button class="reports-icon-button" id="report-filter-close" type="button" aria-label="Cerrar filtros"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+    <form id="report-filter-form" class="reports-drawer-form" novalidate>
+      <fieldset><legend><span>1</span> Rango de fechas</legend><div class="reports-form-grid"><label>Desde <strong aria-hidden="true">*</strong><input id="report-date-from" name="date_from" type="date" autocomplete="off" required></label><label>Hasta <strong aria-hidden="true">*</strong><input id="report-date-to" name="date_to" type="date" autocomplete="off" required></label></div><small id="report-date-error" class="reports-field-error"></small></fieldset>
+      <fieldset><legend><span>2</span> Contexto</legend><div class="reports-form-grid"><label>Cliente<select id="report-drawer-client" name="client" autocomplete="off"><option value="">Todos los clientes</option></select></label><label>Proyecto<select id="report-drawer-project" name="project" autocomplete="off"><option value="">Todos los proyectos</option></select></label></div></fieldset>
+      <footer><button id="report-filter-reset" class="reports-secondary-button" type="button">Limpiar</button><button class="reports-primary-button" type="submit">Aplicar filtros</button></footer>
+    </form>
+  </aside>
+
+  <div id="reports-toast" class="reports-toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+
+  <script src="./assets/data/mock-data.js"></script>
+  <script src="./assets/js/mock-data-loader.js"></script>
+  <script src="./assets/js/app-shell.js"></script>
+  <script src="./assets/js/report-model.js"></script>
+  <script src="./assets/js/reportes.js"></script>
 </body>
 </html>

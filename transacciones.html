@@ -1,0 +1,257 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Revisa, filtra y registra ingresos y gastos de FreelanceFlow por cliente, proyecto y categoría.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0f172a">
+  <title>Movimientos financieros | FreelanceFlow</title>
+  <link rel="icon" type="image/png" href="./img/brand/favicon-32.png">
+  <link rel="apple-touch-icon" href="./img/brand/apple-touch-icon.png">
+  <link rel="stylesheet" href="./assets/css/styles.css">
+</head>
+<body class="app-shell app-shell-page transactions-app min-h-screen text-slate-950">
+  <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-full focus:bg-amber-400 focus:px-4 focus:py-2 focus:font-bold focus:text-slate-950">
+    Saltar al contenido principal
+  </a>
+
+  <div class="app-layout min-h-screen" data-app-layout>
+    <div class="app-sidebar-slot" data-app-sidebar-slot aria-hidden="true"></div>
+    <div class="app-mobile-appbar" data-app-mobile-header-slot aria-hidden="true"></div>
+
+    <main id="main-content" class="app-main transactions-main">
+      <header class="transactions-heading">
+        <div>
+          <p class="transactions-eyebrow">Ledger</p>
+          <h1>Movimientos financieros</h1>
+          <p>Revisa tus ingresos y gastos, encuentra cada operación y registra nuevos movimientos con su contexto.</p>
+        </div>
+
+        <div class="transactions-heading-actions">
+          <label class="transactions-month-field" for="movement-month">
+            <span>Período</span>
+            <input id="movement-month" name="período" type="month" value="2026-06">
+          </label>
+          <button class="transactions-primary-action" type="button" data-open-transaction-form>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            <span>Movimiento</span>
+          </button>
+        </div>
+      </header>
+
+      <p id="transactions-data-error" class="transactions-alert transactions-alert-error" role="alert" hidden></p>
+
+      <section class="transactions-summary-grid" aria-labelledby="transaction-summary-title">
+        <h2 id="transaction-summary-title" class="sr-only">Resumen del período seleccionado</h2>
+
+        <article class="transactions-summary-card transactions-summary-income">
+          <div class="transactions-summary-label">
+            <span class="transactions-summary-icon" aria-hidden="true">+</span>
+            <span>Ingresos</span>
+          </div>
+          <p id="summary-income" class="transactions-summary-value">$0.00</p>
+          <p>Entradas del período filtrado</p>
+        </article>
+
+        <article class="transactions-summary-card transactions-summary-expense">
+          <div class="transactions-summary-label">
+            <span class="transactions-summary-icon" aria-hidden="true">-</span>
+            <span>Gastos</span>
+          </div>
+          <p id="summary-expense" class="transactions-summary-value">$0.00</p>
+          <p>Salidas del período filtrado</p>
+        </article>
+
+        <article class="transactions-summary-card transactions-summary-net">
+          <div class="transactions-summary-label">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V9m6 10V5m6 14v-7m4 7H2"/></svg>
+            <span>Flujo neto</span>
+          </div>
+          <p id="summary-balance" class="transactions-summary-value">$0.00</p>
+          <p>Ingresos menos gastos</p>
+        </article>
+      </section>
+
+      <section class="transactions-ledger" aria-labelledby="transactions-list-title">
+        <div class="transactions-ledger-header">
+          <div>
+            <p class="transactions-eyebrow">Historial operativo</p>
+            <h2 id="transactions-list-title">Movimientos del período</h2>
+            <p id="transactions-result-count" aria-live="polite">Preparando movimientos</p>
+          </div>
+
+          <div class="transactions-filter-grid">
+            <label class="transactions-search-field" for="transactions-search">
+              <span class="sr-only">Buscar movimiento</span>
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <input id="transactions-search" name="search" type="search" autocomplete="off" placeholder="Buscar descripción, cliente o proyecto">
+            </label>
+
+            <label class="transactions-category-field" for="transactions-category-filter">
+              <span class="sr-only">Filtrar por categoría</span>
+              <select id="transactions-category-filter" name="categoría_filtro">
+                <option value="">Todas las categorías</option>
+              </select>
+            </label>
+
+            <button id="transactions-clear-filters" class="transactions-secondary-action" type="button">Limpiar filtros</button>
+          </div>
+        </div>
+
+        <div class="transactions-type-tabs" role="group" aria-label="Filtrar movimientos por tipo">
+          <button type="button" class="transaction-filter-tab is-active" data-filter-type="todos" aria-pressed="true">Todos</button>
+          <button type="button" class="transaction-filter-tab" data-filter-type="ingreso" aria-pressed="false">Ingresos</button>
+          <button type="button" class="transaction-filter-tab" data-filter-type="gasto" aria-pressed="false">Gastos</button>
+        </div>
+
+        <div id="transactions-loading" class="transactions-loading" aria-label="Cargando movimientos" aria-live="polite">
+          <span></span><span></span><span></span>
+        </div>
+
+        <div id="transactions-table-wrap" class="transactions-table-wrap" hidden>
+          <table>
+            <caption class="sr-only">Movimientos financieros filtrados</caption>
+            <thead>
+              <tr>
+                <th scope="col">Fecha</th>
+                <th scope="col">Tipo</th>
+                <th scope="col">Descripción</th>
+                <th scope="col">Categoría</th>
+                <th scope="col">Cliente</th>
+                <th scope="col">Proyecto</th>
+                <th scope="col" class="transactions-amount-column">Monto</th>
+                <th scope="col"><span class="sr-only">Acciones</span></th>
+              </tr>
+            </thead>
+            <tbody id="transactions-table-body"></tbody>
+          </table>
+        </div>
+
+        <div id="transactions-card-list" class="transactions-card-list" hidden></div>
+
+        <div id="transactions-empty-state" class="transactions-empty-state" hidden>
+          <span class="transactions-empty-icon" aria-hidden="true">+</span>
+          <h3>Aún no has registrado movimientos</h3>
+          <p>Agrega tu primer ingreso o gasto para comenzar a construir tu historial financiero.</p>
+          <button type="button" class="transactions-primary-action" data-open-transaction-form>Crear movimiento</button>
+        </div>
+
+        <div id="transactions-no-results" class="transactions-empty-state" hidden>
+          <svg class="transactions-empty-search" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <h3>No encontramos movimientos con estos filtros</h3>
+          <p>Prueba otro período, tipo, categoría o término de búsqueda.</p>
+          <button type="button" class="transactions-secondary-action" data-clear-transaction-filters>Restablecer filtros</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <button id="transaction-drawer-backdrop" class="transaction-drawer-backdrop" type="button" aria-label="Cerrar formulario" tabindex="-1"></button>
+
+  <aside id="transaction-form-panel" class="transaction-drawer" role="dialog" aria-modal="true" aria-labelledby="transaction-form-title" aria-hidden="true" inert>
+    <header class="transaction-drawer-header">
+      <div>
+        <p class="transactions-eyebrow">Registro financiero</p>
+        <h2 id="transaction-form-title">Nuevo movimiento</h2>
+        <p>Registra un ingreso o gasto en segundos.</p>
+      </div>
+      <button id="transaction-close-button" class="transaction-drawer-close" type="button" aria-label="Cerrar formulario">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+
+    <form id="transaction-form" class="transaction-form" novalidate>
+      <input id="transaction-id" type="hidden" name="id">
+
+      <fieldset class="transaction-fieldset" aria-describedby="transaction-type-error">
+        <legend>Tipo de movimiento <span aria-hidden="true">*</span></legend>
+        <div class="transaction-type-options">
+          <label>
+            <input type="radio" name="tipo" value="ingreso">
+            <span><strong>Ingreso</strong><small>Dinero que entra</small></span>
+          </label>
+          <label>
+            <input type="radio" name="tipo" value="gasto">
+            <span><strong>Gasto</strong><small>Dinero que sale</small></span>
+          </label>
+        </div>
+        <span id="transaction-type-error" class="transaction-field-error"></span>
+      </fieldset>
+
+      <div class="transaction-field transaction-amount-field">
+        <label for="transaction-amount">Monto <span aria-hidden="true">*</span></label>
+        <div class="transaction-amount-control">
+          <span aria-hidden="true">$</span>
+          <input id="transaction-amount" name="monto" type="number" min="0.01" step="0.01" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-describedby="transaction-amount-error">
+          <small>USD</small>
+        </div>
+        <span id="transaction-amount-error" class="transaction-field-error"></span>
+      </div>
+
+      <div class="transaction-fields-row">
+        <div class="transaction-field">
+          <label for="transaction-date">Fecha <span aria-hidden="true">*</span></label>
+          <input id="transaction-date" name="fecha" type="date" autocomplete="off" aria-describedby="transaction-date-error">
+          <span id="transaction-date-error" class="transaction-field-error"></span>
+        </div>
+        <div class="transaction-field">
+          <label for="transaction-category">Categoría <span aria-hidden="true">*</span></label>
+          <div id="transaction-category-chips" class="transaction-category-chips" aria-label="Categorías frecuentes"></div>
+          <select id="transaction-category" name="categoría" aria-describedby="transaction-category-error">
+            <option value="">Selecciona una categoría</option>
+          </select>
+          <span id="transaction-category-error" class="transaction-field-error"></span>
+        </div>
+      </div>
+
+      <div class="transaction-field">
+        <label for="transaction-account">Cuenta mock auxiliar <span aria-hidden="true">*</span></label>
+        <select id="transaction-account" name="cuenta" aria-describedby="transaction-account-help transaction-account-error">
+          <option value="">Selecciona una cuenta mock auxiliar</option>
+        </select>
+        <small id="transaction-account-help">Solo para simular el origen o destino del movimiento en Fase 1.</small>
+        <span id="transaction-account-error" class="transaction-field-error"></span>
+      </div>
+
+      <div class="transaction-fields-row">
+        <div class="transaction-field">
+          <label for="transaction-client">Cliente <small>(opcional)</small></label>
+          <select id="transaction-client" name="cliente">
+            <option value="">Sin cliente</option>
+          </select>
+        </div>
+        <div class="transaction-field">
+          <label for="transaction-project">Proyecto <small>(opcional)</small></label>
+          <select id="transaction-project" name="proyecto" disabled>
+            <option value="">Selecciona primero un cliente</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="transaction-field">
+        <label for="transaction-notes">Notas <small>(opcional)</small></label>
+        <textarea id="transaction-notes" name="notas" rows="3" maxlength="240" placeholder="Ej. Pago parcial, suscripción mensual o transporte a reunion."></textarea>
+      </div>
+
+      <p id="transaction-form-message" class="transactions-alert" role="alert" aria-live="assertive" hidden></p>
+
+      <footer class="transaction-form-actions">
+        <button id="transaction-cancel-button" class="transactions-secondary-action" type="button">Cancelar</button>
+        <button id="transaction-submit-button" class="transactions-primary-action" type="submit">Guardar movimiento</button>
+      </footer>
+    </form>
+  </aside>
+
+  <div id="transaction-toast" class="transaction-toast" role="status" aria-live="polite" aria-atomic="true" hidden>
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>
+    <span>Transacción guardada exitosamente.</span>
+  </div>
+
+  <script src="./assets/js/transaction-model.js" defer></script>
+  <script src="./assets/data/mock-data.js" defer></script>
+  <script src="./assets/js/mock-data-loader.js" defer></script>
+  <script src="./assets/js/app-shell.js" defer></script>
+  <script src="./assets/js/transacciones.js" defer></script>
+</body>
+</html>

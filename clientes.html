@@ -3,204 +3,294 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="M?dulo de clientes de FreelanceFlow para registrar, buscar, editar y consultar clientes en el prototipo est?tico.">
+  <meta name="description" content="Directorio privado de clientes y contactos principales de FreelanceFlow.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0F172A">
   <title>FreelanceFlow | Clientes</title>
   <link rel="icon" type="image/png" href="./img/brand/favicon-32.png">
   <link rel="apple-touch-icon" href="./img/brand/apple-touch-icon.png">
-  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="./assets/css/styles.css">
 </head>
-<body class="app-shell min-h-screen">
-  <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-amber-500 focus:px-4 focus:py-2 focus:font-bold focus:text-slate-950">
-    Saltar al contenido principal
-  </a>
+<body class="clients-app app-shell-page">
+  <a href="#main-content" class="skip-link">Saltar al contenido principal</a>
 
-  <div class="min-h-screen lg:grid lg:grid-cols-[18rem_1fr]">
-    <aside class="flex flex-col border-r border-white/10 bg-slate-950/95 px-6 py-6 text-white lg:min-h-screen" aria-label="Men? lateral">
-      <header class="mb-8">
-        <p class="text-sm uppercase tracking-[0.35em] text-amber-300">SaaS financiero</p>
-        <p class="mt-2 text-2xl font-black tracking-tight">FreelanceFlow</p>
-        <p class="mt-3 text-sm leading-6 text-slate-300">Control financiero operativo para freelancers.</p>
+  <div class="app-layout min-h-screen" data-app-layout>
+    <div class="app-sidebar-slot" data-app-sidebar-slot aria-hidden="true"></div>
+    <div class="app-mobile-appbar" data-app-mobile-header-slot aria-hidden="true"></div>
+
+    <main id="main-content" class="app-main clients-main">
+      <header class="clients-heading">
+        <div class="clients-heading-copy">
+          <p class="clients-eyebrow">Relaciones comerciales</p>
+          <h1>Clientes y contacto principal</h1>
+          <p>Gestiona tus clientes B2B y los datos de su contacto principal o representante legal.</p>
+        </div>
+        <button id="client-create-button" class="clients-primary-action" type="button">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          Nuevo cliente
+        </button>
       </header>
 
-      <nav aria-label="Navegaci?n principal" class="flex-1">
-        <ul class="space-y-2 text-sm font-semibold">
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="index.html">Inicio</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="dashboard.html">Dashboard</a></li>
-          <li><a class="block rounded-2xl bg-amber-400 px-4 py-3 text-slate-950 shadow-lg shadow-amber-500/20" href="clientes.html" aria-current="page">Clientes</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="registro.html">Registro</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="login.html">Login</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="perfil.html">Perfil</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="configuracion_fiscal.html">Configuraci?n fiscal</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="ajustes.html">Ajustes</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="categorias.html">Categor?as</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="servicios.html">Servicios</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="propuestas.html">Propuestas</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="facturas.html">Facturas</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="reportes.html">Reportes</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="notificaciones.html">Notificaciones</a></li>
-        </ul>
-      </nav>
-
-      <footer class="mt-8 border-t border-white/10 pt-4 text-xs leading-5 text-slate-400">
-        <p>Prototipo est?tico ? Fase 1</p>
-        <p>Sin backend ni base de datos.</p>
-      </footer>
-    </aside>
-
-    <main id="main-content" class="px-5 py-6 sm:px-8 lg:px-10">
-      <section class="ledger-card ledger-line mb-8 rounded-[2rem] p-6 sm:p-8" aria-labelledby="clients-title">
-        <div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <p class="text-sm font-bold uppercase tracking-[0.25em] text-teal-700">M?dulo Clientes</p>
-            <h1 id="clients-title" class="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Clientes y contacto principal</h1>
-            <p class="mt-3 max-w-3xl text-slate-600">Gestiona clientes B2B usando los datos obligatorios del contacto principal o representante legal. Todo funciona en el navegador con datos simulados.</p>
-          </div>
-          <div class="rounded-2xl bg-slate-950 px-5 py-4 text-sm text-slate-50">
-            <p class="font-bold text-amber-300">Alcance Fase 1</p>
-            <p class="text-slate-300">Registro, b?squeda, detalle, edici?n y estados.</p>
-          </div>
+      <section class="clients-context-card" aria-labelledby="clients-context-title">
+        <div class="clients-context-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <div>
+          <h2 id="clients-context-title">Una relación comercial, dos capas de información</h2>
+          <p>La razón social identifica al cliente; los datos personales corresponden a su contacto principal o representante legal.</p>
         </div>
       </section>
 
-      <p id="clients-data-error" class="hidden mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800" role="alert"></p>
+      <section class="clients-summary-grid" aria-labelledby="clients-summary-title">
+        <h2 id="clients-summary-title" class="sr-only">Resumen de clientes</h2>
+        <article class="clients-summary-card clients-summary-total">
+          <span class="clients-summary-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87"/></svg>
+          </span>
+          <div><p>Clientes registrados</p><strong id="clients-total-count">—</strong><small>Relaciones en tu directorio</small></div>
+        </article>
+        <article class="clients-summary-card clients-summary-active">
+          <span class="clients-summary-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>
+          </span>
+          <div><p>Clientes activos</p><strong id="clients-active-count">—</strong><small>Disponibles para nuevas operaciones</small></div>
+        </article>
+        <article class="clients-summary-card clients-summary-inactive">
+          <span class="clients-summary-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>
+          </span>
+          <div><p>Clientes inactivos</p><strong id="clients-inactive-count">—</strong><small>Conservados en el historial</small></div>
+        </article>
+      </section>
 
-      <div class="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.45fr)]">
-        <section class="rounded-[2rem] bg-white p-5 shadow-xl shadow-slate-950/10 sm:p-6" aria-labelledby="client-form-title">
-          <div class="mb-5 flex items-start justify-between gap-4">
-            <div>
-              <p class="text-sm font-bold uppercase tracking-[0.25em] text-amber-700">Formulario</p>
-              <h2 id="client-form-title" class="mt-1 text-2xl font-black text-slate-950">Registrar cliente</h2>
-              <p class="mt-2 text-sm text-slate-600">Los campos marcados con * son obligatorios.</p>
-            </div>
-            <button id="client-clear-button" type="button" class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Nuevo</button>
-          </div>
-
-          <form id="client-form" class="grid gap-4" novalidate>
-            <input id="client-id" name="id" type="hidden">
-
-            <div>
-              <label for="business-name" class="mb-2 block text-sm font-bold text-slate-800">Raz?n social *</label>
-              <input id="business-name" name="nombre_razon_social" type="text" required placeholder="Ej. Bodega Andina S.A." class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
-            </div>
-
-            <div>
-              <label for="client-type" class="mb-2 block text-sm font-bold text-slate-800">Tipo de cliente *</label>
-              <select id="client-type" name="tipo_cliente" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
-                <option value="Empresa">Empresa</option>
-                <option value="Persona natural">Persona natural</option>
-              </select>
-            </div>
-
-            <div class="grid gap-4 md:grid-cols-2">
-              <div>
-                <label for="first-names" class="mb-2 block text-sm font-bold text-slate-800">Nombres *</label>
-                <input id="first-names" name="nombres" type="text" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
-              </div>
-              <div>
-                <label for="last-names" class="mb-2 block text-sm font-bold text-slate-800">Apellidos *</label>
-                <input id="last-names" name="apellidos" type="text" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
-              </div>
-            </div>
-
-            <div>
-              <label for="identification" class="mb-2 block text-sm font-bold text-slate-800">Identificaci?n *</label>
-              <input id="identification" name="identificacion" type="text" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
-            </div>
-
-            <div class="grid gap-4 md:grid-cols-2">
-              <div>
-                <label for="phone" class="mb-2 block text-sm font-bold text-slate-800">Tel?fono</label>
-                <input id="phone" name="telefono" type="tel" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
-              </div>
-              <div>
-                <label for="mobile" class="mb-2 block text-sm font-bold text-slate-800">Celular *</label>
-                <input id="mobile" name="celular" type="tel" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
-              </div>
-            </div>
-
-            <div>
-              <label for="email" class="mb-2 block text-sm font-bold text-slate-800">Correo *</label>
-              <input id="email" name="correo" type="email" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
-            </div>
-
-            <div>
-              <label for="address" class="mb-2 block text-sm font-bold text-slate-800">Direcci?n</label>
-              <input id="address" name="direccion" type="text" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
-            </div>
-
-            <div class="grid gap-4 md:grid-cols-2">
-              <div>
-                <label for="civil-status" class="mb-2 block text-sm font-bold text-slate-800">Estado civil *</label>
-                <select id="civil-status" name="estadoCivil" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
-                  <option value="">Selecciona</option>
-                  <option value="soltero">Soltero</option>
-                  <option value="casado">Casado</option>
-                  <option value="divorciado">Divorciado</option>
-                  <option value="separado">Separado</option>
-                  <option value="uni?n libre">Uni?n libre</option>
-                </select>
-              </div>
-              <div>
-                <label for="client-status" class="mb-2 block text-sm font-bold text-slate-800">Estado *</label>
-                <select id="client-status" name="estado" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
-                  <option value="activo">Activo</option>
-                  <option value="inactivo">Inactivo</option>
-                </select>
-              </div>
-            </div>
-
-            <p id="client-form-message" class="hidden rounded-2xl px-4 py-3 text-sm font-semibold" role="alert" aria-live="polite"></p>
-
-            <button id="client-submit-button" type="submit" class="rounded-xl bg-amber-400 px-5 py-3 text-sm font-black text-slate-950 hover:bg-amber-300">Guardar cliente</button>
-          </form>
-        </section>
-
-        <section class="space-y-6" aria-labelledby="client-list-title">
-          <div class="rounded-[2rem] bg-white p-5 shadow-xl shadow-slate-950/10 sm:p-6">
-            <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <p class="text-sm font-bold uppercase tracking-[0.25em] text-teal-700">Listado</p>
-                <h2 id="client-list-title" class="mt-1 text-2xl font-black text-slate-950">Clientes registrados</h2>
-                <p class="mt-2 text-sm text-slate-600">Busca por nombres, apellidos o identificaci?n.</p>
-              </div>
-              <div class="w-full lg:max-w-sm">
-                <label for="client-search" class="sr-only">Buscar cliente</label>
-                <input id="client-search" type="search" placeholder="Buscar cliente..." class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm">
-              </div>
-            </div>
-
-            <div class="mt-5 overflow-x-auto rounded-2xl border border-slate-200">
-              <table class="min-w-full divide-y divide-slate-200 text-left">
-                <thead class="bg-slate-950 text-xs uppercase tracking-[0.18em] text-slate-200">
-                  <tr>
-                    <th scope="col" class="px-4 py-3">Cliente</th>
-                    <th scope="col" class="px-4 py-3">Contacto</th>
-                    <th scope="col" class="px-4 py-3">Identificaci?n</th>
-                    <th scope="col" class="px-4 py-3">Estado civil</th>
-                    <th scope="col" class="px-4 py-3">Estado</th>
-                    <th scope="col" class="px-4 py-3 text-right">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody id="clients-table-body" class="divide-y divide-slate-200 bg-white"></tbody>
-              </table>
-            </div>
-            <p id="clients-empty-state" class="hidden mt-4 rounded-2xl border border-dashed border-slate-300 px-4 py-5 text-center text-sm font-semibold text-slate-600">A?n no has registrado clientes.</p>
-            <p id="clients-no-results" class="hidden mt-4 rounded-2xl border border-dashed border-amber-300 bg-amber-50 px-4 py-5 text-center text-sm font-semibold text-amber-900">No encontramos clientes con ese criterio.</p>
-          </div>
-
-          <aside class="rounded-[2rem] bg-slate-950 p-5 text-white shadow-xl shadow-slate-950/20 sm:p-6" aria-labelledby="client-detail-title">
-            <p class="text-sm font-bold uppercase tracking-[0.25em] text-amber-300">Detalle</p>
-            <h2 id="client-detail-title" class="mt-1 text-2xl font-black">Consulta del cliente</h2>
-            <div id="client-detail" class="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
-              Selecciona un cliente para consultar su detalle.
-            </div>
-          </aside>
-        </section>
+      <div id="clients-data-error" class="clients-alert clients-alert-error" role="alert" hidden>
+        <div>
+          <strong>No pudimos cargar tus clientes.</strong>
+          <span>Revisa la conexión local e inténtalo nuevamente.</span>
+        </div>
+        <button id="clients-retry-button" type="button">Reintentar</button>
       </div>
+
+      <section class="clients-ledger" aria-labelledby="client-list-title">
+        <div class="clients-ledger-header">
+          <div>
+            <p class="clients-eyebrow">Directorio operativo</p>
+            <h2 id="client-list-title">Clientes registrados</h2>
+            <p id="clients-results-count" aria-live="polite">Cargando directorio…</p>
+          </div>
+
+          <div class="clients-filter-grid">
+            <label class="clients-search-field">
+              <span class="sr-only">Buscar por nombres, apellidos o identificación</span>
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <input id="client-search" name="client-search" type="search" autocomplete="off" placeholder="Buscar por nombres, apellidos o identificación…">
+            </label>
+            <button id="clients-clear-filters" class="clients-secondary-action" type="button" hidden>Limpiar filtros</button>
+          </div>
+        </div>
+
+        <div class="clients-status-tabs" role="group" aria-label="Filtrar clientes por estado">
+          <button type="button" class="client-filter-tab is-active" data-client-status="todos" aria-pressed="true">Todos</button>
+          <button type="button" class="client-filter-tab" data-client-status="activo" aria-pressed="false">Activos</button>
+          <button type="button" class="client-filter-tab" data-client-status="inactivo" aria-pressed="false">Inactivos</button>
+        </div>
+
+        <div id="clients-loading" class="clients-loading" role="status" aria-label="Cargando clientes">
+          <span></span><span></span><span></span>
+        </div>
+
+        <div id="clients-content" hidden>
+          <div class="clients-table-wrap">
+            <table class="clients-table">
+              <caption class="sr-only">Directorio de clientes de FreelanceFlow</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Cliente</th>
+                  <th scope="col">Identificación</th>
+                  <th scope="col">Contacto principal</th>
+                  <th scope="col">Contacto</th>
+                  <th scope="col">Estado civil</th>
+                  <th scope="col">Estado</th>
+                  <th scope="col"><span class="sr-only">Acciones</span></th>
+                </tr>
+              </thead>
+              <tbody id="clients-table-body"></tbody>
+            </table>
+          </div>
+
+          <ul id="clients-card-list" class="clients-card-list"></ul>
+
+          <div id="clients-empty-state" class="clients-empty-state" hidden>
+            <span class="clients-empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM19 8v6M16 11h6"/></svg>
+            </span>
+            <h3>Aún no has registrado clientes</h3>
+            <p>Agrega tu primer cliente para vincular proyectos, propuestas y facturas.</p>
+            <button class="clients-primary-action" type="button" data-action="create-client">Registrar primer cliente</button>
+          </div>
+
+          <div id="clients-no-results" class="clients-empty-state" hidden>
+            <span class="clients-empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M8.5 11h5"/></svg>
+            </span>
+            <h3>No encontramos clientes con ese criterio</h3>
+            <p>Prueba otra búsqueda o limpia los filtros aplicados.</p>
+            <button class="clients-secondary-action" type="button" data-action="clear-client-filters">Limpiar filtros</button>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 
-  <script src="./assets/js/clientes.js"></script>
+  <button id="client-drawer-backdrop" class="client-drawer-backdrop" type="button" aria-label="Cerrar panel" tabindex="-1"></button>
+
+  <aside id="client-drawer" class="client-drawer" role="dialog" aria-modal="true" aria-labelledby="client-drawer-title" aria-hidden="true" inert>
+    <header class="client-drawer-header">
+      <div>
+        <p id="client-drawer-eyebrow" class="clients-eyebrow">Ficha comercial</p>
+        <h2 id="client-drawer-title">Detalle del cliente</h2>
+        <p id="client-drawer-description">Consulta la información comercial y del contacto principal.</p>
+      </div>
+      <button id="client-drawer-close" class="client-drawer-close" type="button" aria-label="Cerrar panel">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+
+    <div id="client-detail-view" class="client-detail-view" hidden>
+      <div id="client-detail-content"></div>
+      <div class="client-drawer-actions">
+        <button id="client-detail-close" class="clients-secondary-action" type="button">Cerrar</button>
+        <button id="client-detail-edit" class="clients-primary-action" type="button">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg>
+          Editar cliente
+        </button>
+      </div>
+    </div>
+
+    <form id="client-form" class="client-form" novalidate hidden>
+      <input id="client-id" name="id" type="hidden">
+
+      <fieldset class="client-form-section">
+        <legend><span>1</span> Datos comerciales</legend>
+        <div class="client-field">
+          <label for="business-name">Nombre o razón social <strong aria-hidden="true">*</strong></label>
+          <input id="business-name" name="nombre_razon_social" type="text" autocomplete="organization" required placeholder="Ej. Bodega Andina S.A.…">
+          <span id="business-name-error" class="client-field-error" data-field-error="nombre_razon_social"></span>
+        </div>
+        <div class="client-field">
+          <label for="client-type">Tipo de cliente <strong aria-hidden="true">*</strong></label>
+          <select id="client-type" name="tipo_cliente" required>
+            <option value="">Selecciona una opción</option>
+            <option value="Empresa">Empresa</option>
+            <option value="Persona natural">Persona natural</option>
+          </select>
+          <span class="client-field-error" data-field-error="tipo_cliente"></span>
+        </div>
+      </fieldset>
+
+      <fieldset class="client-form-section">
+        <legend><span>2</span> Contacto principal / representante legal</legend>
+        <div class="client-fields-row">
+          <div class="client-field">
+            <label for="first-names">Nombres <strong aria-hidden="true">*</strong></label>
+            <input id="first-names" name="nombres" type="text" autocomplete="given-name" required placeholder="Ej. Marcela…">
+            <span class="client-field-error" data-field-error="nombres"></span>
+          </div>
+          <div class="client-field">
+            <label for="last-names">Apellidos <strong aria-hidden="true">*</strong></label>
+            <input id="last-names" name="apellidos" type="text" autocomplete="family-name" required placeholder="Ej. Ríos Paredes…">
+            <span class="client-field-error" data-field-error="apellidos"></span>
+          </div>
+        </div>
+        <div class="client-field">
+          <label for="identification">Identificación <strong aria-hidden="true">*</strong></label>
+          <input id="identification" name="identificacion" type="text" autocomplete="off" spellcheck="false" required placeholder="RUC, cédula o identificación fiscal…">
+          <span class="client-field-error" data-field-error="identificacion"></span>
+        </div>
+        <div class="client-field">
+          <label for="civil-status">Estado civil <strong aria-hidden="true">*</strong></label>
+          <select id="civil-status" name="estadoCivil" required>
+            <option value="">Selecciona una opción</option>
+            <option value="soltero">Soltero</option>
+            <option value="casado">Casado</option>
+            <option value="divorciado">Divorciado</option>
+            <option value="separado">Separado</option>
+            <option value="unión libre">Unión libre</option>
+          </select>
+          <span class="client-field-error" data-field-error="estadoCivil"></span>
+        </div>
+      </fieldset>
+
+      <fieldset class="client-form-section">
+        <legend><span>3</span> Contacto y ubicación</legend>
+        <div class="client-field">
+          <label for="email">Correo electrónico <strong aria-hidden="true">*</strong></label>
+          <input id="email" name="correo" type="email" inputmode="email" autocomplete="email" spellcheck="false" required placeholder="nombre@empresa.com…">
+          <span class="client-field-error" data-field-error="correo"></span>
+        </div>
+        <div class="client-fields-row">
+          <div class="client-field">
+            <label for="mobile">Celular <strong aria-hidden="true">*</strong></label>
+            <input id="mobile" name="celular" type="tel" inputmode="tel" autocomplete="tel" required placeholder="+593 99 000 0000…">
+            <span class="client-field-error" data-field-error="celular"></span>
+          </div>
+          <div class="client-field">
+            <label for="phone">Teléfono <small>(opcional)</small></label>
+            <input id="phone" name="telefono" type="tel" inputmode="tel" autocomplete="tel" placeholder="+593 2 000 0000…">
+            <span class="client-field-error" data-field-error="telefono"></span>
+          </div>
+        </div>
+        <div class="client-field">
+          <label for="address">Dirección <small>(opcional)</small></label>
+          <textarea id="address" name="direccion" autocomplete="street-address" rows="3" placeholder="Calle, número, ciudad…"></textarea>
+          <span class="client-field-error" data-field-error="direccion"></span>
+        </div>
+      </fieldset>
+
+      <fieldset class="client-form-section client-status-fieldset">
+        <legend><span>4</span> Estado del cliente</legend>
+        <div class="client-status-options">
+          <label>
+            <input type="radio" name="estado" value="activo" required>
+            <span><strong>Activo</strong><small>Disponible para nuevas operaciones</small></span>
+          </label>
+          <label>
+            <input type="radio" name="estado" value="inactivo" required>
+            <span><strong>Inactivo</strong><small>Se conserva en el historial</small></span>
+          </label>
+        </div>
+        <span class="client-field-error" data-field-error="estado"></span>
+      </fieldset>
+
+      <p id="client-form-summary" class="clients-alert clients-alert-error" role="alert" tabindex="-1" hidden></p>
+
+      <div class="client-form-actions">
+        <button id="client-form-cancel" class="clients-secondary-action" type="button">Cancelar</button>
+        <button id="client-submit-button" class="clients-primary-action" type="submit">Registrar cliente</button>
+      </div>
+    </form>
+  </aside>
+
+  <dialog id="client-status-dialog" class="client-confirm-dialog" aria-labelledby="client-status-dialog-title">
+    <form method="dialog">
+      <span class="client-confirm-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.7 2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.7a2 2 0 0 0-3.4 0Z"/></svg>
+      </span>
+      <h2 id="client-status-dialog-title">¿Inactivar este cliente?</h2>
+      <p>El cliente permanecerá en tu historial, pero no aparecerá como opción activa en nuevos registros.</p>
+      <div>
+        <button type="submit" value="cancel" class="clients-secondary-action">Cancelar</button>
+        <button type="submit" value="confirm" class="clients-danger-action">Inactivar cliente</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="client-toast" class="client-toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+
+  <script src="./assets/js/client-model.js" defer></script>
+  <script src="./assets/data/mock-data.js" defer></script>
+  <script src="./assets/js/mock-data-loader.js" defer></script>
+  <script src="./assets/js/app-shell.js" defer></script>
+  <script src="./assets/js/clientes.js" defer></script>
 </body>
 </html>
