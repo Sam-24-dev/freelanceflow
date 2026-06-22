@@ -3,58 +3,256 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Pantalla estática de Facturas para la Fase 1 de FreelanceFlow.">
+  <meta name="description" content="Gestiona facturas, pagos, saldos pendientes y vencimientos desde FreelanceFlow.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0f172a">
   <title>FreelanceFlow | Facturas</title>
   <link rel="icon" type="image/png" href="./img/brand/favicon-32.png">
   <link rel="apple-touch-icon" href="./img/brand/apple-touch-icon.png">
-  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="./assets/css/styles.css">
 </head>
-<body class="app-shell min-h-screen">
-  <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-amber-500 focus:px-4 focus:py-2 focus:font-bold focus:text-slate-950">
+<body class="app-shell app-shell-page invoices-app min-h-screen">
+  <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-full focus:bg-amber-500 focus:px-4 focus:py-2 focus:font-bold focus:text-slate-950">
     Saltar al contenido principal
   </a>
 
-  <div class="min-h-screen lg:grid lg:grid-cols-[18rem_1fr]">
-    <aside class="flex flex-col border-r border-white/10 bg-slate-950/95 px-6 py-6 text-white lg:min-h-screen" aria-label="Menú lateral">
-      <header class="mb-8">
-        <p class="text-sm uppercase tracking-[0.35em] text-amber-300">SaaS financiero</p>
-        <p class="mt-2 text-2xl font-black tracking-tight">FreelanceFlow</p>
-        <p class="mt-3 text-sm leading-6 text-slate-300">Control financiero operativo para freelancers.</p>
+  <div class="app-layout min-h-screen" data-app-layout>
+    <div class="app-sidebar-slot" data-app-sidebar-slot aria-hidden="true"></div>
+
+    <main id="main-content" class="app-main invoices-main" tabindex="-1">
+      <header class="invoices-heading">
+        <div>
+          <p class="invoices-eyebrow">Gestión de cobros</p>
+          <h1>Facturas</h1>
+          <p>Administra tus facturas, controla los pagos pendientes y prioriza los cobros vencidos.</p>
+        </div>
+        <button class="invoices-primary-button" type="button" data-open-invoice-form>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          Nueva factura
+        </button>
       </header>
 
-      <nav aria-label="Navegación principal" class="flex-1">
-        <ul class="space-y-2 text-sm font-semibold">
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="index.html">Inicio</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="dashboard.html">Dashboard</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="clientes.html">Clientes</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="registro.html">Registro</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="login.html">Login</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="perfil.html">Perfil</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="configuracion_fiscal.html">Configuración fiscal</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="ajustes.html">Ajustes</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="categorias.html">Categorías</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="servicios.html">Servicios</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="propuestas.html">Propuestas</a></li>
-          <li><a class="block rounded-2xl bg-amber-400 px-4 py-3 text-slate-950 shadow-lg shadow-amber-500/20" href="facturas.html" aria-current="page">Facturas</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="reportes.html">Reportes</a></li>
-          <li><a class="block rounded-2xl px-4 py-3 text-slate-200 transition-colors duration-200 hover:bg-white/10 hover:text-white" href="notificaciones.html">Notificaciones</a></li>
-        </ul>
-      </nav>
+      <section class="invoices-summary" aria-labelledby="invoice-summary-title">
+        <h2 id="invoice-summary-title" class="sr-only">Resumen de cuentas por cobrar</h2>
+        <article class="invoice-summary-card is-receivable">
+          <span class="invoice-summary-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M4 6h16v12H4zM8 10h8M8 14h5"/></svg>
+          </span>
+          <div><p>Saldo pendiente</p><strong data-metric-pending>$0.00</strong><small data-metric-pending-copy>Sin saldos pendientes</small></div>
+        </article>
+        <article class="invoice-summary-card is-overdue">
+          <span class="invoice-summary-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 8v5m0 4h.01M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+          </span>
+          <div><p>Facturas vencidas</p><strong data-metric-overdue>$0.00</strong><small data-metric-overdue-copy>No tienes facturas vencidas</small></div>
+        </article>
+        <article class="invoice-summary-card is-collected">
+          <span class="invoice-summary-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6M4 20h16"/></svg>
+          </span>
+          <div><p>Cobrado este mes</p><strong data-metric-collected>$0.00</strong><small>Pagos recibidos en el período</small></div>
+        </article>
+        <article class="invoice-summary-card is-count">
+          <span class="invoice-summary-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Zm3 5h6m-6 4h6m-6 4h3"/></svg>
+          </span>
+          <div><p>Facturas pendientes</p><strong data-metric-count>0</strong><small>Enviadas, parciales o vencidas</small></div>
+        </article>
+      </section>
 
-      <footer class="mt-8 border-t border-white/10 pt-4 text-xs leading-5 text-slate-400">
-        <p>Prototipo estático · Fase 1</p>
-        <p>Sin backend ni base de datos.</p>
-      </footer>
-    </aside>
+      <section class="invoices-ledger" aria-labelledby="invoice-ledger-title">
+        <header class="invoices-ledger-header">
+          <div>
+            <p class="invoices-section-eyebrow">Libro de facturación</p>
+            <h2 id="invoice-ledger-title">Cuentas por cobrar</h2>
+            <p data-result-count aria-live="polite">Cargando facturas…</p>
+          </div>
+        </header>
 
-    <main id="main-content" class="px-5 py-6 sm:px-8 lg:px-10">
-      <section class="ledger-card ledger-line rounded-[2rem] p-6 sm:p-8" aria-labelledby="module-title">
-        <p class="text-sm font-bold uppercase tracking-[0.25em] text-teal-700">Facturas</p>
-        <h1 id="module-title" class="mt-3 text-3xl font-black tracking-tight text-slate-950">Módulo en construcción - Fase 2</h1>
-        <p class="mt-3 max-w-2xl text-slate-600">Esta pantalla queda conectada para validar navegación física del prototipo. La lógica funcional se implementará en la siguiente etapa.</p>
+        <div class="invoice-status-tabs" role="group" aria-label="Filtrar facturas por estado" data-status-tabs>
+          <button type="button" class="is-active" data-status="todos" aria-pressed="true">Todos</button>
+          <button type="button" data-status="DRAFT" aria-pressed="false">Borrador</button>
+          <button type="button" data-status="SENT" aria-pressed="false">Enviada</button>
+          <button type="button" data-status="PARTIAL" aria-pressed="false">Parcial</button>
+          <button type="button" data-status="PAID" aria-pressed="false">Pagada</button>
+          <button type="button" data-status="OVERDUE" aria-pressed="false">Vencida</button>
+          <button type="button" data-status="VOID" aria-pressed="false">Anulada</button>
+        </div>
+
+        <form class="invoice-filter-grid" data-invoice-filters role="search">
+          <label class="invoice-search-field">
+            <span>Buscar facturas</span>
+            <span class="invoice-input-shell">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+              <input type="search" name="query" autocomplete="off" placeholder="Número, cliente o proyecto…">
+            </span>
+          </label>
+          <label>
+            <span>Período</span>
+            <input type="month" name="period" value="2026-06">
+          </label>
+          <label>
+            <span>Cliente</span>
+            <select name="clientId"><option value="todos">Todos los clientes</option></select>
+          </label>
+          <label>
+            <span>Proyecto</span>
+            <select name="projectId"><option value="todos">Todos los proyectos</option></select>
+          </label>
+          <button class="invoices-secondary-button" type="reset" data-clear-filters hidden>Limpiar filtros</button>
+        </form>
+
+        <div class="invoice-loading" data-invoice-loading aria-label="Cargando facturas">
+          <span></span><span></span><span></span>
+        </div>
+
+        <div class="invoice-table-wrap" data-invoice-table-wrap hidden>
+          <table class="invoice-table">
+            <caption class="sr-only">Facturas registradas y sus saldos pendientes</caption>
+            <thead>
+              <tr>
+                <th scope="col">Número</th>
+                <th scope="col">Cliente</th>
+                <th scope="col">Proyecto</th>
+                <th scope="col">Emisión / vencimiento</th>
+                <th scope="col" class="is-numeric">Total</th>
+                <th scope="col" class="is-numeric">Saldo pendiente</th>
+                <th scope="col">Estado</th>
+                <th scope="col"><span class="sr-only">Acciones</span></th>
+              </tr>
+            </thead>
+            <tbody data-invoice-table-body></tbody>
+          </table>
+        </div>
+
+        <div class="invoice-mobile-list" data-invoice-mobile-list hidden></div>
+
+        <div class="invoice-empty-state" data-invoice-empty hidden>
+          <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Zm3 5h6m-6 4h6"/></svg></span>
+          <h3 data-empty-title>Aún no has emitido facturas</h3>
+          <p data-empty-copy>Crea tu primera factura para comenzar a controlar cobros y vencimientos.</p>
+          <button class="invoices-primary-button" type="button" data-empty-action>Crear primera factura</button>
+        </div>
+
+        <div class="invoice-error-state" data-invoice-error hidden role="alert">
+          <h3>No pudimos cargar las facturas</h3>
+          <p>Revisa que el servidor local esté activo e intenta nuevamente.</p>
+          <button class="invoices-secondary-button" type="button" data-retry-load>Reintentar</button>
+        </div>
       </section>
     </main>
   </div>
+
+  <button class="invoice-panel-backdrop" type="button" data-panel-backdrop aria-label="Cerrar panel" hidden></button>
+
+  <aside class="invoice-detail-panel" data-invoice-detail aria-labelledby="invoice-detail-title" aria-hidden="true" inert>
+    <header class="invoice-detail-header">
+      <div>
+        <p class="invoices-section-eyebrow">Detalle de factura</p>
+        <h2 id="invoice-detail-title" data-detail-number>Factura</h2>
+        <div class="invoice-detail-state-line"><span data-detail-status></span><span data-detail-timing></span></div>
+      </div>
+      <button class="invoices-icon-button is-on-dark" type="button" data-close-detail aria-label="Cerrar detalle de factura">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+    <div class="invoice-detail-body" data-detail-body></div>
+    <footer class="invoice-detail-actions" data-detail-actions></footer>
+  </aside>
+
+  <aside class="invoice-form-panel" data-invoice-form aria-labelledby="invoice-form-title" aria-hidden="true" inert>
+    <header class="invoice-form-header">
+      <div><p class="invoices-section-eyebrow">Emisión</p><h2 id="invoice-form-title">Nueva factura</h2><p>Crea un borrador claro y revisa el total antes de enviarlo.</p></div>
+      <button class="invoices-icon-button" type="button" data-close-invoice-form aria-label="Cerrar formulario de factura">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+    <form class="invoice-form" data-invoice-form-element novalidate>
+      <div class="invoice-form-message" data-invoice-form-message role="alert" hidden></div>
+      <div class="invoice-fields-row">
+        <label><span>Cliente *</span><select name="cliente_id" required><option value="">Selecciona un cliente</option></select><small data-error-for="cliente_id"></small></label>
+        <label><span>Proyecto relacionado</span><select name="proyecto_relacionado_id"><option value="">Sin proyecto asociado</option></select></label>
+      </div>
+      <div class="invoice-fields-row is-three">
+        <label><span>Número</span><input name="numero_factura" readonly aria-readonly="true"></label>
+        <label><span>Fecha de emisión *</span><input type="date" name="fecha_emision" required><small data-error-for="fecha_emision"></small></label>
+        <label><span>Fecha de vencimiento *</span><input type="date" name="fecha_vencimiento" required><small data-error-for="fecha_vencimiento"></small></label>
+      </div>
+      <label class="invoice-currency-field"><span>Moneda *</span><select name="moneda" required><option value="USD">USD — Dólar estadounidense</option></select><small data-error-for="moneda"></small></label>
+
+      <fieldset class="invoice-items-editor">
+        <legend>Ítems de la factura</legend>
+        <p>Describe con precisión qué estás cobrando.</p>
+        <div data-invoice-items></div>
+        <button class="invoices-text-button" type="button" data-add-invoice-item>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Agregar ítem
+        </button>
+        <small class="invoice-group-error" data-error-for="items"></small>
+      </fieldset>
+
+      <div class="invoice-adjustments">
+        <label><span>Descuento</span><span class="invoice-money-input"><b>$</b><input type="number" name="descuento" min="0" step="0.01" value="0"></span></label>
+        <label><span>Impuestos</span><span class="invoice-money-input"><b>$</b><input type="number" name="impuestos" min="0" step="0.01" value="0"></span></label>
+      </div>
+      <dl class="invoice-live-totals" aria-live="polite">
+        <div><dt>Subtotal</dt><dd data-form-subtotal>$0.00</dd></div>
+        <div><dt>Descuento</dt><dd data-form-discount>$0.00</dd></div>
+        <div><dt>Impuestos</dt><dd data-form-tax>$0.00</dd></div>
+        <div class="is-total"><dt>Total</dt><dd data-form-total>$0.00</dd></div>
+      </dl>
+      <small class="invoice-group-error" data-error-for="total"></small>
+      <footer class="invoice-form-actions">
+        <button class="invoices-secondary-button" type="button" data-cancel-invoice-form>Cancelar</button>
+        <button class="invoices-secondary-button" type="submit" name="intent" value="draft">Guardar borrador</button>
+        <button class="invoices-primary-button" type="submit" name="intent" value="send">Enviar factura</button>
+      </footer>
+    </form>
+  </aside>
+
+  <dialog class="invoice-dialog" data-payment-dialog aria-labelledby="payment-dialog-title">
+    <form method="dialog" class="invoice-dialog-shell" data-payment-form novalidate>
+      <header><div><p class="invoices-section-eyebrow">Registro de cobro</p><h2 id="payment-dialog-title">Registrar pago</h2><p>Confirma el importe antes de actualizar el saldo.</p></div><button class="invoices-icon-button" type="button" data-close-payment aria-label="Cerrar registro de pago"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+      <dl class="payment-summary"><div><dt>Total</dt><dd data-payment-total>$0.00</dd></div><div><dt>Pagado</dt><dd data-payment-paid>$0.00</dd></div><div><dt>Saldo pendiente</dt><dd data-payment-pending>$0.00</dd></div></dl>
+      <div class="invoice-form-message is-warning" data-payment-warning role="status" hidden></div>
+      <label><span>Monto pagado *</span><span class="invoice-money-input is-prominent"><b>$</b><input type="number" name="monto_pagado" min="0.01" step="0.01" required inputmode="decimal"></span><small data-error-for="monto_pagado"></small></label>
+      <div class="invoice-fields-row">
+        <label><span>Fecha de pago *</span><input type="date" name="fecha_pago" required><small data-error-for="fecha_pago"></small></label>
+        <label><span>Método de pago *</span><select name="metodo_pago" required><option value="">Selecciona un método</option><option>Transferencia bancaria</option><option>PayPal</option><option>Efectivo</option><option>Tarjeta</option></select><small data-error-for="metodo_pago"></small></label>
+      </div>
+      <label><span>Referencia o comprobante</span><input name="referencia_comprobante" maxlength="80" placeholder="Ej. TRX-123456"></label>
+      <label><span>Notas</span><textarea name="notas" rows="3" maxlength="240" placeholder="Contexto opcional sobre el pago"></textarea></label>
+      <footer><button class="invoices-secondary-button" type="button" data-close-payment>Cancelar</button><button class="invoices-primary-button" type="submit">Registrar pago</button></footer>
+    </form>
+  </dialog>
+
+  <dialog class="invoice-dialog" data-void-dialog aria-labelledby="void-dialog-title">
+    <form method="dialog" class="invoice-dialog-shell" data-void-form novalidate>
+      <header><div><p class="invoices-section-eyebrow is-danger">Acción irreversible</p><h2 id="void-dialog-title">Anular factura</h2><p>La factura seguirá visible en el historial.</p></div><button class="invoices-icon-button" type="button" data-close-void aria-label="Cerrar anulación de factura"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+      <label><span>Motivo de anulación *</span><textarea name="motivo_anulacion" rows="4" minlength="10" required placeholder="Explica por qué debe anularse"></textarea><small data-error-for="motivo_anulacion"></small></label>
+      <label class="invoice-checkbox"><input type="checkbox" name="confirmacion_anulacion" required><span>Confirmo que deseo anular esta factura.</span></label><small data-error-for="confirmacion_anulacion"></small>
+      <footer><button class="invoices-secondary-button" type="button" data-close-void>Cancelar</button><button class="invoices-danger-button" type="submit">Confirmar anulación</button></footer>
+    </form>
+  </dialog>
+
+  <div class="invoice-toast" data-invoice-toast role="status" aria-live="polite" aria-atomic="true" hidden></div>
+
+  <template id="invoice-item-template">
+    <div class="invoice-item-row">
+      <label><span>Origen *</span><select name="origen_item"><option>Manual</option><option>Desde tiempo</option><option>Desde catálogo</option></select></label>
+      <label class="is-description"><span>Descripción *</span><input name="descripcion_item" maxlength="140" placeholder="Servicio o entregable"></label>
+      <label><span>Cantidad *</span><input type="number" name="cantidad" min="0.01" step="0.01" value="1" inputmode="decimal"></label>
+      <label><span>Precio unitario *</span><span class="invoice-money-input"><b>$</b><input type="number" name="precio_unitario" min="0" step="0.01" value="0" inputmode="decimal"></span></label>
+      <strong data-item-subtotal>$0.00</strong>
+      <button class="invoices-icon-button" type="button" data-remove-invoice-item aria-label="Eliminar ítem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16m-10 4v6m4-6v6M9 7l1-3h4l1 3m-9 0 1 14h10l1-14"/></svg></button>
+    </div>
+  </template>
+
+  <script src="./assets/data/mock-data.js"></script>
+  <script src="./assets/js/mock-data-loader.js"></script>
+  <script src="./assets/js/app-shell.js"></script>
+  <script src="./assets/vendor/jspdf.umd.min.js"></script>
+  <script src="./assets/js/invoice-model.js"></script>
+  <script src="./assets/js/invoice-pdf.js"></script>
+  <script src="./assets/js/facturas.js"></script>
 </body>
 </html>

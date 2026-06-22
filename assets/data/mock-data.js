@@ -1,4 +1,4 @@
-{
+window.FreelanceFlowMockData = {
   "usuario": {
     "id": "usr_001",
     "nombre_completo": "Andrés Vélez Moreno",
@@ -464,4 +464,4 @@
       "tipo_cuenta": "billetera_digital"
     }
   ]
-}
+};

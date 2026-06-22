@@ -1,432 +1,646 @@
-﻿/*
-  FreelanceFlow - M?dulo Clientes Fase 1
-  JavaScript puro: datos simulados en navegador, sin backend, APIs ni base de datos.
-*/
+/* FreelanceFlow — Clientes. Browser-only prototype; no backend or external APIs. */
 
-const CLIENTS_DATA_URL = './assets/data/mock-data.json';
-const CLIENTS_STORAGE_KEY = 'freelanceflow_clients_mock';
-const CIVIL_STATUS_OPTIONS = ['soltero', 'casado', 'divorciado', 'separado', 'uni?n libre'];
-const CLIENT_STATUS_OPTIONS = ['activo', 'inactivo'];
+(function clientsModule() {
+  const DATA_URL = './assets/data/mock-data.json';
+  const STORAGE_KEY = 'freelanceflow_clients_v2';
+  const LEGACY_STORAGE_KEY = 'freelanceflow_clients_mock';
+  const model = window.FreelanceFlowClientModel;
 
-let clients = [];
-let selectedClientId = null;
+  const state = {
+    clients: [],
+    filters: { query: '', status: 'todos' },
+    selectedClientId: null,
+    pendingStatusChange: null,
+    drawerMode: null,
+    formDirty: false,
+    lastTrigger: null,
+    toastTimer: null
+  };
 
-const dateFormatter = new Intl.DateTimeFormat('es-EC', {
-  year: 'numeric',
-  month: 'short',
-  day: '2-digit'
-});
+  const dateFormatter = new Intl.DateTimeFormat('es-EC', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
 
-document.addEventListener('DOMContentLoaded', async () => {
-  try {
-    clients = await loadClients();
-    setupClientForm();
-    setupSearch();
-    renderClients();
-    renderClientDetail(null);
-  } catch (error) {
-    showDataError(error);
-  }
-});
+  let elements = {};
 
-async function loadClients() {
-  const storedClients = localStorage.getItem(CLIENTS_STORAGE_KEY);
-  if (storedClients) return normalizeClients(JSON.parse(storedClients));
+  document.addEventListener('DOMContentLoaded', initialize);
 
-  const response = await fetch(CLIENTS_DATA_URL);
-  if (!response.ok) throw new Error(`No se pudo cargar el mock data: ${response.status}`);
-
-  const data = await response.json();
-  return normalizeClients(data.clientes ?? []);
-}
-
-function normalizeClients(rawClients) {
-  return rawClients.map((client) => ({
-    id: client.id,
-    nombre_razon_social: client.nombre_razon_social ?? '',
-    tipo_cliente: client.tipo_cliente ?? 'Empresa',
-    nombres: client.nombres ?? '',
-    apellidos: client.apellidos ?? '',
-    identificacion: client.identificacion ?? client.identificacion_fiscal ?? '',
-    identificacion_fiscal: client.identificacion_fiscal ?? client.identificacion ?? '',
-    telefono: client.telefono ?? '',
-    celular: client.celular ?? '',
-    correo: client.correo ?? client.correo_electronico ?? '',
-    correo_electronico: client.correo_electronico ?? client.correo ?? '',
-    direccion: client.direccion ?? '',
-    estadoCivil: client.estadoCivil ?? 'soltero',
-    estado: client.estado ?? 'activo',
-    fecha_registro: client.fecha_registro ?? getTodayDate()
-  }));
-}
-
-function setupClientForm() {
-  const form = document.getElementById('client-form');
-  const clearButton = document.getElementById('client-clear-button');
-
-  if (!form) return;
-
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-
-    const formData = readClientForm();
-    const validation = validateClient(formData);
-
-    if (!validation.valid) {
-      showFormMessage(validation.message, 'error');
+  async function initialize() {
+    if (!model) {
+      showFatalError(new Error('El modelo de clientes no está disponible.'));
       return;
     }
 
-    if (formData.id) {
-      updateClient(formData);
-      showFormMessage('Cliente actualizado correctamente.', 'success');
+    cacheElements();
+    readFiltersFromUrl();
+    bindEvents();
+    syncFilterControls();
+    await loadAndRenderClients();
+  }
+
+  function cacheElements() {
+    elements = {
+      appLayout: document.querySelector('[data-app-layout]'),
+      createButton: document.getElementById('client-create-button'),
+      search: document.getElementById('client-search'),
+      clearFilters: document.getElementById('clients-clear-filters'),
+      tabs: [...document.querySelectorAll('[data-client-status]')],
+      retryButton: document.getElementById('clients-retry-button'),
+      dataError: document.getElementById('clients-data-error'),
+      loading: document.getElementById('clients-loading'),
+      content: document.getElementById('clients-content'),
+      tableBody: document.getElementById('clients-table-body'),
+      cardList: document.getElementById('clients-card-list'),
+      emptyState: document.getElementById('clients-empty-state'),
+      noResults: document.getElementById('clients-no-results'),
+      resultsCount: document.getElementById('clients-results-count'),
+      totalCount: document.getElementById('clients-total-count'),
+      activeCount: document.getElementById('clients-active-count'),
+      inactiveCount: document.getElementById('clients-inactive-count'),
+      backdrop: document.getElementById('client-drawer-backdrop'),
+      drawer: document.getElementById('client-drawer'),
+      drawerClose: document.getElementById('client-drawer-close'),
+      drawerEyebrow: document.getElementById('client-drawer-eyebrow'),
+      drawerTitle: document.getElementById('client-drawer-title'),
+      drawerDescription: document.getElementById('client-drawer-description'),
+      detailView: document.getElementById('client-detail-view'),
+      detailContent: document.getElementById('client-detail-content'),
+      detailClose: document.getElementById('client-detail-close'),
+      detailEdit: document.getElementById('client-detail-edit'),
+      form: document.getElementById('client-form'),
+      formSummary: document.getElementById('client-form-summary'),
+      formCancel: document.getElementById('client-form-cancel'),
+      submitButton: document.getElementById('client-submit-button'),
+      statusDialog: document.getElementById('client-status-dialog'),
+      toast: document.getElementById('client-toast')
+    };
+  }
+
+  function bindEvents() {
+    elements.createButton?.addEventListener('click', (event) => openCreateForm(event.currentTarget));
+    elements.search?.addEventListener('input', (event) => {
+      state.filters.query = event.currentTarget.value;
+      updateFilterUrl();
+      renderDirectory();
+    });
+    elements.clearFilters?.addEventListener('click', clearFilters);
+    elements.tabs.forEach((tab) => tab.addEventListener('click', () => {
+      state.filters.status = tab.dataset.clientStatus;
+      syncFilterControls();
+      updateFilterUrl();
+      renderDirectory();
+    }));
+    elements.retryButton?.addEventListener('click', loadAndRenderClients);
+
+    document.getElementById('main-content')?.addEventListener('click', handleActionClick);
+    document.getElementById('main-content')?.addEventListener('change', handleInlineChange);
+    elements.detailContent?.addEventListener('change', handleInlineChange);
+    elements.detailEdit?.addEventListener('click', () => {
+      const client = findClient(state.selectedClientId);
+      if (client) openEditForm(client, elements.detailEdit);
+    });
+    elements.detailClose?.addEventListener('click', () => closeDrawer());
+    elements.backdrop?.addEventListener('click', () => closeDrawer({ confirmDirty: true }));
+    elements.drawerClose?.addEventListener('click', () => closeDrawer({ confirmDirty: true }));
+    elements.formCancel?.addEventListener('click', () => closeDrawer({ confirmDirty: true }));
+    elements.form?.addEventListener('input', () => { state.formDirty = true; });
+    elements.form?.addEventListener('change', () => { state.formDirty = true; });
+    elements.form?.addEventListener('focusout', validateFieldOnBlur);
+    elements.form?.addEventListener('submit', handleFormSubmit);
+    elements.statusDialog?.addEventListener('close', resolveStatusDialog);
+
+    document.addEventListener('keydown', handleGlobalKeydown);
+    window.addEventListener('beforeunload', (event) => {
+      if (state.drawerMode !== 'form' || !state.formDirty) return;
+      event.preventDefault();
+      event.returnValue = '';
+    });
+  }
+
+  async function loadAndRenderClients() {
+    setLoading(true);
+    elements.dataError.hidden = true;
+
+    try {
+      const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL);
+      const stored = readStoredClients();
+      state.clients = model.mergeClients(data.clientes ?? [], stored);
+      renderAll();
+      setLoading(false);
+    } catch (error) {
+      showFatalError(error);
+    }
+  }
+
+  function readStoredClients() {
+    try {
+      const serialized = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (!serialized) return [];
+      const parsed = JSON.parse(serialized);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      console.warn('No se pudieron recuperar los cambios locales de clientes.', error);
+      return [];
+    }
+  }
+
+  function saveClients() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.clients));
+    } catch (error) {
+      console.warn('No se pudieron guardar los cambios locales de clientes.', error);
+      showToast('El cambio se aplicó, pero no pudo guardarse en este navegador.', 'warning');
+    }
+  }
+
+  function setLoading(isLoading) {
+    elements.loading.hidden = !isLoading;
+    elements.content.hidden = isLoading;
+    elements.retryButton.disabled = isLoading;
+  }
+
+  function showFatalError(error) {
+    console.error(error);
+    setLoading(false);
+    elements.content.hidden = true;
+    elements.dataError.hidden = false;
+    elements.resultsCount.textContent = 'Directorio no disponible';
+  }
+
+  function renderAll() {
+    renderSummary();
+    renderDirectory();
+    if (state.selectedClientId && state.drawerMode === 'detail') renderDetail(findClient(state.selectedClientId));
+  }
+
+  function renderSummary() {
+    const active = state.clients.filter((client) => client.estado === 'activo').length;
+    elements.totalCount.textContent = String(state.clients.length);
+    elements.activeCount.textContent = String(active);
+    elements.inactiveCount.textContent = String(state.clients.length - active);
+  }
+
+  function renderDirectory() {
+    const filtered = model.filterClients(state.clients, state.filters);
+    const hasFilters = Boolean(state.filters.query.trim()) || state.filters.status !== 'todos';
+
+    elements.tableBody.innerHTML = filtered.map(renderTableRow).join('');
+    elements.cardList.innerHTML = filtered.map(renderClientCard).join('');
+    elements.emptyState.hidden = state.clients.length !== 0;
+    elements.noResults.hidden = state.clients.length === 0 || filtered.length !== 0;
+    elements.clearFilters.hidden = !hasFilters;
+    elements.resultsCount.textContent = getResultsCopy(filtered.length);
+  }
+
+  function getResultsCopy(count) {
+    if (!state.clients.length) return 'Tu directorio está listo para el primer cliente';
+    if (!count) return '0 clientes encontrados';
+    return `${count} ${count === 1 ? 'cliente encontrado' : 'clientes encontrados'}`;
+  }
+
+  function renderTableRow(client) {
+    const fullName = `${client.nombres} ${client.apellidos}`.trim();
+    return `
+      <tr>
+        <td><div class="client-identity"><span aria-hidden="true">${initials(client.nombre_razon_social)}</span><div><strong>${escapeHtml(client.nombre_razon_social)}</strong><small>${escapeHtml(client.tipo_cliente)}</small></div></div></td>
+        <td><span class="client-mono">${escapeHtml(client.identificacion)}</span></td>
+        <td><strong class="client-cell-title">${escapeHtml(fullName)}</strong><small>Representante legal</small></td>
+        <td><a href="mailto:${escapeAttribute(client.correo)}">${escapeHtml(client.correo)}</a><small>${escapeHtml(client.celular)}</small></td>
+        <td>${renderInlineSelect(client, 'estadoCivil')}</td>
+        <td>${renderInlineSelect(client, 'estado')}</td>
+        <td><div class="client-row-actions"><button type="button" data-action="view-client" data-client-id="${escapeAttribute(client.id)}">Ver detalle</button><button class="client-icon-action" type="button" data-action="edit-client" data-client-id="${escapeAttribute(client.id)}" aria-label="Editar ${escapeAttribute(client.nombre_razon_social)}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg></button></div></td>
+      </tr>`;
+  }
+
+  function renderClientCard(client) {
+    const fullName = `${client.nombres} ${client.apellidos}`.trim();
+    return `
+      <li class="client-card">
+        <header>
+          <div class="client-identity"><span aria-hidden="true">${initials(client.nombre_razon_social)}</span><div><h3>${escapeHtml(client.nombre_razon_social)}</h3><p>${escapeHtml(client.tipo_cliente)}</p></div></div>
+          ${renderStatusBadge(client.estado)}
+        </header>
+        <dl>
+          <div><dt>Contacto principal</dt><dd>${escapeHtml(fullName)}</dd></div>
+          <div><dt>Identificación</dt><dd class="client-mono">${escapeHtml(client.identificacion)}</dd></div>
+          <div><dt>Contacto</dt><dd>${escapeHtml(client.correo)}<small>${escapeHtml(client.celular)}</small></dd></div>
+        </dl>
+        <div class="client-card-controls">
+          <label>Estado civil${renderInlineSelect(client, 'estadoCivil')}</label>
+          <label>Estado${renderInlineSelect(client, 'estado')}</label>
+        </div>
+        <footer>
+          <button type="button" class="clients-secondary-action" data-action="view-client" data-client-id="${escapeAttribute(client.id)}">Ver detalle</button>
+          <button type="button" class="client-icon-action" data-action="edit-client" data-client-id="${escapeAttribute(client.id)}" aria-label="Editar ${escapeAttribute(client.nombre_razon_social)}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg></button>
+        </footer>
+      </li>`;
+  }
+
+  function renderInlineSelect(client, field) {
+    const isCivil = field === 'estadoCivil';
+    const options = isCivil ? model.CIVIL_STATUS_OPTIONS : model.CLIENT_STATUS_OPTIONS;
+    const label = isCivil ? 'estado civil' : 'estado';
+    const className = isCivil ? '' : ` client-status-select client-status-${client.estado}`;
+    return `<select class="client-inline-select${className}" name="client-${field}-${escapeAttribute(client.id)}" data-client-field="${field}" data-client-id="${escapeAttribute(client.id)}" aria-label="Cambiar ${label} de ${escapeAttribute(client.nombre_razon_social)}">${options.map((option) => `<option value="${escapeAttribute(option)}"${option === client[field] ? ' selected' : ''}>${escapeHtml(titleCase(option))}</option>`).join('')}</select>`;
+  }
+
+  function handleActionClick(event) {
+    const trigger = event.target.closest('[data-action]');
+    if (!trigger) return;
+
+    const action = trigger.dataset.action;
+    if (action === 'create-client') openCreateForm(trigger);
+    if (action === 'clear-client-filters') clearFilters();
+    if (action === 'view-client') {
+      const client = findClient(trigger.dataset.clientId);
+      if (client) openDetail(client, trigger);
+    }
+    if (action === 'edit-client') {
+      const client = findClient(trigger.dataset.clientId);
+      if (client) openEditForm(client, trigger);
+    }
+  }
+
+  function handleInlineChange(event) {
+    const select = event.target.closest('[data-client-field]');
+    if (!select) return;
+
+    const client = findClient(select.dataset.clientId);
+    if (!client) return;
+    const field = select.dataset.clientField;
+    const nextValue = select.value;
+
+    if (field === 'estado' && nextValue === 'inactivo' && client.estado !== 'inactivo') {
+      state.pendingStatusChange = { clientId: client.id, field, value: nextValue };
+      elements.statusDialog.showModal();
+      return;
+    }
+
+    applyClientFieldChange(client.id, field, nextValue);
+  }
+
+  function resolveStatusDialog() {
+    const pending = state.pendingStatusChange;
+    state.pendingStatusChange = null;
+    if (!pending) return;
+
+    if (elements.statusDialog.returnValue === 'confirm') {
+      applyClientFieldChange(pending.clientId, pending.field, pending.value);
+      showToast('Cliente inactivado. Su historial se mantiene disponible.', 'success');
     } else {
-      createClient(formData);
-      showFormMessage('Cliente guardado correctamente.', 'success');
+      renderDirectory();
+      if (state.drawerMode === 'detail') renderDetail(findClient(state.selectedClientId));
+    }
+  }
+
+  function applyClientFieldChange(clientId, field, value) {
+    const allowed = field === 'estadoCivil' ? model.CIVIL_STATUS_OPTIONS : model.CLIENT_STATUS_OPTIONS;
+    if (!allowed.includes(value)) return;
+
+    state.clients = state.clients.map((client) => client.id === clientId ? { ...client, [field]: value } : client);
+    saveClients();
+    renderAll();
+    if (!(field === 'estado' && value === 'inactivo')) {
+      showToast(field === 'estadoCivil' ? 'Estado civil actualizado.' : 'Estado del cliente actualizado.', 'success');
+    }
+  }
+
+  function openDetail(client, trigger) {
+    state.selectedClientId = client.id;
+    state.drawerMode = 'detail';
+    renderDetail(client);
+    elements.detailView.hidden = false;
+    elements.form.hidden = true;
+    elements.drawerEyebrow.textContent = 'Ficha comercial';
+    elements.drawerTitle.textContent = 'Detalle del cliente';
+    elements.drawerDescription.textContent = 'Consulta la información comercial y del contacto principal.';
+    openDrawer(trigger);
+  }
+
+  function renderDetail(client) {
+    if (!client) return;
+    const fullName = `${client.nombres} ${client.apellidos}`.trim();
+    elements.detailContent.innerHTML = `
+      <section class="client-detail-hero">
+        <div class="client-identity"><span aria-hidden="true">${initials(client.nombre_razon_social)}</span><div><h3>${escapeHtml(client.nombre_razon_social)}</h3><p>${escapeHtml(client.tipo_cliente)}</p></div></div>
+        ${renderStatusBadge(client.estado)}
+        <p>Registrado el ${escapeHtml(formatDate(client.fecha_registro))}</p>
+      </section>
+      <section class="client-detail-section"><h3>Datos comerciales</h3><dl>${renderDetailItem('Razón social', client.nombre_razon_social)}${renderDetailItem('Tipo de cliente', client.tipo_cliente)}</dl></section>
+      <section class="client-detail-section"><h3>Contacto principal / representante legal</h3><dl>${renderDetailItem('Nombre completo', fullName)}${renderDetailItem('Identificación', client.identificacion)}<div><dt>Estado civil</dt><dd>${renderInlineSelect(client, 'estadoCivil')}</dd></div></dl></section>
+      <section class="client-detail-section"><h3>Contacto y ubicación</h3><dl>${renderDetailItem('Correo', client.correo)}${renderDetailItem('Celular', client.celular)}${renderDetailItem('Teléfono', client.telefono || 'No registrado')}${renderDetailItem('Dirección', client.direccion || 'No registrada')}</dl></section>
+      <section class="client-detail-section"><h3>Estado del cliente</h3><div class="client-detail-status-control"><p>Define si puede utilizarse en nuevas operaciones.</p>${renderInlineSelect(client, 'estado')}</div></section>`;
+  }
+
+  function renderDetailItem(label, value) {
+    return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`;
+  }
+
+  function openCreateForm(trigger) {
+    prepareForm(null);
+    elements.drawerEyebrow.textContent = 'Nueva relación comercial';
+    elements.drawerTitle.textContent = 'Registrar cliente';
+    elements.drawerDescription.textContent = 'Completa los datos comerciales y del contacto principal.';
+    elements.submitButton.textContent = 'Registrar cliente';
+    state.drawerMode = 'form';
+    openDrawer(trigger);
+  }
+
+  function openEditForm(client, trigger) {
+    prepareForm(client);
+    elements.drawerEyebrow.textContent = 'Actualizar ficha comercial';
+    elements.drawerTitle.textContent = 'Editar cliente';
+    elements.drawerDescription.textContent = 'Actualiza la información sin perder el historial del cliente.';
+    elements.submitButton.textContent = 'Guardar cambios';
+    state.drawerMode = 'form';
+    openDrawer(trigger);
+  }
+
+  function prepareForm(client) {
+    elements.detailView.hidden = true;
+    elements.form.hidden = false;
+    elements.form.reset();
+    clearFormErrors();
+
+    const values = client ?? {
+      id: '', tipo_cliente: 'Empresa', estadoCivil: '', estado: 'activo'
+    };
+    setFormValue('client-id', values.id);
+    setFormValue('business-name', values.nombre_razon_social);
+    setFormValue('client-type', values.tipo_cliente);
+    setFormValue('first-names', values.nombres);
+    setFormValue('last-names', values.apellidos);
+    setFormValue('identification', values.identificacion);
+    setFormValue('civil-status', values.estadoCivil);
+    setFormValue('email', values.correo);
+    setFormValue('mobile', values.celular);
+    setFormValue('phone', values.telefono);
+    setFormValue('address', values.direccion);
+    const status = elements.form.querySelector(`[name="estado"][value="${values.estado || 'activo'}"]`);
+    if (status) status.checked = true;
+    state.formDirty = false;
+  }
+
+  function openDrawer(trigger) {
+    state.lastTrigger = trigger ?? document.activeElement;
+    elements.drawer.removeAttribute('inert');
+    elements.drawer.setAttribute('aria-hidden', 'false');
+    elements.drawer.classList.add('is-open');
+    elements.backdrop.classList.add('is-open');
+    document.body.classList.add('client-drawer-open');
+    setBackgroundInert(true);
+    requestAnimationFrame(() => {
+      const target = state.drawerMode === 'form'
+        ? elements.form.querySelector('input:not([type="hidden"]), select')
+        : elements.drawerClose;
+      target?.focus();
+    });
+  }
+
+  function closeDrawer({ confirmDirty = false } = {}) {
+    if (confirmDirty && state.drawerMode === 'form' && state.formDirty) {
+      const shouldClose = window.confirm('Tienes cambios sin guardar. ¿Quieres descartarlos?');
+      if (!shouldClose) return;
+    }
+
+    elements.drawer.classList.remove('is-open');
+    elements.backdrop.classList.remove('is-open');
+    elements.drawer.setAttribute('aria-hidden', 'true');
+    elements.drawer.setAttribute('inert', '');
+    document.body.classList.remove('client-drawer-open');
+    setBackgroundInert(false);
+    state.drawerMode = null;
+    state.formDirty = false;
+    state.lastTrigger?.focus?.();
+  }
+
+  function setBackgroundInert(isInert) {
+    elements.appLayout?.toggleAttribute('inert', isInert);
+    document.querySelector('.app-bottom-navigation')?.toggleAttribute('inert', isInert);
+  }
+
+  function handleGlobalKeydown(event) {
+    if (!state.drawerMode) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeDrawer({ confirmDirty: true });
+      return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const focusable = [...elements.drawer.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]')]
+      .filter((element) => !element.closest('[hidden]'));
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  }
+
+  function validateFieldOnBlur(event) {
+    const field = event.target.closest('input, select, textarea');
+    if (!field?.name || ['id', 'telefono', 'direccion'].includes(field.name)) return;
+    const data = readForm();
+    const validation = model.validateClient(data, state.clients);
+    setFieldError(field.name, validation.errors[field.name] ?? '');
+  }
+
+  function handleFormSubmit(event) {
+    event.preventDefault();
+    const draft = readForm();
+    const validation = model.validateClient(draft, state.clients);
+    clearFormErrors();
+
+    if (!validation.valid) {
+      Object.entries(validation.errors).forEach(([field, message]) => setFieldError(field, message));
+      elements.formSummary.textContent = 'Revisa los campos señalados antes de guardar.';
+      elements.formSummary.hidden = false;
+      const firstInvalid = elements.form.querySelector('[aria-invalid="true"]');
+      firstInvalid?.focus();
+      return;
+    }
+
+    elements.submitButton.disabled = true;
+    elements.submitButton.textContent = draft.id ? 'Guardando…' : 'Registrando…';
+
+    if (draft.id) {
+      state.clients = state.clients.map((client) => client.id === draft.id ? {
+        ...model.normalizeClient({ ...client, ...draft }),
+        id: client.id,
+        fecha_registro: client.fecha_registro,
+        identificacion_fiscal: draft.identificacion,
+        correo_electronico: draft.correo
+      } : client);
+      state.selectedClientId = draft.id;
+    } else {
+      const newClient = model.createClientRecord(draft, {
+        id: generateClientId(),
+        date: getTodayDate()
+      });
+      state.clients.unshift(newClient);
+      state.selectedClientId = newClient.id;
     }
 
     saveClients();
-    renderClients();
-    resetClientForm();
-  });
-
-  clearButton?.addEventListener('click', resetClientForm);
-}
-
-function setupSearch() {
-  const search = document.getElementById('client-search');
-  search?.addEventListener('input', () => renderClients());
-}
-
-function readClientForm() {
-  return {
-    id: getValue('client-id'),
-    nombre_razon_social: getValue('business-name'),
-    tipo_cliente: getValue('client-type') || 'Empresa',
-    nombres: getValue('first-names'),
-    apellidos: getValue('last-names'),
-    identificacion: getValue('identification'),
-    telefono: getValue('phone'),
-    celular: getValue('mobile'),
-    correo: getValue('email'),
-    direccion: getValue('address'),
-    estadoCivil: getValue('civil-status'),
-    estado: getValue('client-status')
-  };
-}
-
-function validateClient(client) {
-  const requiredFields = [
-    client.nombre_razon_social,
-    client.nombres,
-    client.apellidos,
-    client.identificacion,
-    client.celular,
-    client.correo,
-    client.estadoCivil,
-    client.estado
-  ];
-
-  if (requiredFields.some((value) => !value)) {
-    return { valid: false, message: 'Completa los campos obligatorios del cliente.' };
+    renderAll();
+    state.formDirty = false;
+    closeDrawer();
+    showToast(draft.id ? 'Cliente actualizado exitosamente.' : 'Cliente registrado exitosamente.', 'success');
+    elements.submitButton.disabled = false;
   }
 
-  if (!isValidEmail(client.correo)) {
-    return { valid: false, message: 'Ingresa un correo v?lido.' };
-  }
-
-  if (!CIVIL_STATUS_OPTIONS.includes(client.estadoCivil)) {
-    return { valid: false, message: 'Selecciona un estado civil v?lido.' };
-  }
-
-  if (!CLIENT_STATUS_OPTIONS.includes(client.estado)) {
-    return { valid: false, message: 'Selecciona un estado v?lido.' };
-  }
-
-  const duplicatedIdentification = clients.some((existingClient) => (
-    normalizeText(existingClient.identificacion) === normalizeText(client.identificacion)
-    && existingClient.id !== client.id
-  ));
-
-  if (duplicatedIdentification) {
-    return { valid: false, message: 'Ya existe un cliente con esa identificaci?n.' };
-  }
-
-  return { valid: true };
-}
-
-function createClient(client) {
-  const newClient = {
-    ...client,
-    id: generateClientId(),
-    identificacion_fiscal: client.identificacion,
-    correo_electronico: client.correo,
-    fecha_registro: getTodayDate()
-  };
-
-  clients.unshift(newClient);
-  selectedClientId = newClient.id;
-  renderClientDetail(newClient);
-}
-
-function updateClient(client) {
-  clients = clients.map((existingClient) => {
-    if (existingClient.id !== client.id) return existingClient;
-
+  function readForm() {
+    const data = new FormData(elements.form);
     return {
-      ...existingClient,
-      ...client,
-      identificacion_fiscal: client.identificacion,
-      correo_electronico: client.correo,
-      fecha_registro: existingClient.fecha_registro || getTodayDate()
+      id: String(data.get('id') ?? '').trim(),
+      nombre_razon_social: String(data.get('nombre_razon_social') ?? '').trim(),
+      tipo_cliente: String(data.get('tipo_cliente') ?? '').trim(),
+      nombres: String(data.get('nombres') ?? '').trim(),
+      apellidos: String(data.get('apellidos') ?? '').trim(),
+      identificacion: String(data.get('identificacion') ?? '').trim(),
+      estadoCivil: String(data.get('estadoCivil') ?? '').trim(),
+      correo: String(data.get('correo') ?? '').trim(),
+      celular: String(data.get('celular') ?? '').trim(),
+      telefono: String(data.get('telefono') ?? '').trim(),
+      direccion: String(data.get('direccion') ?? '').trim(),
+      estado: String(data.get('estado') ?? '').trim()
     };
-  });
-
-  selectedClientId = client.id;
-  renderClientDetail(clients.find((existingClient) => existingClient.id === client.id));
-}
-
-function renderClients() {
-  const tableBody = document.getElementById('clients-table-body');
-  const emptyState = document.getElementById('clients-empty-state');
-  const noResults = document.getElementById('clients-no-results');
-
-  if (!tableBody || !emptyState || !noResults) return;
-
-  const query = normalizeText(document.getElementById('client-search')?.value ?? '');
-  const filteredClients = getFilteredClients(query);
-
-  tableBody.innerHTML = '';
-  emptyState.classList.toggle('hidden', clients.length !== 0);
-  noResults.classList.toggle('hidden', clients.length === 0 || filteredClients.length !== 0);
-
-  filteredClients.forEach((client) => {
-    const row = document.createElement('tr');
-    row.className = 'align-top hover:bg-amber-50/60';
-    row.innerHTML = `
-      <td class="px-4 py-4">
-        <p class="font-black text-slate-950">${escapeHtml(client.nombre_razon_social)}</p>
-        <p class="mt-1 text-xs font-semibold text-slate-500">${escapeHtml(client.tipo_cliente)}</p>
-      </td>
-      <td class="px-4 py-4 text-sm text-slate-700">
-        <p class="font-semibold text-slate-900">${escapeHtml(client.nombres)} ${escapeHtml(client.apellidos)}</p>
-        <p>${escapeHtml(client.correo)}</p>
-        <p>${escapeHtml(client.celular)}</p>
-      </td>
-      <td class="px-4 py-4 text-sm font-semibold text-slate-700">${escapeHtml(client.identificacion)}</td>
-      <td class="px-4 py-4">
-        <select class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700" data-action="change-civil-status" data-client-id="${client.id}" aria-label="Cambiar estado civil de ${escapeHtml(client.nombres)}">
-          ${renderOptions(CIVIL_STATUS_OPTIONS, client.estadoCivil)}
-        </select>
-      </td>
-      <td class="px-4 py-4">
-        <select class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold ${client.estado === 'activo' ? 'text-green-700' : 'text-slate-500'}" data-action="change-status" data-client-id="${client.id}" aria-label="Cambiar estado de ${escapeHtml(client.nombres)}">
-          ${renderOptions(CLIENT_STATUS_OPTIONS, client.estado)}
-        </select>
-      </td>
-      <td class="px-4 py-4 text-right">
-        <div class="flex justify-end gap-2">
-          <button type="button" class="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800" data-action="view" data-client-id="${client.id}">Detalle</button>
-          <button type="button" class="rounded-xl bg-amber-400 px-3 py-2 text-xs font-black text-slate-950 hover:bg-amber-300" data-action="edit" data-client-id="${client.id}">Editar</button>
-        </div>
-      </td>
-    `;
-    tableBody.appendChild(row);
-  });
-
-  tableBody.querySelectorAll('[data-action="view"]').forEach((button) => {
-    button.addEventListener('click', () => selectClient(button.dataset.clientId));
-  });
-
-  tableBody.querySelectorAll('[data-action="edit"]').forEach((button) => {
-    button.addEventListener('click', () => editClient(button.dataset.clientId));
-  });
-
-  tableBody.querySelectorAll('[data-action="change-civil-status"]').forEach((select) => {
-    select.addEventListener('change', () => changeClientField(select.dataset.clientId, 'estadoCivil', select.value));
-  });
-
-  tableBody.querySelectorAll('[data-action="change-status"]').forEach((select) => {
-    select.addEventListener('change', () => changeClientField(select.dataset.clientId, 'estado', select.value));
-  });
-}
-
-function getFilteredClients(query) {
-  if (!query) return clients;
-
-  return clients.filter((client) => {
-    const searchable = [client.nombres, client.apellidos, client.identificacion].join(' ');
-    return normalizeText(searchable).includes(query);
-  });
-}
-
-function selectClient(clientId) {
-  const client = clients.find((currentClient) => currentClient.id === clientId);
-  selectedClientId = client?.id ?? null;
-  renderClientDetail(client);
-}
-
-function editClient(clientId) {
-  const client = clients.find((currentClient) => currentClient.id === clientId);
-  if (!client) return;
-
-  setValue('client-id', client.id);
-  setValue('business-name', client.nombre_razon_social);
-  setValue('client-type', client.tipo_cliente);
-  setValue('first-names', client.nombres);
-  setValue('last-names', client.apellidos);
-  setValue('identification', client.identificacion);
-  setValue('phone', client.telefono);
-  setValue('mobile', client.celular);
-  setValue('email', client.correo);
-  setValue('address', client.direccion);
-  setValue('civil-status', client.estadoCivil);
-  setValue('client-status', client.estado);
-  document.getElementById('client-form-title').textContent = 'Editar cliente';
-  document.getElementById('client-submit-button').textContent = 'Actualizar cliente';
-  selectClient(client.id);
-  document.getElementById('client-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function changeClientField(clientId, field, value) {
-  const allowedValues = field === 'estadoCivil' ? CIVIL_STATUS_OPTIONS : CLIENT_STATUS_OPTIONS;
-  if (!allowedValues.includes(value)) return;
-
-  clients = clients.map((client) => client.id === clientId ? { ...client, [field]: value } : client);
-  saveClients();
-  renderClients();
-
-  if (selectedClientId === clientId) {
-    renderClientDetail(clients.find((client) => client.id === clientId));
-  }
-}
-
-function renderClientDetail(client) {
-  const detail = document.getElementById('client-detail');
-  if (!detail) return;
-
-  if (!client) {
-    detail.textContent = 'Selecciona un cliente para consultar su detalle.';
-    return;
   }
 
-  const statusClass = client.estado === 'activo' ? 'bg-green-400 text-slate-950' : 'bg-slate-600 text-white';
-
-  detail.innerHTML = `
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div>
-        <p class="text-lg font-black text-white">${escapeHtml(client.nombre_razon_social)}</p>
-        <p class="mt-1 text-slate-300">${escapeHtml(client.tipo_cliente)}</p>
-      </div>
-      <span class="inline-flex w-fit rounded-full px-3 py-1 text-xs font-black ${statusClass}">${escapeHtml(client.estado)}</span>
-    </div>
-    <dl class="mt-5 grid gap-3 sm:grid-cols-2">
-      ${renderDetailItem('Contacto', `${client.nombres} ${client.apellidos}`)}
-      ${renderDetailItem('Identificaci?n', client.identificacion)}
-      ${renderDetailItem('Correo', client.correo)}
-      ${renderDetailItem('Celular', client.celular)}
-      ${renderDetailItem('Tel?fono', client.telefono || 'No registrado')}
-      ${renderDetailItem('Estado civil', client.estadoCivil)}
-      ${renderDetailItem('Direcci?n', client.direccion || 'No registrada')}
-      ${renderDetailItem('Fecha de registro', formatDate(client.fecha_registro))}
-    </dl>
-  `;
-}
-
-function renderDetailItem(label, value) {
-  return `
-    <div class="rounded-2xl border border-white/10 bg-white/5 p-3">
-      <dt class="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">${label}</dt>
-      <dd class="mt-1 font-semibold text-white">${escapeHtml(value)}</dd>
-    </div>
-  `;
-}
-
-function renderOptions(options, selectedValue) {
-  return options.map((option) => {
-    const selected = option === selectedValue ? 'selected' : '';
-    const label = option.charAt(0).toUpperCase() + option.slice(1);
-    return `<option value="${escapeHtml(option)}" ${selected}>${escapeHtml(label)}</option>`;
-  }).join('');
-}
-
-function resetClientForm() {
-  const form = document.getElementById('client-form');
-  form?.reset();
-  setValue('client-id', '');
-  setValue('client-type', 'Empresa');
-  setValue('client-status', 'activo');
-  document.getElementById('client-form-title').textContent = 'Registrar cliente';
-  document.getElementById('client-submit-button').textContent = 'Guardar cliente';
-}
-
-function showFormMessage(text, type) {
-  const message = document.getElementById('client-form-message');
-  if (!message) {
-    alert(text);
-    return;
+  function clearFormErrors() {
+    elements.formSummary.hidden = true;
+    elements.formSummary.textContent = '';
+    elements.form.querySelectorAll('[aria-invalid="true"]').forEach((field) => {
+      field.removeAttribute('aria-invalid');
+      field.removeAttribute('aria-describedby');
+    });
+    elements.form.querySelectorAll('.has-error').forEach((field) => field.classList.remove('has-error'));
+    elements.form.querySelectorAll('[data-field-error]').forEach((error) => { error.textContent = ''; });
   }
 
-  message.textContent = text;
-  message.className = 'rounded-2xl px-4 py-3 text-sm font-semibold';
+  function setFieldError(fieldName, message) {
+    const field = elements.form.elements.namedItem(fieldName);
+    const fieldElement = field instanceof RadioNodeList ? field[0] : field;
+    const error = elements.form.querySelector(`[data-field-error="${fieldName}"]`);
+    if (!fieldElement || !error) return;
 
-  if (type === 'error') {
-    message.classList.add('border', 'border-red-200', 'bg-red-50', 'text-red-800');
-    return;
+    if (!error.id) error.id = `${fieldName}-error`;
+    error.textContent = message;
+    const wrapper = fieldElement.closest('.client-field, .client-form-section');
+    wrapper?.classList.toggle('has-error', Boolean(message));
+    if (message) {
+      fieldElement.setAttribute('aria-invalid', 'true');
+      fieldElement.setAttribute('aria-describedby', error.id);
+    } else {
+      fieldElement.removeAttribute('aria-invalid');
+      fieldElement.removeAttribute('aria-describedby');
+    }
   }
 
-  message.classList.add('border', 'border-green-200', 'bg-green-50', 'text-green-800');
-}
+  function clearFilters() {
+    state.filters = { query: '', status: 'todos' };
+    syncFilterControls();
+    updateFilterUrl();
+    renderDirectory();
+    elements.search?.focus();
+  }
 
-function showDataError(error) {
-  console.error(error);
-  const alertBox = document.getElementById('clients-data-error');
-  if (!alertBox) return;
+  function readFiltersFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    state.filters.query = params.get('q') ?? '';
+    const status = params.get('estado') ?? 'todos';
+    state.filters.status = ['todos', ...model.CLIENT_STATUS_OPTIONS].includes(status) ? status : 'todos';
+  }
 
-  alertBox.classList.remove('hidden');
-  alertBox.textContent = 'No se pudieron cargar los clientes simulados. Verifica assets/data/mock-data.json y abre el proyecto con un servidor local.';
-}
+  function syncFilterControls() {
+    if (elements.search) elements.search.value = state.filters.query;
+    elements.tabs.forEach((tab) => {
+      const active = tab.dataset.clientStatus === state.filters.status;
+      tab.classList.toggle('is-active', active);
+      tab.setAttribute('aria-pressed', String(active));
+    });
+  }
 
-function saveClients() {
-  localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(clients));
-}
+  function updateFilterUrl() {
+    const url = new URL(window.location.href);
+    const query = state.filters.query.trim();
+    if (query) url.searchParams.set('q', query); else url.searchParams.delete('q');
+    if (state.filters.status !== 'todos') url.searchParams.set('estado', state.filters.status);
+    else url.searchParams.delete('estado');
+    history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  }
 
-function getValue(id) {
-  return document.getElementById(id)?.value.trim() ?? '';
-}
+  function showToast(message, type = 'success') {
+    window.clearTimeout(state.toastTimer);
+    elements.toast.textContent = message;
+    elements.toast.dataset.type = type;
+    elements.toast.hidden = false;
+    requestAnimationFrame(() => elements.toast.classList.add('is-visible'));
+    state.toastTimer = window.setTimeout(() => {
+      elements.toast.classList.remove('is-visible');
+      window.setTimeout(() => { elements.toast.hidden = true; }, 220);
+    }, 3800);
+  }
 
-function setValue(id, value) {
-  const element = document.getElementById(id);
-  if (element) element.value = value ?? '';
-}
+  function findClient(id) {
+    return state.clients.find((client) => String(client.id) === String(id));
+  }
 
-function generateClientId() {
-  return `cli_${Date.now()}`;
-}
+  function setFormValue(id, value) {
+    const field = document.getElementById(id);
+    if (field) field.value = value ?? '';
+  }
 
-function getTodayDate() {
-  return new Date().toISOString().slice(0, 10);
-}
+  function generateClientId() {
+    if (window.crypto?.randomUUID) return `cli_${window.crypto.randomUUID()}`;
+    return `cli_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  }
 
-function isValidEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
+  function getTodayDate() {
+    return new Date().toISOString().slice(0, 10);
+  }
 
-function normalizeText(value) {
-  return String(value ?? '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-}
+  function formatDate(value) {
+    if (!value) return 'Fecha no disponible';
+    const date = new Date(`${value}T00:00:00`);
+    return Number.isNaN(date.getTime()) ? 'Fecha no disponible' : dateFormatter.format(date);
+  }
 
-function formatDate(dateValue) {
-  if (!dateValue) return 'No registrada';
-  return dateFormatter.format(new Date(`${dateValue}T00:00:00`));
-}
+  function initials(value) {
+    return String(value ?? '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((word) => word[0])
+      .join('')
+      .toUpperCase();
+  }
 
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
-}
+  function titleCase(value) {
+    const text = String(value ?? '');
+    return text ? `${text[0].toUpperCase()}${text.slice(1)}` : '';
+  }
 
+  function renderStatusBadge(status) {
+    return `<span class="client-status-badge client-status-${escapeAttribute(status)}"><span aria-hidden="true"></span>${escapeHtml(titleCase(status))}</span>`;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  function escapeAttribute(value) {
+    return escapeHtml(value).replaceAll('`', '&#096;');
+  }
+}());

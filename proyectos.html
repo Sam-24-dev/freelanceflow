@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Cartera privada de proyectos, facturación y rentabilidad de FreelanceFlow.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0F172A">
+  <title>FreelanceFlow | Proyectos</title>
+  <link rel="icon" type="image/png" href="./img/brand/favicon-32.png">
+  <link rel="apple-touch-icon" href="./img/brand/apple-touch-icon.png">
+  <link rel="stylesheet" href="./assets/css/styles.css">
+</head>
+<body class="projects-app app-shell-page">
+  <a href="#main-content" class="skip-link">Saltar al contenido principal</a>
+
+  <div class="app-layout min-h-screen" data-app-layout>
+    <div class="app-sidebar-slot" data-app-sidebar-slot aria-hidden="true"></div>
+    <div class="app-mobile-appbar" data-app-mobile-header-slot aria-hidden="true"></div>
+
+    <main id="main-content" class="app-main projects-main">
+      <header class="projects-heading">
+        <div class="projects-heading-copy">
+          <p class="projects-eyebrow">Work Portfolio</p>
+          <h1>Proyectos por cliente</h1>
+          <p>Controla el avance, la facturación y la rentabilidad de cada proyecto.</p>
+        </div>
+        <div class="projects-heading-actions">
+          <a class="projects-secondary-action" href="clientes.html">Gestionar clientes</a>
+          <button id="project-create-button" class="projects-primary-action" type="button">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Nuevo proyecto
+          </button>
+        </div>
+      </header>
+
+      <section class="projects-summary-grid" aria-labelledby="projects-summary-title">
+        <h2 id="projects-summary-title" class="sr-only">Resumen de proyectos</h2>
+        <article class="projects-summary-card projects-summary-total">
+          <span class="projects-summary-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h6l2 2h8v10H4V7Zm0 0V5h6l2 2"/></svg>
+          </span>
+          <div><p>Proyectos registrados</p><strong id="projects-total-count">—</strong><small>Trabajo organizado por cliente</small></div>
+        </article>
+        <article class="projects-summary-card projects-summary-active">
+          <span class="projects-summary-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>
+          </span>
+          <div><p>Proyectos activos</p><strong id="projects-active-count">—</strong><small>Actualmente en ejecución</small></div>
+        </article>
+        <article class="projects-summary-card projects-summary-receivable">
+          <span class="projects-summary-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4V6Zm3 4h6m-6 4h3m7-4v4"/></svg>
+          </span>
+          <div><p>Por cobrar</p><strong id="projects-receivable-total">—</strong><small>Saldo real de facturas</small></div>
+        </article>
+        <article class="projects-summary-card projects-summary-profit">
+          <span class="projects-summary-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 17 5-5 4 3 7-8M15 7h5v5"/></svg>
+          </span>
+          <div><p>Rentabilidad registrada</p><strong id="projects-profit-total">—</strong><small>Facturado menos gastos</small></div>
+        </article>
+      </section>
+
+      <div id="projects-data-error" class="projects-alert projects-alert-error" role="alert" hidden>
+        <div>
+          <strong>No pudimos cargar tus proyectos.</strong>
+          <span>Revisa la conexión local e inténtalo nuevamente.</span>
+        </div>
+        <button id="projects-retry-button" type="button">Reintentar</button>
+      </div>
+
+      <section class="projects-ledger" aria-labelledby="project-list-title">
+        <div class="projects-ledger-header">
+          <div>
+            <p class="projects-eyebrow">Operating Ledger</p>
+            <h2 id="project-list-title">Cartera de proyectos</h2>
+            <p id="projects-results-count" aria-live="polite">Cargando proyectos…</p>
+          </div>
+
+          <div class="projects-filter-grid">
+            <label class="projects-search-field">
+              <span class="sr-only">Buscar por proyecto o cliente</span>
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <input id="project-search" name="project-search" type="search" autocomplete="off" placeholder="Buscar por proyecto o cliente…">
+            </label>
+            <label class="projects-select-field">
+              <span class="sr-only">Filtrar por modalidad</span>
+              <select id="project-billing-filter" name="project-billing-filter">
+                <option value="todas">Todas las modalidades</option>
+                <option value="Tarifa fija">Tarifa fija</option>
+                <option value="Por horas">Por horas</option>
+                <option value="Por hitos">Por hitos</option>
+              </select>
+            </label>
+            <label class="projects-select-field">
+              <span class="sr-only">Filtrar por cliente</span>
+              <select id="project-client-filter" name="project-client-filter">
+                <option value="todos">Todos los clientes</option>
+              </select>
+            </label>
+            <button id="projects-clear-filters" class="projects-secondary-action" type="button" hidden>Limpiar filtros</button>
+          </div>
+        </div>
+
+        <div class="projects-status-tabs" role="group" aria-label="Filtrar proyectos por estado">
+          <button type="button" class="project-filter-tab is-active" data-project-status="todos" aria-pressed="true">Todos</button>
+          <button type="button" class="project-filter-tab" data-project-status="ACTIVE" aria-pressed="false">Activos</button>
+          <button type="button" class="project-filter-tab" data-project-status="ON_HOLD" aria-pressed="false">En pausa</button>
+          <button type="button" class="project-filter-tab" data-project-status="COMPLETED" aria-pressed="false">Completados</button>
+        </div>
+
+        <div id="projects-loading" class="projects-loading" role="status" aria-label="Cargando proyectos">
+          <span></span><span></span><span></span>
+        </div>
+
+        <div id="projects-content" class="projects-workspace" hidden>
+          <div class="projects-master-column">
+            <div id="project-groups" class="project-groups"></div>
+
+            <div id="projects-empty-state" class="projects-empty-state" hidden>
+              <span class="projects-empty-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h6l2 2h8v10H4V7Zm8 5v5m-2.5-2.5h5"/></svg>
+              </span>
+              <h3>Aún no tienes proyectos</h3>
+              <p>Crea tu primer proyecto para organizar el trabajo, las horas y la facturación de un cliente.</p>
+              <button class="projects-primary-action" type="button" data-action="create-project">Crear primer proyecto</button>
+            </div>
+
+            <div id="projects-no-results" class="projects-empty-state" hidden>
+              <span class="projects-empty-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M8.5 11h5"/></svg>
+              </span>
+              <h3>No encontramos proyectos con ese criterio</h3>
+              <p>Prueba otra búsqueda o limpia los filtros aplicados.</p>
+              <button class="projects-secondary-action" type="button" data-action="clear-project-filters">Limpiar filtros</button>
+            </div>
+          </div>
+
+          <aside id="project-detail-panel" class="project-detail-panel" aria-label="Detalle del proyecto" aria-hidden="true" inert>
+            <header class="project-detail-header">
+              <div>
+                <p class="projects-eyebrow">Detalle del proyecto</p>
+                <h2 id="project-detail-title" tabindex="-1">Selecciona un proyecto</h2>
+                <p id="project-detail-client">Consulta sus métricas y actividad relacionada.</p>
+              </div>
+              <button id="project-detail-close" class="project-panel-close" type="button" aria-label="Cerrar detalle del proyecto">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>
+              </button>
+            </header>
+            <div id="project-detail-body" class="project-detail-body"></div>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <button id="project-detail-backdrop" class="project-panel-backdrop" type="button" aria-label="Cerrar detalle" tabindex="-1"></button>
+  <button id="project-form-backdrop" class="project-panel-backdrop project-form-backdrop" type="button" aria-label="Cerrar formulario" tabindex="-1"></button>
+
+  <aside id="project-form-drawer" class="project-form-drawer" role="dialog" aria-modal="true" aria-labelledby="project-form-title" aria-hidden="true" inert>
+    <header class="project-form-header">
+      <div>
+        <p class="projects-eyebrow">Ficha de trabajo</p>
+        <h2 id="project-form-title">Nuevo proyecto</h2>
+        <p id="project-form-description">Define el cliente, las fechas y la modalidad de cobro.</p>
+      </div>
+      <button id="project-form-close" class="project-panel-close" type="button" aria-label="Cerrar formulario">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+
+    <form id="project-form" class="project-form" novalidate>
+      <input id="project-id" name="id" type="hidden">
+
+      <fieldset class="project-form-section">
+        <legend><span>1</span> Identidad del proyecto</legend>
+        <div class="project-field">
+          <label for="project-name">Nombre del proyecto <strong aria-hidden="true">*</strong></label>
+          <input id="project-name" name="nombre_proyecto" type="text" autocomplete="off" required placeholder="Ej. Rediseño del sitio corporativo…">
+          <span class="project-field-error" data-field-error="nombre_proyecto"></span>
+        </div>
+        <div class="project-field">
+          <label for="project-client">Cliente <strong aria-hidden="true">*</strong></label>
+          <select id="project-client" name="cliente_id" required></select>
+          <span class="project-field-error" data-field-error="cliente_id"></span>
+          <small>Solo los clientes activos admiten nuevos proyectos.</small>
+        </div>
+        <div class="project-field">
+          <label for="project-proposal">Propuesta de origen <small>(opcional)</small></label>
+          <select id="project-proposal" name="propuesta_origen">
+            <option value="">Sin propuesta vinculada</option>
+          </select>
+          <span class="project-field-error" data-field-error="propuesta_origen"></span>
+        </div>
+        <div class="project-field">
+          <label for="project-description">Descripción <small>(opcional)</small></label>
+          <textarea id="project-description" name="descripcion" rows="4" placeholder="Objetivo, alcance y entregables principales…"></textarea>
+          <span class="project-field-error" data-field-error="descripcion"></span>
+        </div>
+      </fieldset>
+
+      <fieldset class="project-form-section">
+        <legend><span>2</span> Planificación</legend>
+        <div class="project-fields-row">
+          <div class="project-field">
+            <label for="project-start-date">Fecha de inicio <strong aria-hidden="true">*</strong></label>
+            <input id="project-start-date" name="fecha_inicio" type="date" required>
+            <span class="project-field-error" data-field-error="fecha_inicio"></span>
+          </div>
+          <div class="project-field">
+            <label for="project-end-date">Fin estimado <small>(opcional)</small></label>
+            <input id="project-end-date" name="fecha_fin_estimada" type="date">
+            <span class="project-field-error" data-field-error="fecha_fin_estimada"></span>
+          </div>
+        </div>
+        <div class="project-field">
+          <label for="project-hours-budget">Horas estimadas <small>(opcional)</small></label>
+          <input id="project-hours-budget" name="presupuesto_horas_estimado" type="number" min="0.25" step="0.25" inputmode="decimal" placeholder="Ej. 40">
+          <span class="project-field-error" data-field-error="presupuesto_horas_estimado"></span>
+        </div>
+      </fieldset>
+
+      <fieldset class="project-form-section">
+        <legend><span>3</span> Modalidad de cobro</legend>
+        <div class="project-field">
+          <label for="project-billing-mode">Modalidad <strong aria-hidden="true">*</strong></label>
+          <select id="project-billing-mode" name="modalidad_cobro" required>
+            <option value="">Selecciona una modalidad</option>
+            <option value="Tarifa fija">Tarifa fija</option>
+            <option value="Por horas">Por horas</option>
+            <option value="Por hitos">Por hitos</option>
+          </select>
+          <span class="project-field-error" data-field-error="modalidad_cobro"></span>
+        </div>
+
+        <div id="project-fixed-fields" class="project-conditional-fields" hidden>
+          <div class="project-field">
+            <label for="project-fixed-amount">Monto fijo <strong aria-hidden="true">*</strong></label>
+            <div class="project-money-control"><span aria-hidden="true">$</span><input id="project-fixed-amount" name="monto_fijo" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00"><small>USD</small></div>
+            <span class="project-field-error" data-field-error="monto_fijo"></span>
+          </div>
+        </div>
+
+        <div id="project-hourly-fields" class="project-conditional-fields" hidden>
+          <div class="project-field">
+            <label for="project-hourly-rate">Tarifa por hora <strong aria-hidden="true">*</strong></label>
+            <div class="project-money-control"><span aria-hidden="true">$</span><input id="project-hourly-rate" name="tarifa_hora" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00"><small>USD/h</small></div>
+            <span class="project-field-error" data-field-error="tarifa_hora"></span>
+          </div>
+        </div>
+
+        <p id="project-milestone-note" class="project-form-note" hidden>La facturación por hitos se gestionará desde las facturas asociadas; esta fase no inventa un editor de hitos.</p>
+      </fieldset>
+
+      <p id="project-form-summary" class="projects-alert projects-alert-error" role="alert" tabindex="-1" hidden></p>
+
+      <div class="project-form-actions">
+        <button id="project-form-cancel" class="projects-secondary-action" type="button">Cancelar</button>
+        <button id="project-submit-button" class="projects-primary-action" type="submit">Guardar proyecto</button>
+      </div>
+    </form>
+  </aside>
+
+  <div id="project-toast" class="project-toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+
+  <script src="./assets/js/project-model.js" defer></script>
+  <script src="./assets/data/mock-data.js" defer></script>
+  <script src="./assets/js/mock-data-loader.js" defer></script>
+  <script src="./assets/js/app-shell.js" defer></script>
+  <script src="./assets/js/proyectos.js" defer></script>
+</body>
+</html>

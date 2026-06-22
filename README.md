@@ -1,143 +1,113 @@
-﻿# FreelanceFlow
+# FreelanceFlow
 
-FreelanceFlow es un prototipo web estático de un SaaS financiero para freelancers. Esta fase presenta una landing pública, un dashboard demo con datos simulados y pantallas secundarias conectadas para validar navegación, estructura visual y coherencia del producto antes de construir backend y base de datos.
+FreelanceFlow es un prototipo frontend estático de un SaaS financiero para freelancers. La entrega actual demuestra la experiencia principal del producto con navegación, captura de movimientos, gestión de clientes, proyectos, facturas y reportes, todo con datos simulados y sin backend.
 
-## Estado actual
+## Descripción general
 
-**Fase:** Prototipo frontend estático  
-**Stack:** HTML + CSS + JavaScript puro  
-**Backend:** No incluido  
-**Base de datos:** No incluida  
-**Datos:** Mock local en JSON
+El objetivo de esta versión es validar la estructura funcional y visual del producto antes de pasar a una implementación con persistencia real. La demo está pensada para abrirse localmente y recorrer el flujo completo desde la landing pública hasta el dashboard y los módulos operativos.
 
-## Qué incluye esta versión
+## Módulos incluidos en esta fase
 
-- Landing pública en `index.html`.
-- Dashboard funcional de demostración en `dashboard.html`.
-- Carga de datos simulados desde `assets/data/mock-data.json`.
-- Tarjetas de métricas financieras.
-- Tabla de transacciones recientes.
-- Resumen de clientes, proyectos y presupuesto.
-- Formulario de movimiento con validación básica en JavaScript puro.
-- Pantallas secundarias placeholder para módulos futuros.
-- Branding final en `img/brand/`.
-- Metadatos SEO básicos, Open Graph, manifest, sitemap y robots.
+- **Landing pública**: entrada comercial del producto.
+- **Dashboard**: resumen financiero con métricas, actividad reciente y accesos rápidos.
+- **Movimientos**: registro y consulta de ingresos y gastos con validaciones en el cliente.
+- **Clientes**: módulo obligatorio del proyecto, con alta, búsqueda, edición y detalle.
+- **Proyectos**: vínculo entre clientes, ingresos, gastos, horas y rentabilidad.
+- **Facturas**: listado, detalle, estados y exportación visual a PDF.
+- **Reportes**: vistas consolidadas para lectura financiera y control operativo.
 
-## Estructura del proyecto
+### Módulo obligatorio de Clientes
+
+El módulo **Clientes** incorpora los campos y reglas exigidos por el contexto académico, manteniendo el modelo B2B del sistema:
+
+- `nombres` y `apellidos` obligatorios.
+- `identificacion` obligatoria y única.
+- `celular` obligatorio.
+- `correo` obligatorio y con formato válido.
+- `estadoCivil` obligatorio con valores controlados.
+- `estado` obligatorio con valores activos o inactivos.
+
+En la interfaz, estos datos representan el **Contacto Principal / Representante Legal** del cliente empresarial.
+
+## Instrucciones de ejecución
+
+No hay que instalar un backend ni levantar una base de datos para revisar esta entrega.
+
+### Ejecución local
+
+1. Cloná o copiá el repositorio en tu equipo.
+2. Abrí `index.html` en el navegador.
+3. Desde la landing podés navegar al dashboard y al resto de la demo.
+
+> Nota técnica: la app funciona con datos simulados locales para que la revisión visual siga disponible incluso en apertura directa.
+
+## Detalles técnicos
+
+### Stack
+
+- HTML5
+- CSS3 + Tailwind CSS
+- JavaScript Vanilla (ES6+)
+
+### Datos simulados
+
+El prototipo consume datos simulados desde `assets/data/mock-data.json`.
+
+- La carga principal usa **Fetch API / AJAX** cuando la demo se sirve desde un entorno local HTTP.
+- Para abrir el proyecto en local sin backend, se incluye una capa auxiliar de carga que mantiene la demo operativa con los mismos datos simulados.
+
+## Estructura principal del proyecto
 
 ```text
-.
-├── index.html                    # Landing pública
-├── dashboard.html                # Dashboard demo de Fase 1
-├── registro.html                 # Placeholder Fase 2
-├── login.html                    # Placeholder Fase 2
-├── perfil.html                   # Placeholder Fase 2
-├── configuracion_fiscal.html     # Placeholder Fase 2
-├── ajustes.html                  # Placeholder Fase 2
-├── categorias.html               # Placeholder Fase 2
-├── servicios.html                # Placeholder Fase 2
-├── propuestas.html               # Placeholder Fase 2
-├── facturas.html                 # Placeholder Fase 2
-├── reportes.html                 # Placeholder Fase 2
-├── notificaciones.html           # Placeholder Fase 2
-├── assets/
-│   ├── css/styles.css            # Estilos propios del prototipo
-│   ├── js/dashboard.js           # Lógica del dashboard demo
-│   └── data/mock-data.json       # Datos simulados
-├── img/brand/                    # Logos, favicon, app icons y Open Graph
-├── docs/
-│   ├── prototype/                # Diseño, pantalla y branding de Fase 1
-│   ├── sdd/                      # Especificación por fases
-│   └── specs/                    # Requerimientos y catálogos funcionales
-├── robots.txt
-├── sitemap.xml
-├── site.webmanifest
-└── README.md
+index.html
+dashboard.html
+transacciones.html
+clientes.html
+proyectos.html
+facturas.html
+reportes.html
+assets/
+  css/
+  js/
+  data/
+img/brand/
+docs/
+tests/
+README.md
 ```
 
-## Cómo ejecutarlo localmente
+## Archivos importantes del repositorio
 
-Abrí el proyecto con un servidor local para que `fetch()` pueda cargar el JSON correctamente.
+Para que la app funcione y el repositorio tenga valor real, conviene mantener estos grupos de archivos:
 
-Con Python:
+- HTML principales del prototipo: `index.html`, `dashboard.html`, `transacciones.html`, `clientes.html`, `proyectos.html`, `facturas.html`, `reportes.html`.
+- Estilos y configuración visual: `assets/css/` y `tailwind.config.js`.
+- Lógica de frontend: `assets/js/`.
+- Datos simulados: `assets/data/`.
+- Branding usado por la app: `img/brand/`.
+- Documentación funcional y de handoff: `docs/`.
+- Pruebas de validación: `tests/`.
+- Soporte del proyecto: `package.json`, `package-lock.json`, `robots.txt`, `site.webmanifest`.
+
+## Archivos que no deberían subirse
+
+No conviene subir archivos temporales o ajenos al valor del prototipo, por ejemplo:
+
+- capturas o exports temporales,
+- carpetas de pruebas visuales locales,
+- artefactos de agentes o tooling local,
+- archivos descartados,
+- recursos no utilizados por la demo actual.
+
+## Validación recomendada
+
+Antes de preparar un commit o una subida, podés correr:
 
 ```bash
-python -m http.server 4177
+npm test
+npm run validate
 ```
 
-Luego abrí:
+## Alcance actual
 
-```text
-http://127.0.0.1:4177/index.html
-```
-
-## Flujo principal
-
-```text
-Landing → Ver demo → Dashboard → Registrar movimiento
-```
-
-- `index.html` explica el producto y muestra la propuesta de valor.
-- `dashboard.html` muestra el prototipo operativo con mock data.
-- Las demás páginas existen físicamente para navegación, pero muestran “Módulo en construcción - Fase 2”.
-
-## Branding
-
-Los assets finales de marca viven en `img/brand/`.
-
-| Uso | Archivo |
-| --- | --- |
-| Logo principal | `freelanceflow-logo-color.svg` |
-| Logo monocromo | `freelanceflow-logo-mono.svg` |
-| Marca aislada | `freelanceflow-mark-color.svg` |
-| Favicon | `favicon-32.png` |
-| Apple touch icon | `apple-touch-icon.png` |
-| Manifest icon | `maskable-icon-512.png` |
-| Open Graph | `og-freelanceflow.png` |
-
-## SEO y publicación
-
-Esta versión incluye SEO técnico básico:
-
-- `<title>` y meta description.
-- Open Graph y Twitter card.
-- JSON-LD `SoftwareApplication`.
-- `robots.txt`.
-- `sitemap.xml`.
-- `site.webmanifest`.
-
-Antes de publicar, reemplazar el dominio placeholder:
-
-```text
-https://freelanceflow.example/
-```
-
-por el dominio real del despliegue.
-
-## Alcance fuera de esta fase
-
-Esta versión no incluye:
-
-- Backend.
-- Base de datos.
-- Autenticación real.
-- APIs.
-- React, Django o app móvil.
-- Persistencia real de transacciones.
-
-Eso pertenece a la siguiente etapa del proyecto.
-
-## Validación rápida
-
-```bash
-node --check assets/js/dashboard.js
-node --check assets/js/clientes.js
-```
-
-También verificar manualmente:
-
-- `index.html` carga primero la landing.
-- “Ver demo” navega a `dashboard.html`.
-- El dashboard carga datos desde `assets/data/mock-data.json`.
-- El formulario de movimiento valida sin recargar la página.
-- No hay imágenes, videos, audios ni herramientas locales no usadas en el repo público.
+Esta entrega corresponde a un **prototipo frontend**. No incluye backend, base de datos, autenticación real ni APIs externas. Su función es validar estructura, experiencia, navegación y coherencia funcional antes de avanzar a fases posteriores.
