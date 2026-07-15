@@ -3,7 +3,7 @@
 (function reportsApp() {
   'use strict';
 
-  const DATA_URL = './assets/data/mock-data.json';
+  const DATA_URL = '../assets/data/mock-data.json';
   const STORAGE_KEY = 'freelanceflow_budgets_v1';
   const DEFAULT_PERIOD = '2026-06';
   const model = window.FreelanceFlowReportModel;
@@ -220,6 +220,7 @@
       updateUrl();
       closePanel();
       renderAll();
+      recordActivity('Reportes', 'Filtros aplicados', 'Rango de reporte actualizado.');
       showToast('Filtros aplicados correctamente.');
     });
     document.getElementById('report-filter-reset')?.addEventListener('click', () => {
@@ -340,6 +341,7 @@
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+    recordActivity('Reportes', 'Reporte exportado', `${report.title} en CSV.`);
     showToast(`Reporte descargado en CSV · ${exported.rowCount} ${exported.rowCount === 1 ? 'fila' : 'filas'}.`);
   }
 
@@ -505,7 +507,12 @@
     state.formDirty = false;
     closePanel();
     renderAll();
+    recordActivity('Reportes', 'Presupuesto guardado', `${saved.periodo_clave}.`);
     showToast('Presupuesto guardado correctamente.');
+  }
+
+  function recordActivity(module, action, description) {
+    window.FreelanceFlowActivity?.record({ module, action, description });
   }
 
   function showBudgetErrors(validation) {

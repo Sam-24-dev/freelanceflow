@@ -82,7 +82,7 @@ test('validateTransaction reports each required business field', () => {
   assert.equal(validateTransaction({ tipo: 'ingreso', monto: 10, fecha: '2026-06-10' }).field, 'categoria');
   const accountResult = validateTransaction({ tipo: 'ingreso', monto: 10, fecha: '2026-06-10', categoria: 'cat' });
   assert.equal(accountResult.field, 'cuenta_id');
-  assert.equal(accountResult.message, 'Selecciona una cuenta mock auxiliar.');
+  assert.equal(accountResult.message, 'Selecciona una cuenta.');
 });
 
 test('validateTransaction accepts a complete transaction', () => {

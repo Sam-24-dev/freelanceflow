@@ -1,0 +1,49 @@
+﻿const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const shell = require('../assets/js/app-shell.js');
+
+test('app shell exposes Bitácora only for administrative profile', () => {
+  const flatten = (groups) => groups.flatMap((group) => group.items.map((item) => item[0]));
+
+  assert.deepEqual(flatten(shell.getNavigationGroupsForProfile('operational')), [
+    'dashboard.html',
+    'transacciones.html',
+    'clientes.html',
+    'proyectos.html',
+    'facturas.html',
+    'reportes.html'
+  ]);
+  assert.deepEqual(flatten(shell.getNavigationGroupsForProfile('administrative')), ['bitacora.html']);
+});
+
+test('app shell redirects profiles away from unauthorized modules', () => {
+  assert.equal(shell.getProtectedRedirect('dashboard.html', ''), 'acceso.html');
+  assert.equal(shell.getProtectedRedirect('bitacora.html', 'operational'), 'acceso.html');
+  assert.equal(shell.getProtectedRedirect('bitacora.html', 'administrative'), '');
+  assert.equal(shell.getProtectedRedirect('dashboard.html', 'administrative'), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('transacciones.html', 'administrative'), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('dashboard.html', 'operational'), '');
+});
+
+test('bottom navigation is operational-only', () => {
+  assert.deepEqual(shell.getBottomNavigationForProfile('administrative'), []);
+  assert.equal(shell.getBottomNavigationForProfile('operational').length, 5);
+});
+
+test('app shell escapes stored actor copy before injecting it', () => {
+  assert.equal(shell.escapeHTML('<Admin & Co>'), '&lt;Admin &amp; Co&gt;');
+});
+
+
+test('sidebar brand points from pages to landing root', () => {
+  assert.equal(shell.LANDING_HREF, '../index.html');
+});
+
+const fs = require('node:fs');
+const path = require('node:path');
+
+test('mobile brand also points from pages to landing root', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../assets/js/app-shell.js'), 'utf8');
+  assert.match(source, /class="app-mobile-brand" href="\$\{LANDING_HREF\}"/);
+});

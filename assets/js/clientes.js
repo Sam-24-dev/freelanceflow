@@ -1,7 +1,7 @@
 /* FreelanceFlow — Clientes. Browser-only prototype; no backend or external APIs. */
 
 (function clientsModule() {
-  const DATA_URL = './assets/data/mock-data.json';
+  const DATA_URL = '../assets/data/mock-data.json';
   const STORAGE_KEY = 'freelanceflow_clients_v2';
   const LEGACY_STORAGE_KEY = 'freelanceflow_clients_mock';
   const model = window.FreelanceFlowClientModel;
@@ -469,6 +469,7 @@
     elements.submitButton.disabled = true;
     elements.submitButton.textContent = draft.id ? 'Guardando…' : 'Registrando…';
 
+    let savedClient;
     if (draft.id) {
       state.clients = state.clients.map((client) => client.id === draft.id ? {
         ...model.normalizeClient({ ...client, ...draft }),
@@ -478,6 +479,7 @@
         correo_electronico: draft.correo
       } : client);
       state.selectedClientId = draft.id;
+      savedClient = findClient(draft.id);
     } else {
       const newClient = model.createClientRecord(draft, {
         id: generateClientId(),
@@ -485,14 +487,20 @@
       });
       state.clients.unshift(newClient);
       state.selectedClientId = newClient.id;
+      savedClient = newClient;
     }
 
     saveClients();
     renderAll();
     state.formDirty = false;
     closeDrawer();
+    recordActivity('Clientes', draft.id ? 'Cliente actualizado' : 'Cliente registrado', `${savedClient?.nombre_razon_social || draft.nombre_razon_social}.`);
     showToast(draft.id ? 'Cliente actualizado exitosamente.' : 'Cliente registrado exitosamente.', 'success');
     elements.submitButton.disabled = false;
+  }
+
+  function recordActivity(module, action, description) {
+    window.FreelanceFlowActivity?.record({ module, action, description });
   }
 
   function readForm() {

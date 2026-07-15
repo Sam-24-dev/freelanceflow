@@ -500,6 +500,7 @@
     persist();
     closeInvoiceForm();
     renderList();
+    recordActivity('Facturas', intent === 'send' ? 'Factura enviada' : 'Factura guardada', `${record.numero_factura}.`);
     showToast(intent === 'send' ? 'Factura enviada. Estado actualizado a Enviada.' : 'Factura guardada como borrador.');
   }
 
@@ -564,6 +565,7 @@
     closeDialog(selectors.paymentDialog);
     renderList();
     renderDetail();
+    recordActivity('Facturas', 'Pago registrado', `${invoice.numero_factura} por ${formatCurrency(payment.monto_pagado, invoice.moneda)}.`);
     showToast(validation.excess > 0
       ? `Pago registrado. ${formatCurrency(validation.excess, invoice.moneda)} quedaron como saldo a favor.`
       : 'Pago registrado correctamente. Saldo actualizado.');
@@ -601,6 +603,7 @@
     closeDialog(selectors.voidDialog);
     renderList();
     renderDetail();
+    recordActivity('Facturas', 'Factura anulada', `${state.invoices[index].numero_factura}.`);
     showToast('Factura anulada. Este cambio queda registrado en el historial.');
   }
 
@@ -608,7 +611,7 @@
     const link = `${window.location.origin}${window.location.pathname}?factura=${encodeURIComponent(invoice.id)}`;
     try {
       await navigator.clipboard.writeText(link);
-      showToast('Enlace de la factura copiado. En Fase 1 funciona como referencia visual.');
+      showToast('Enlace de la factura copiado.');
     } catch {
       showToast('No pudimos copiar el enlace automáticamente.', 'error');
     }
@@ -646,8 +649,12 @@
     if (action === 'send') {
       const index = state.invoices.findIndex((item) => item.id === invoice.id);
       state.invoices[index] = { ...state.invoices[index], estado: 'SENT' };
-      persist(); renderList(); renderDetail(); showToast('Factura enviada. Estado actualizado a Enviada.');
+      persist(); renderList(); renderDetail(); recordActivity('Facturas', 'Factura enviada', `${invoice.numero_factura}.`); showToast('Factura enviada. Estado actualizado a Enviada.');
     }
+  }
+
+  function recordActivity(module, action, description) {
+    window.FreelanceFlowActivity?.record({ module, action, description });
   }
 
   function resetFilters() {
@@ -732,7 +739,7 @@
     selectors.mobileList.hidden = true;
     selectors.empty.hidden = true;
     try {
-      const data = await window.FreelanceFlowDataLoader.loadJson('./assets/data/mock-data.json');
+      const data = await window.FreelanceFlowDataLoader.loadJson('../assets/data/mock-data.json');
       state.clients = data.clientes ?? [];
       state.projects = data.proyectos ?? [];
       state.invoices = model.mergeById(data.facturas ?? [], readStorage(STORAGE_KEYS.invoices));

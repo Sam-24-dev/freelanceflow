@@ -1,6 +1,6 @@
 /* FreelanceFlow dashboard rendering with local prototype data. */
 
-const MOCK_DATA_URL = './assets/data/mock-data.json';
+const MOCK_DATA_URL = '../assets/data/mock-data.json';
 const TRANSACTIONS_STORAGE_KEY = 'freelanceflow_transactions_mock';
 const MONTHLY_INCOME_GOAL = 2000;
 const DEFAULT_PERIOD = '2026-06';

@@ -255,6 +255,10 @@ body {
   margin: 1rem auto 0;
 }
 
+.bitacora-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .reports-metric-card {
   position: relative;
   min-width: 0;
@@ -535,6 +539,8 @@ body {
   gap: 0.58rem;
 }
 
+.bitacora-mobile-list { display: none; }
+
 .report-access-card {
   position: relative;
   display: grid;
@@ -812,6 +818,8 @@ body {
   .budget-mobile-card > p { display: flex; justify-content: space-between; gap: 0.6rem; margin-top: 0.45rem; color: #64748b; font-size: 0.58rem; }
   .budget-mobile-card > p strong { color: #334155; }
   .reports-access-grid { grid-template-columns: 1fr; }
+  .bitacora-table { display: none; }
+  .bitacora-mobile-list:not([hidden]) { display: grid; }
   .report-access-card { min-height: 4rem; }
   .report-preview-header { align-items: stretch; flex-direction: column; }
   .report-preview-header button { width: 100%; }

@@ -1,7 +1,7 @@
 /* FreelanceFlow — Proyectos. Browser-only prototype; no backend or external APIs. */
 
 (function projectsModule() {
-  const DATA_URL = './assets/data/mock-data.json';
+  const DATA_URL = '../assets/data/mock-data.json';
   const STORAGE_KEY = 'freelanceflow_projects_v1';
   const DETAIL_QUERY = '(min-width: 1280px)';
   const model = window.FreelanceFlowProjectModel;
@@ -709,9 +709,14 @@
     renderAll();
     state.formDirty = false;
     closeForm();
+    recordActivity('Proyectos', draft.id ? 'Proyecto actualizado' : 'Proyecto creado', `${savedProject.nombre_proyecto}.`);
     showToast(draft.id ? 'Proyecto actualizado correctamente.' : 'Proyecto creado correctamente.', 'success');
     elements.submitButton.disabled = false;
     elements.submitButton.textContent = draft.id ? 'Guardar cambios' : 'Guardar proyecto';
+  }
+
+  function recordActivity(module, action, description) {
+    window.FreelanceFlowActivity?.record({ module, action, description });
   }
 
   function readForm() {
@@ -890,7 +895,7 @@
       copy = `${formatMoney(metrics.unbilledValue)} de trabajo estimado está pendiente de facturar.`;
       tone = 'warning';
     } else if (metrics.invoicedAboveLoggedWork) {
-      title = 'Revisá horas y facturas';
+      title = 'Revisa horas y facturas';
       copy = `La facturación supera en ${formatMoney(metrics.invoiceValueDifference)} el valor calculado con las horas registradas. Puede haber conceptos adicionales o tiempo pendiente de registrar.`;
     } else if (metrics.financialStatus === 'work_not_invoiced' || metrics.financialStatus === 'partially_invoiced') {
       title = 'Trabajo pendiente de facturar';
@@ -914,7 +919,7 @@
       return `<aside class="project-detail-financial-summary is-warning"><strong>Este proyecto está completado, pero no tiene facturas.</strong><span>Las ${formatNumber(metrics.hours)} h registradas equivalen a ${formatMoney(metrics.estimatedValue)} según la tarifa. Por eso “Facturado”, “Cobrado” y “Por cobrar” permanecen en ${formatMoney(0)} hasta que se emita una factura.</span></aside>`;
     }
     if (metrics.invoicedAboveLoggedWork) {
-      return `<aside class="project-detail-financial-summary is-info"><strong>La facturación supera el valor de las horas registradas.</strong><span>Hay una diferencia de ${formatMoney(metrics.invoiceValueDifference)}. Revisá si faltan registros de tiempo o si las facturas incluyen otros conceptos.</span></aside>`;
+      return `<aside class="project-detail-financial-summary is-info"><strong>La facturación supera el valor de las horas registradas.</strong><span>Hay una diferencia de ${formatMoney(metrics.invoiceValueDifference)}. Revisa si faltan registros de tiempo o si las facturas incluyen otros conceptos.</span></aside>`;
     }
     if (metrics.unbilledValue > 0) {
       return `<aside class="project-detail-financial-summary is-warning"><strong>Hay trabajo pendiente de facturar.</strong><span>${formatMoney(metrics.unbilledValue)} del valor estimado todavía no está incluido en facturas.</span></aside>`;

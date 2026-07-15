@@ -1,4 +1,4 @@
-/*
+﻿/*
   FreelanceFlow shared application shell.
   Provides one responsive navigation pattern for every authenticated app screen.
 */
@@ -7,6 +7,7 @@
   'use strict';
 
   const SIDEBAR_STORAGE_KEY = 'freelanceflow_sidebar_collapsed';
+  const LANDING_HREF = '../index.html';
   const DESKTOP_QUERY = '(min-width: 1024px)';
 
   const icons = {
@@ -18,6 +19,7 @@
     proposals: '<path d="M7 3h7l4 4v14H7V3Zm7 0v5h4M10 12h5m-5 4h5"/>',
     invoices: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Zm3 5h6m-6 4h6m-6 4h3"/>',
     reports: '<path d="M5 20V10m7 10V4m7 16v-7"/>',
+    log: '<path d="M7 4h10v16H7V4Zm3 5h4m-4 4h4m-4 4h2"/>',
     categories: '<path d="M4 5h16v14H4V5Zm4 4h8m-8 4h5"/>',
     fiscal: '<path d="M12 3v18m5-14.5c0-1.4-2.2-2.5-5-2.5S7 5.1 7 6.5 9.2 9 12 9s5 1.1 5 2.5S14.8 14 12 14s-5 1.1-5 2.5S9.2 19 12 19s5-1.1 5-2.5"/>',
     notifications: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/>',
@@ -29,7 +31,7 @@
     profile: '<path d="M20 21a8 8 0 0 0-16 0m8-9a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/>'
   };
 
-  const navigationGroups = [
+  const baseNavigationGroups = [
     {
       label: 'Operación',
       items: [
@@ -42,6 +44,44 @@
       ]
     }
   ];
+
+
+  function getStoredProfile() {
+    try {
+      return sessionStorage.getItem('freelanceflow_access_profile') || '';
+    } catch {
+      return '';
+    }
+  }
+
+  function getStoredActor() {
+    try {
+      return sessionStorage.getItem('freelanceflow_access_actor') || 'Equipo operativo';
+    } catch {
+      return 'Equipo operativo';
+    }
+  }
+
+  function escapeHTML(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, (character) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    })[character]);
+  }
+
+  function getNavigationGroupsForProfile(profile = 'operational') {
+    if (profile === 'administrative') {
+      return [{ label: 'Administración', items: [['bitacora.html', 'Bit\u00e1cora', 'log']] }];
+    }
+    return baseNavigationGroups.map((group) => ({ ...group, items: [...group.items] }));
+  }
+
+  function getProtectedRedirect(file, profile = '') {
+    const operationalFiles = baseNavigationGroups.flatMap((group) => group.items.map((item) => item[0]));
+    if (!profile && (file === 'bitacora.html' || operationalFiles.includes(file))) return 'acceso.html';
+    if (file === 'bitacora.html' && profile !== 'administrative') return 'acceso.html';
+    if (profile === 'administrative' && operationalFiles.includes(file)) return 'bitacora.html';
+    return '';
+  }
 
   const bottomNavigation = [
     ['dashboard.html', 'Inicio', 'home'],
@@ -76,7 +116,7 @@
       </li>`;
   }
 
-  function buildSidebar(activeFile) {
+  function buildSidebar(activeFile, profile) {
     const aside = document.createElement('aside');
     aside.id = 'app-sidebar';
     aside.className = 'app-sidebar';
@@ -84,8 +124,8 @@
     aside.innerHTML = `
       <div class="app-sidebar-panel">
         <header class="app-sidebar-header">
-          <a class="app-sidebar-brand" href="index.html" aria-label="FreelanceFlow, ir a la página de inicio">
-            <img src="./img/brand/freelanceflow-mark-color.svg" alt="" width="38" height="38" aria-hidden="true">
+          <a class="app-sidebar-brand" href="${LANDING_HREF}" aria-label="FreelanceFlow, ir a la página de inicio">
+            <img src="../img/brand/freelanceflow-mark-color.svg" alt="" width="38" height="38" aria-hidden="true">
             <span class="app-sidebar-brand-name" translate="no">Freelance<span>Flow</span></span>
           </a>
           <button class="app-sidebar-toggle" type="button" data-sidebar-internal-toggle aria-controls="app-sidebar" aria-label="Contraer menú lateral">
@@ -95,7 +135,7 @@
           <p class="app-sidebar-tagline">Control financiero para trabajar con claridad.</p>
         </header>
         <nav class="app-sidebar-navigation" aria-label="Navegación principal">
-          ${navigationGroups.map((group) => `
+          ${getNavigationGroupsForProfile(profile).map((group) => `
             <section class="app-sidebar-group" aria-label="${group.label}">
               <p class="app-sidebar-section-title">${group.label}</p>
               <ul>${group.items.map((item) => navLink(item, activeFile)).join('')}</ul>
@@ -105,8 +145,8 @@
           <div class="app-sidebar-profile" aria-label="Usuario actual">
             <span class="app-sidebar-avatar" aria-hidden="true">AV</span>
             <span class="app-sidebar-profile-copy">
-              <strong>Andrés Vélez Moreno</strong>
-              <small>Demo local</small>
+              <strong>${escapeHTML(getStoredActor())}</strong>
+              <small>${profile === 'administrative' ? 'Perfil administrativo' : 'Perfil operativo'}</small>
             </span>
           </div>
         </footer>
@@ -123,19 +163,25 @@
       <button class="app-mobile-menu-button" type="button" data-sidebar-mobile-trigger aria-controls="app-sidebar" aria-expanded="false" aria-label="Abrir menú principal">
         ${icon('menu', 'app-mobile-menu-icon')}
       </button>
-      <a class="app-mobile-brand" href="dashboard.html" aria-label="FreelanceFlow Dashboard">
-        <img src="./img/brand/freelanceflow-mark-color.svg" alt="" width="32" height="32" fetchpriority="high" aria-hidden="true">
+      <a class="app-mobile-brand" href="${LANDING_HREF}" aria-label="FreelanceFlow, ir a la página de inicio">
+        <img src="../img/brand/freelanceflow-mark-color.svg" alt="" width="32" height="32" fetchpriority="high" aria-hidden="true">
         <span translate="no">Freelance<span>Flow</span></span>
       </a>
       <span class="app-mobile-page-name">${pageLabel()}</span>`;
     return header;
   }
 
-  function buildBottomNavigation(activeFile) {
+  function getBottomNavigationForProfile(profile = 'operational') {
+    return profile === 'administrative' ? [] : bottomNavigation;
+  }
+
+  function buildBottomNavigation(activeFile, profile) {
     const nav = document.createElement('nav');
     nav.className = 'app-bottom-navigation';
     nav.setAttribute('aria-label', 'Navegación móvil');
-    nav.innerHTML = bottomNavigation.map(([href, label, iconName]) => {
+    const items = getBottomNavigationForProfile(profile);
+    nav.hidden = items.length === 0;
+    nav.innerHTML = items.map(([href, label, iconName]) => {
       const isActive = href === activeFile;
       return `<a href="${href}"${isActive ? ' aria-current="page"' : ''} class="${isActive ? 'app-bottom-link-active' : ''}">${icon(iconName, 'app-bottom-icon')}<span>${label}</span></a>`;
     }).join('');
@@ -165,7 +211,10 @@
     if (!layout || !slot || !main) return;
 
     const activeFile = currentFile();
-    const sidebar = buildSidebar(activeFile);
+    const profile = getStoredProfile();
+    const redirect = getProtectedRedirect(activeFile, profile);
+    if (redirect) { window.location.replace(redirect); return; }
+    const sidebar = buildSidebar(activeFile, profile);
     slot.replaceWith(sidebar);
 
     const mobileHeaderSlot = document.querySelector('[data-app-mobile-header-slot]');
@@ -175,7 +224,7 @@
       main.before(buildMobileAppBar());
     }
 
-    const bottomNav = buildBottomNavigation(activeFile);
+    const bottomNav = buildBottomNavigation(activeFile, profile);
     document.body.append(bottomNav);
 
     const backdrop = document.createElement('button');
@@ -309,5 +358,7 @@
     syncShell();
   }
 
-  document.addEventListener('DOMContentLoaded', initAppShell);
+  const api = { getNavigationGroupsForProfile, getProtectedRedirect, getBottomNavigationForProfile, escapeHTML, LANDING_HREF };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', initAppShell);
 })();
