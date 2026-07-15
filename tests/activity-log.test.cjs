@@ -1,0 +1,78 @@
+﻿const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const activity = require('../assets/js/activity-log.js');
+
+function storage() {
+  const data = new Map();
+  return {
+    getItem: (key) => data.has(key) ? data.get(key) : null,
+    setItem: (key, value) => data.set(key, String(value)),
+    removeItem: (key) => data.delete(key)
+  };
+}
+
+test('activity log records, reads newest first and respects the limit', () => {
+  const api = activity.createActivityLog({
+    storage: storage(),
+    now: () => '2026-06-27T10:00:00.000Z',
+    random: () => 0.25,
+    limit: 2,
+    getActor: () => 'Ana Mora',
+    getProfile: () => 'operational'
+  });
+
+  api.record({ module: 'Acceso', action: 'Perfil seleccionado', description: 'Perfil administrativo seleccionado.' });
+  api.record({ module: 'Dashboard', action: 'Ingreso a pantalla', description: 'Ingreso al dashboard.' });
+  api.record({ module: 'Reportes', action: 'Búsqueda realizada', description: 'Filtro aplicado.' });
+
+  assert.deepEqual(api.read().map((item) => item.module), ['Reportes', 'Dashboard']);
+  assert.equal(api.read()[0].actor, 'Ana Mora');
+  assert.equal(api.read()[0].profile, 'operational');
+});
+
+test('activity log clears session entries', () => {
+  const api = activity.createActivityLog({ storage: storage() });
+  api.record({ module: 'Clientes', action: 'Ingreso a pantalla', description: 'Ingreso al módulo Clientes.' });
+  api.clear();
+
+  assert.deepEqual(api.read(), []);
+});
+
+test('activity log skips all administrative activity', () => {
+  const api = activity.createActivityLog({
+    storage: storage(),
+    getActor: () => 'Administración',
+    getProfile: () => 'administrative'
+  });
+
+  assert.equal(api.record({ module: 'Bitácora', action: 'Ingreso a pantalla', description: 'Ingreso al módulo Bitácora.' }), null);
+  assert.deepEqual(api.read(), []);
+});
+
+test('activity log skips activity until a profile is selected', () => {
+  const api = activity.createActivityLog({ storage: storage() });
+
+  assert.equal(api.record({ module: 'Dashboard', action: 'Ingreso a pantalla', description: 'Ingreso al módulo Dashboard.' }), null);
+  assert.deepEqual(api.read(), []);
+});
+
+test('activity log deduplicates equivalent consecutive events', () => {
+  const api = activity.createActivityLog({
+    storage: storage(),
+    getActor: () => 'Equipo operativo',
+    getProfile: () => 'operational'
+  });
+
+  api.record({ module: 'Dashboard', action: 'Ingreso a pantalla', description: 'Ingreso al módulo Dashboard.' });
+  api.record({ module: 'Dashboard', action: 'Ingreso a pantalla', description: 'Ingreso al módulo Dashboard.' });
+
+  assert.equal(api.read().length, 1);
+});
+
+test('activity log only records operational page visits', () => {
+  assert.equal(activity.shouldRecordPageVisit('bitacora.html', 'operational'), false);
+  assert.equal(activity.shouldRecordPageVisit('bitacora.html', 'administrative'), false);
+  assert.equal(activity.shouldRecordPageVisit('dashboard.html', 'operational'), true);
+  assert.equal(activity.shouldRecordPageVisit('dashboard.html', 'administrative'), false);
+});

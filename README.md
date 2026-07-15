@@ -1,20 +1,22 @@
 # FreelanceFlow
 
-FreelanceFlow es un prototipo frontend estático de un SaaS financiero para freelancers. La entrega actual demuestra la experiencia principal del producto con navegación, captura de movimientos, gestión de clientes, proyectos, facturas y reportes, todo con datos simulados y sin backend.
+FreelanceFlow es la experiencia frontend de un SaaS financiero para freelancers y equipos pequeños. La versión actual integra acceso por perfil, gestión operativa y trazabilidad de actividad, además de movimientos, clientes, proyectos, facturas y reportes.
 
 ## Descripción general
 
-El objetivo de esta versión es validar la estructura funcional y visual del producto antes de pasar a una implementación con persistencia real. La demo está pensada para abrirse localmente y recorrer el flujo completo desde la landing pública hasta el dashboard y los módulos operativos.
+Esta versión consolida la estructura funcional y visual del producto antes de incorporar persistencia y autenticación de servidor. Permite recorrer el flujo completo desde la landing pública, elegir un perfil de trabajo y acceder a la operación financiera o a la Bitácora administrativa.
 
-## Módulos incluidos en esta fase
+## Módulos incluidos
 
 - **Landing pública**: entrada comercial del producto.
+- **Acceso por perfil**: separa el trabajo operativo de la revisión administrativa.
 - **Dashboard**: resumen financiero con métricas, actividad reciente y accesos rápidos.
 - **Movimientos**: registro y consulta de ingresos y gastos con validaciones en el cliente.
 - **Clientes**: módulo obligatorio del proyecto, con alta, búsqueda, edición y detalle.
 - **Proyectos**: vínculo entre clientes, ingresos, gastos, horas y rentabilidad.
 - **Facturas**: listado, detalle, estados y exportación visual a PDF.
 - **Reportes**: vistas consolidadas para lectura financiera y control operativo.
+- **Bitácora**: revisión administrativa de la actividad operativa reciente de la sesión.
 
 ### Módulo obligatorio de Clientes
 
@@ -31,15 +33,15 @@ En la interfaz, estos datos representan el **Contacto Principal / Representante 
 
 ## Instrucciones de ejecución
 
-No hay que instalar un backend ni levantar una base de datos para revisar esta entrega.
+No hace falta instalar un backend ni levantar una base de datos para ejecutar esta versión.
 
 ### Ejecución local
 
-1. Cloná o copiá el repositorio en tu equipo.
-2. Abrí `index.html` en el navegador.
-3. Desde la landing podés navegar al dashboard y al resto de la demo.
+1. Cloná el repositorio e ingresá a su directorio.
+2. Ejecutá `python -m http.server 4177`.
+3. Abrí `http://127.0.0.1:4177/` y elegí el perfil de trabajo desde la landing.
 
-> Nota técnica: la app funciona con datos simulados locales para que la revisión visual siga disponible incluso en apertura directa.
+> La información operativa y la Bitácora se mantienen en el navegador durante esta etapa frontend.
 
 ## Detalles técnicos
 
@@ -49,23 +51,26 @@ No hay que instalar un backend ni levantar una base de datos para revisar esta e
 - CSS3 + Tailwind CSS
 - JavaScript Vanilla (ES6+)
 
-### Datos simulados
+### Datos locales
 
-El prototipo consume datos simulados desde `assets/data/mock-data.json`.
+La aplicación consume datos locales desde `assets/data/mock-data.json`.
 
-- La carga principal usa **Fetch API / AJAX** cuando la demo se sirve desde un entorno local HTTP.
-- Para abrir el proyecto en local sin backend, se incluye una capa auxiliar de carga que mantiene la demo operativa con los mismos datos simulados.
+- La carga principal usa **Fetch API / AJAX** desde el servidor local.
+- Una capa auxiliar mantiene disponibles los mismos datos cuando no existe un backend.
 
 ## Estructura principal del proyecto
 
 ```text
 index.html
-dashboard.html
-transacciones.html
-clientes.html
-proyectos.html
-facturas.html
-reportes.html
+pages/
+  acceso.html
+  dashboard.html
+  transacciones.html
+  clientes.html
+  proyectos.html
+  facturas.html
+  reportes.html
+  bitacora.html
 assets/
   css/
   js/
@@ -80,7 +85,7 @@ README.md
 
 Para que la app funcione y el repositorio tenga valor real, conviene mantener estos grupos de archivos:
 
-- HTML principales del prototipo: `index.html`, `dashboard.html`, `transacciones.html`, `clientes.html`, `proyectos.html`, `facturas.html`, `reportes.html`.
+- HTML principales: `index.html` y las pantallas de `pages/`.
 - Estilos y configuración visual: `assets/css/` y `tailwind.config.js`.
 - Lógica de frontend: `assets/js/`.
 - Datos simulados: `assets/data/`.
@@ -91,13 +96,13 @@ Para que la app funcione y el repositorio tenga valor real, conviene mantener es
 
 ## Archivos que no deberían subirse
 
-No conviene subir archivos temporales o ajenos al valor del prototipo, por ejemplo:
+No conviene subir archivos temporales o ajenos al producto, por ejemplo:
 
 - capturas o exports temporales,
 - carpetas de pruebas visuales locales,
 - artefactos de agentes o tooling local,
 - archivos descartados,
-- recursos no utilizados por la demo actual.
+- recursos no utilizados por la versión actual.
 
 ## Validación recomendada
 
@@ -110,4 +115,4 @@ npm run validate
 
 ## Alcance actual
 
-Esta entrega corresponde a un **prototipo frontend**. No incluye backend, base de datos, autenticación real ni APIs externas. Su función es validar estructura, experiencia, navegación y coherencia funcional antes de avanzar a fases posteriores.
+Esta entrega corresponde a una **versión frontend estática**. No incluye backend, base de datos, autenticación real ni APIs externas. El acceso por perfil y la Bitácora funcionan en el navegador y preparan la evolución posterior del producto.

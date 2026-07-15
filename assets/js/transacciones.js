@@ -1,7 +1,7 @@
 /* FreelanceFlow — Movimientos financieros, frontend estático. */
 
 (function transactionsApp() {
-  const DATA_URL = './assets/data/mock-data.json';
+  const DATA_URL = '../assets/data/mock-data.json';
   const STORAGE_KEY = 'freelanceflow_transactions_mock';
   const DEFAULT_PERIOD = '2026-06';
   const INCOME_CATEGORY_ID = 'income_invoice';
@@ -387,7 +387,12 @@
     renderTransactions();
     state.formDirty = false;
     closeDrawer();
-    showToast(existing ? 'Transacción actualizada exitosamente.' : 'Transacción guardada exitosamente.');
+    recordActivity('Movimientos', existing ? 'Movimiento actualizado' : 'Movimiento registrado', `${transaction.descripcion} por ${formatCurrency(transaction.monto)}.`);
+    showToast(existing ? 'Movimiento actualizado correctamente.' : 'Movimiento guardado correctamente.');
+  }
+
+  function recordActivity(module, action, description) {
+    window.FreelanceFlowActivity?.record({ module, action, description });
   }
 
   function readForm() {

@@ -1,0 +1,74 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Bitácora administrativa de actividad operativa en FreelanceFlow.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0F172A">
+  <title>FreelanceFlow | Bitácora</title>
+  <link rel="icon" type="image/png" href="../img/brand/favicon-32.png">
+  <link rel="apple-touch-icon" href="../img/brand/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body class="reports-app app-shell-page">
+  <a href="#main-content" class="skip-link">Saltar al contenido principal</a>
+
+  <div class="app-layout min-h-screen" data-app-layout>
+    <div class="app-sidebar-slot" data-app-sidebar-slot aria-hidden="true"></div>
+    <div class="app-mobile-appbar" data-app-mobile-header-slot aria-hidden="true"></div>
+
+    <main id="main-content" class="app-main reports-main">
+      <header class="reports-heading">
+        <div>
+          <p class="reports-eyebrow">Control administrativo</p>
+          <h1>Bitácora de actividad</h1>
+          <p>Revisa la actividad operativa reciente de esta sesión para entender cómo se mueve el trabajo del equipo.</p>
+        </div>
+        <div class="reports-heading-actions">
+          <button data-bitacora-clear class="reports-secondary-button" type="button">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3"/></svg>
+            Limpiar bitácora
+          </button>
+        </div>
+      </header>
+
+      <section class="reports-summary bitacora-summary" aria-labelledby="bitacora-summary-title">
+        <h2 id="bitacora-summary-title" class="sr-only">Resumen de actividad</h2>
+        <article class="reports-metric-card reports-metric-goal"><div class="reports-metric-top"><span>Total</span><span class="reports-metric-icon" aria-hidden="true">◎</span></div><strong data-bitacora-total>0</strong><p>Acciones registradas recientemente.</p></article>
+        <article class="reports-metric-card reports-metric-income"><div class="reports-metric-top"><span>Última acción</span></div><strong data-bitacora-last-action>Sin actividad</strong><p data-bitacora-last-time>Sin registro</p></article>
+        <article class="reports-metric-card reports-metric-net"><div class="reports-metric-top"><span>Módulos</span><span class="reports-metric-icon" aria-hidden="true">≡</span></div><strong data-bitacora-modules>Sin módulos</strong><p>Pantallas con actividad registrada.</p></article>
+      </section>
+
+      <p data-bitacora-status class="reports-toast" role="status" aria-live="polite" aria-atomic="true"></p>
+
+      <section class="report-preview-panel" aria-labelledby="bitacora-table-title">
+        <header class="reports-section-header report-preview-header">
+          <div><p class="reports-section-eyebrow">Historial operativo</p><h2 id="bitacora-table-title">Actividad registrada</h2><p>La información ayuda a revisar entradas, acciones y pantallas consultadas.</p></div>
+        </header>
+
+        <div data-bitacora-table-wrap class="reports-table-scroll bitacora-table" tabindex="0" aria-label="Tabla de actividad; desliza horizontalmente si es necesario" hidden>
+          <table class="reports-budget-table">
+            <caption class="sr-only">Actividad operativa registrada en la sesión</caption>
+            <thead><tr><th scope="col">Fecha y hora</th><th scope="col">Actor</th><th scope="col">Módulo</th><th scope="col">Acción</th><th scope="col">Detalle</th></tr></thead>
+            <tbody data-bitacora-table-body></tbody>
+          </table>
+        </div>
+
+        <div data-bitacora-mobile-list class="reports-access-grid bitacora-mobile-list" hidden></div>
+
+        <div data-bitacora-empty class="reports-empty-state">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 8h8m-8 4h8m-8 4h5"/></svg>
+          <strong>No hay actividad registrada.</strong>
+          <p>Ve a Acceso, entra con el perfil operativo y usa los módulos. Luego vuelve como administrativo para revisar la actividad.</p>
+          <a class="reports-primary-button" href="acceso.html">Elegir perfil</a>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="../assets/js/activity-log.js"></script>
+  <script src="../assets/js/app-shell.js"></script>
+  <script src="../assets/js/bitacora.js"></script>
+</body>
+</html>

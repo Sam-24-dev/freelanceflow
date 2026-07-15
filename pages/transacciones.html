@@ -7,9 +7,9 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#0f172a">
   <title>Movimientos financieros | FreelanceFlow</title>
-  <link rel="icon" type="image/png" href="./img/brand/favicon-32.png">
-  <link rel="apple-touch-icon" href="./img/brand/apple-touch-icon.png">
-  <link rel="stylesheet" href="./assets/css/styles.css">
+  <link rel="icon" type="image/png" href="../img/brand/favicon-32.png">
+  <link rel="apple-touch-icon" href="../img/brand/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/css/styles.css">
 </head>
 <body class="app-shell app-shell-page transactions-app min-h-screen text-slate-950">
   <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-full focus:bg-amber-400 focus:px-4 focus:py-2 focus:font-bold focus:text-slate-950">
@@ -206,11 +206,11 @@
       </div>
 
       <div class="transaction-field">
-        <label for="transaction-account">Cuenta mock auxiliar <span aria-hidden="true">*</span></label>
+        <label for="transaction-account">Cuenta <span aria-hidden="true">*</span></label>
         <select id="transaction-account" name="cuenta" aria-describedby="transaction-account-help transaction-account-error">
-          <option value="">Selecciona una cuenta mock auxiliar</option>
+          <option value="">Selecciona una cuenta</option>
         </select>
-        <small id="transaction-account-help">Solo para simular el origen o destino del movimiento en Fase 1.</small>
+        <small id="transaction-account-help">Define el origen o destino financiero del movimiento.</small>
         <span id="transaction-account-error" class="transaction-field-error"></span>
       </div>
 
@@ -231,7 +231,7 @@
 
       <div class="transaction-field">
         <label for="transaction-notes">Notas <small>(opcional)</small></label>
-        <textarea id="transaction-notes" name="notas" rows="3" maxlength="240" placeholder="Ej. Pago parcial, suscripción mensual o transporte a reunion."></textarea>
+        <textarea id="transaction-notes" name="notas" rows="3" maxlength="240" placeholder="Ej. Pago parcial, suscripción mensual o transporte a reunión."></textarea>
       </div>
 
       <p id="transaction-form-message" class="transactions-alert" role="alert" aria-live="assertive" hidden></p>
@@ -245,13 +245,14 @@
 
   <div id="transaction-toast" class="transaction-toast" role="status" aria-live="polite" aria-atomic="true" hidden>
     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>
-    <span>Transacción guardada exitosamente.</span>
+    <span>Movimiento guardado correctamente.</span>
   </div>
 
-  <script src="./assets/js/transaction-model.js" defer></script>
-  <script src="./assets/data/mock-data.js" defer></script>
-  <script src="./assets/js/mock-data-loader.js" defer></script>
-  <script src="./assets/js/app-shell.js" defer></script>
-  <script src="./assets/js/transacciones.js" defer></script>
+  <script src="../assets/js/transaction-model.js" defer></script>
+  <script src="../assets/data/mock-data.js" defer></script>
+  <script src="../assets/js/mock-data-loader.js" defer></script>
+  <script src="../assets/js/activity-log.js" defer></script>
+  <script src="../assets/js/app-shell.js" defer></script>
+  <script src="../assets/js/transacciones.js" defer></script>
 </body>
 </html>

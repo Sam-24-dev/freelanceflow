@@ -33,7 +33,7 @@
     }
 
     if (!transaction.cuenta_id) {
-      return { valid: false, field: 'cuenta_id', message: 'Selecciona una cuenta mock auxiliar.' };
+      return { valid: false, field: 'cuenta_id', message: 'Selecciona una cuenta.' };
     }
 
     return { valid: true };
