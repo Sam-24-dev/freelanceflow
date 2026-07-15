@@ -1,17 +1,18 @@
-﻿# FreelanceFlow — Stitch screen prompts
+# FreelanceFlow — Stitch screen prompts
 
-Use these prompts to generate the remaining FreelanceFlow screens in Stitch/Figma before converting them to code.
+Use these prompts to generate FreelanceFlow screens in Stitch/Figma before converting them to code.
 
 ## Workflow rule
 
 For every screen:
 
-1. Generate the first version with the master prompt + the screen-specific prompt.
-2. Review the result against `docs/prototype/DESIGN.md`.
-3. Iterate up to 3 times maximum.
-4. Once approved, convert the screen to static HTML/CSS/JS.
+1. Paste the **Master prompt** first.
+2. Paste the **screen-specific prompt** below it.
+3. Review the result against `docs/prototype/DESIGN.md` and the official specs in `docs/specs/`.
+4. Iterate up to 3 times maximum.
+5. Once approved, create a handoff Markdown before converting the screen to static HTML/CSS/JS.
 
-Do not design backend, database, APIs, authentication logic or real payment integrations during Phase 1.
+Do not design backend, database, APIs, authentication logic, bank connections or real payment integrations during Phase 1.
 
 ---
 
@@ -38,6 +39,9 @@ Brand style:
 - Borders: rgba(255,255,255,0.10) on dark, #E2E8F0 on light
 - Typography: IBM Plex Sans or similar professional grotesk. Use tabular-looking numbers.
 
+Navigation:
+For the current Phase 1 product demo, primary navigation should emphasize: Dashboard, Movimientos, Clientes, Proyectos, Facturas and Reportes. If the screen being designed belongs to a future module, show that module as the active destination but keep it clearly within a static frontend prototype scope.
+
 Do not use:
 - Purple SaaS gradients
 - Crypto/trading aesthetic
@@ -53,16 +57,12 @@ Desktop target: 1440 x 1024.
 Tablet target: 768 x 1024.
 Mobile target: 390 x 844.
 
-Navigation:
-Desktop uses a left sidebar with: Dashboard, Clientes, Servicios, Propuestas, Facturas, Reportes, Configuración.
-Mobile uses a bottom nav with: Inicio, Movimientos, Clientes, Reportes.
-
 Interaction states to represent visually:
 - Hover/focus state for primary buttons
 - Empty state when there is no data
 - Success confirmation after saving
 - Error/validation state in forms
-- Active sidebar item
+- Active navigation item
 
 Accessibility:
 Keep strong contrast, readable labels, 44px mobile tap targets, clear focus states, and never rely only on color to distinguish income vs expense.
@@ -331,6 +331,199 @@ Required content:
 Design notes:
 Avoid childish onboarding. It should feel like a calm financial notebook guiding the user.
 ```
+
+---
+
+## Remaining module prompts
+
+These prompts are for modules that should be designed before implementation. They are intentionally scoped so the UI feels like a real SaaS without inventing backend behavior.
+
+### Priority 1 — Categories screen / Categorías
+
+```text
+Using the FreelanceFlow master style, design the Categorías de gasto screen as the next operational module.
+
+Purpose:
+Let a freelancer organize the expense categories used by Movimientos, Reportes and budget controls, so the SaaS feels complete without adding backend complexity.
+
+Required content:
+- Left sidebar navigation with the current operational modules: Dashboard, Movimientos, Clientes, Proyectos, Facturas, Reportes, and Categorías active.
+- Page title: “Categorías de gasto”.
+- Header action: “Nueva categoría”.
+- Short explanation: categories keep movements, budgets and reports organized.
+- Summary cards:
+  - total categories
+  - deductible categories
+  - most used category
+  - categories with monthly budget attention
+- Search and filter row:
+  - search by category name or description
+  - filter by deductible / non-deductible
+- Category table for desktop and cards for mobile with:
+  - nombre
+  - descripción
+  - deductible flag
+  - usage count
+  - monthly budget reference
+  - status
+- Create/edit side panel with clear labels:
+  - nombre_categoria
+  - descripcion optional
+  - es_deducible_por_defecto boolean
+  - presupuesto_mensual optional
+- Actions: Crear categoría, Guardar cambios, Editar, Eliminar with confirmation, Cancelar.
+- Validation states: required category name, duplicate category name.
+- Empty state: “Aún no has creado categorías de gasto”.
+- No-results state for search/filter.
+
+Design notes:
+Keep this screen lightweight and operational. Use the Editorial Fintech Ledger style: amber primary action, dark ledger sidebar, sober cards, readable numbers and clear focus states. Do not add tax automation, accounting rules, charts, bank integrations or backend behavior. The screen should feel like a finished product module, not a placeholder.
+```
+
+### Prompt 12 — Services screen / Servicios
+
+```text
+Using the FreelanceFlow master style, design the Servicios screen.
+
+Purpose:
+Let a freelancer maintain a reusable service catalog for projects, invoices and future proposals.
+
+Required content:
+- Left sidebar navigation, with Servicios as the active future/administration module.
+- Page title: “Catálogo de servicios”.
+- Intro card explaining that services define reusable descriptions, units and rates.
+- Service summary cards: total services, average rate, most used unit.
+- Service list table/cards with: nombre_servicio, unidad_medida, tarifa_unitaria, moneda, description preview.
+- Create/edit side panel with fields:
+  - nombre_servicio
+  - descripcion optional
+  - unidad_medida: Hora, Proyecto, Entregable
+  - tarifa_unitaria
+  - moneda
+- Actions: Crear servicio, Editar, Eliminar with confirmation, Cancelar.
+- Validation states: required service name, required unit, rate must be greater than 0.
+- Empty state: “Aún no has creado servicios en tu catálogo”.
+- No-results state for search/filter.
+
+Design notes:
+Make it feel useful but not overbuilt. Do not add inventory, recurring billing or subscriptions. The service catalog should visually connect to projects and invoices.
+```
+
+### Prompt 13 — Proposals screen / Propuestas
+
+```text
+Using the FreelanceFlow master style, design the Propuestas screen.
+
+Purpose:
+Show how a freelancer can prepare commercial proposals before converting accepted work into projects.
+
+Required content:
+- Left sidebar navigation, with Propuestas as the active future module.
+- Page title: “Propuestas comerciales”.
+- Status chips: Borrador, Enviada, Aceptada, Rechazada, Expirada, Convertida.
+- Proposal table/cards with: cliente, título, fecha_emision, fecha_validez, total_propuesta, estado.
+- Detail side panel with proposal items, subtotal, discount, total and status timeline.
+- Create/edit visual panel with header fields and dynamic item rows.
+- Actions: Crear propuesta, Guardar borrador, Enviar, Marcar aceptada/rechazada, Convertir a proyecto.
+- Validation states: required client, at least one item, valid dates, total must be greater than 0.
+- Empty state: “Aún no has creado propuestas”.
+
+Design notes:
+Keep the state machine visible but simple. Do not add e-signature, real email sending, payment links, AI generation or backend workflows. This screen is optional for Phase 1 and can remain a future sales-flow module.
+```
+
+### Prompt 14 — Fiscal configuration screen / Configuración fiscal
+
+```text
+Using the FreelanceFlow master style, design a lightweight Configuración Fiscal screen.
+
+Purpose:
+Show the freelancer where estimated tax assumptions would be configured without pretending to provide legal or country-specific tax automation.
+
+Required content:
+- Left sidebar navigation, with Configuración fiscal as the active future/settings module.
+- Page title: “Configuración fiscal estimada”.
+- Clear warning/info card: “Estos valores son supuestos de prototipo y no reemplazan asesoría fiscal”.
+- Form preview with fields from the current catalog only:
+  - identificacion_fiscal
+  - regimen_tributario
+  - porcentaje_retencion_estimado
+  - aplica_impuesto_valor_agregado
+  - porcentaje_impuesto conditional
+- Preview card showing how these values would affect an invoice estimate.
+- Actions: Guardar configuración, Cancelar.
+- Validation states: required fiscal ID, percentages between 0 and 100.
+- Empty state or first-time state for missing fiscal setup.
+
+Design notes:
+This screen must stay conservative. Do not invent country-specific rules, tax filings, declarations, legal advice or advanced calculations. It should look trustworthy and intentionally limited.
+```
+
+### Prompt 15 — Settings screen / Ajustes
+
+```text
+Using the FreelanceFlow master style, design a lightweight Ajustes screen.
+
+Purpose:
+Let a freelancer review basic product preferences used by the static prototype.
+
+Required content:
+- Left sidebar navigation, with Ajustes as the active future/settings module.
+- Page title: “Ajustes de facturación y preferencias”.
+- Sections:
+  - Facturación: prefijo de numeración, siguiente número de factura, días de vencimiento predeterminado.
+  - Moneda: moneda predeterminada.
+  - Marca visual: logo placeholder or current brand preview.
+- Preview card showing the next invoice number and due date behavior.
+- Actions: Guardar ajustes, Restaurar valores demo.
+- Validation states: invoice number must be positive, due days must be greater than 0.
+- Empty/default state with current demo values.
+
+Design notes:
+Keep it shallow and product-grade. Do not add account security, billing plans, subscriptions, teams, API keys or backend settings.
+```
+
+### Prompt 16 — Notifications screen / Notificaciones
+
+```text
+Using the FreelanceFlow master style, design a Notificaciones screen for a future phase.
+
+Purpose:
+Show a lightweight notification center based on existing mock financial events.
+
+Required content:
+- Left sidebar navigation, with Notificaciones as the active future module.
+- Page title: “Notificaciones”.
+- Notification preference summary: facturas vencidas, propuestas por expirar, pagos recibidos.
+- Notification list with: type icon, message, date, read/unread style, related entity link visual.
+- Preference panel with channels: Email and In-app.
+- Actions: Marcar como leída, Marcar todas como leídas, Guardar preferencias.
+- Empty state: “No tienes notificaciones nuevas”.
+- Validation state: at least one channel selected.
+
+Design notes:
+Do not imply scheduled jobs, push notifications, real email delivery or background workers. This is a future-phase notification center using derived mock alerts only.
+```
+
+### Prompt 17 — Auth and profile shell / Cuenta
+
+```text
+Using the FreelanceFlow master style, design a lightweight Account/Profile shell.
+
+Purpose:
+Show where registration, login and profile settings will live in a future authentication phase.
+
+Required content:
+- Public auth card for Registro / Inicio de sesión.
+- Profile summary card with name, email, country and avatar placeholder.
+- Clearly visible labels and password fields, but no real authentication flow.
+- Empty/profile-first state.
+- Actions: Crear cuenta, Iniciar sesión, Guardar perfil visual only.
+
+Design notes:
+Do not design real session handling, OAuth, email verification, password reset delivery or backend security. Keep this as future auth structure only.
+```
+
 
 ---
 

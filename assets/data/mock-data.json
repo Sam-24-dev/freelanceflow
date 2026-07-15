@@ -45,22 +45,34 @@
     {
       "id": "cat_001",
       "nombre_categoria": "Software y suscripciones",
-      "es_deducible_por_defecto": true
+      "es_deducible_por_defecto": true,
+      "descripcion": "Herramientas digitales recurrentes para diseño, gestión y productividad.",
+      "presupuesto_mensual": 120,
+      "estado": "activo"
     },
     {
       "id": "cat_002",
       "nombre_categoria": "Transporte y movilidad",
-      "es_deducible_por_defecto": true
+      "es_deducible_por_defecto": true,
+      "descripcion": "Traslados operativos vinculados a reuniones, entregas y trabajo de campo.",
+      "presupuesto_mensual": 40,
+      "estado": "activo"
     },
     {
       "id": "cat_003",
       "nombre_categoria": "Hosting y dominios",
-      "es_deducible_por_defecto": true
+      "es_deducible_por_defecto": true,
+      "descripcion": "Infraestructura web necesaria para publicar y mantener proyectos activos.",
+      "presupuesto_mensual": 80,
+      "estado": "activo"
     },
     {
       "id": "cat_004",
       "nombre_categoria": "Equipos y oficina",
-      "es_deducible_por_defecto": true
+      "es_deducible_por_defecto": true,
+      "descripcion": "Equipos, papelería y mejoras menores del espacio de trabajo.",
+      "presupuesto_mensual": 150,
+      "estado": "activo"
     }
   ],
   "proyectos": [
