@@ -1,0 +1,182 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Gestión operativa de categorías de gasto en FreelanceFlow.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0F172A">
+  <title>FreelanceFlow | Categorías</title>
+  <link rel="icon" type="image/png" href="../img/brand/favicon-32.png">
+  <link rel="apple-touch-icon" href="../img/brand/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body class="categories-app app-shell-page">
+  <a href="#main-content" class="skip-link">Saltar al contenido principal</a>
+
+  <div class="app-layout min-h-screen" data-app-layout>
+    <div class="app-sidebar-slot" data-app-sidebar-slot aria-hidden="true"></div>
+    <div class="app-mobile-appbar" data-app-mobile-header-slot aria-hidden="true"></div>
+
+    <main id="main-content" class="app-main categories-main">
+      <header class="categories-heading">
+        <div>
+          <p class="categories-eyebrow">Catálogo operativo</p>
+          <h1>Categorías de gasto</h1>
+          <p>Ordena tus egresos, anticipa presupuestos y mantén deducibles claros antes de registrar movimientos.</p>
+        </div>
+        <button id="category-create-button" class="categories-primary-action" type="button">Nueva categoría</button>
+      </header>
+
+      <section class="categories-summary-grid" aria-labelledby="categories-summary-title">
+        <h2 id="categories-summary-title" class="sr-only">Resumen de categorías</h2>
+        <article class="categories-summary-card"><p>Total</p><strong id="categories-total-count">—</strong><small>Categorías visibles</small></article>
+        <article class="categories-summary-card"><p>Deducibles</p><strong id="categories-deductible-count">—</strong><small>Marcadas por defecto</small></article>
+        <article class="categories-summary-card"><p>Más usada</p><strong id="categories-most-used">—</strong><small>Según gastos registrados</small></article>
+        <article class="categories-summary-card categories-summary-warning"><p>Presupuesto</p><strong id="categories-budget-attention">—</strong><small id="categories-budget-label">Atención del mes</small></article>
+      </section>
+
+      <div id="categories-data-error" class="categories-alert categories-alert-error" role="alert" hidden>
+        <strong>No pudimos cargar tus categorías.</strong>
+        <button id="categories-retry-button" type="button">Reintentar</button>
+      </div>
+
+      <section class="categories-ledger" aria-labelledby="category-list-title">
+        <div class="categories-ledger-header">
+          <div>
+            <p class="categories-eyebrow">Gastos ordenados</p>
+            <h2 id="category-list-title">Categorías registradas</h2>
+            <p id="categories-results-count">Cargando categorías…</p>
+            <p id="categories-results-status" class="sr-only" aria-live="polite" aria-atomic="false"></p>
+          </div>
+          <div class="categories-filter-grid">
+            <label class="categories-search-field" for="category-search">
+              <span class="sr-only">Buscar categoría por nombre o descripción</span>
+              <input id="category-search" name="category-search" type="search" autocomplete="off" placeholder="Buscar categoría…">
+            </label>
+            <select id="category-deductible-filter" aria-label="Filtrar por deducible">
+              <option value="todas">Todas</option>
+              <option value="deducible">Deducibles</option>
+              <option value="no-deducible">No deducibles</option>
+            </select>
+            <button id="categories-clear-filters" class="categories-secondary-action" type="button" hidden>Limpiar</button>
+          </div>
+        </div>
+
+        <div class="categories-status-tabs" role="group" aria-label="Filtrar categorías por estado">
+          <button type="button" class="category-filter-tab is-active" data-category-status="todos" aria-pressed="true">Todas</button>
+          <button type="button" class="category-filter-tab" data-category-status="activo" aria-pressed="false">Activas</button>
+          <button type="button" class="category-filter-tab" data-category-status="inactivo" aria-pressed="false">Inactivas</button>
+        </div>
+
+        <div id="categories-loading" class="categories-loading" role="status" aria-label="Cargando categorías"><span></span><span></span><span></span></div>
+
+        <div id="categories-content" hidden>
+          <div class="categories-table-wrap">
+            <table class="categories-table">
+              <caption class="sr-only">Categorías de gasto de FreelanceFlow</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Categoría</th>
+                  <th scope="col">Deducible</th>
+                  <th scope="col">Presupuesto</th>
+                  <th scope="col">Uso mensual</th>
+                  <th scope="col">Estado</th>
+                  <th scope="col"><span class="sr-only">Acciones</span></th>
+                </tr>
+              </thead>
+              <tbody id="categories-table-body"></tbody>
+            </table>
+          </div>
+
+          <ul id="categories-card-list" class="categories-card-list"></ul>
+
+          <div id="categories-empty-state" class="categories-empty-state" hidden>
+            <h3>Aún no hay categorías de gasto</h3>
+            <p>Crea la primera categoría para clasificar egresos y controlar presupuestos mensuales.</p>
+            <button class="categories-primary-action" type="button" data-action="create-category">Crear categoría</button>
+          </div>
+
+          <div id="categories-no-results" class="categories-empty-state" hidden>
+            <h3>No encontramos categorías con ese criterio</h3>
+            <p>Probá otra búsqueda o limpiá los filtros aplicados.</p>
+            <button class="categories-secondary-action" type="button" data-action="clear-category-filters">Limpiar filtros</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <button id="category-drawer-backdrop" class="category-drawer-backdrop" type="button" aria-hidden="true" tabindex="-1"></button>
+
+  <aside id="category-drawer" class="category-drawer" role="dialog" aria-modal="true" aria-labelledby="category-drawer-title" aria-hidden="true" inert>
+    <header class="category-drawer-header">
+      <div>
+        <p class="categories-eyebrow">Ficha de gasto</p>
+        <h2 id="category-drawer-title">Nueva categoría</h2>
+        <p id="category-drawer-description">Define cómo se clasifican tus egresos operativos.</p>
+      </div>
+      <button id="category-drawer-close" class="category-drawer-close" type="button" aria-label="Cerrar panel">×</button>
+    </header>
+
+    <form id="category-form" class="category-form" novalidate>
+      <input id="category-id" name="id" type="hidden">
+      <div class="category-field">
+        <label for="category-name">Nombre de la categoría <strong aria-hidden="true">*</strong></label>
+        <input id="category-name" name="nombre_categoria" type="text" required autocomplete="off" aria-describedby="category-name-error">
+        <span id="category-name-error" class="category-field-error" data-field-error="nombre_categoria"></span>
+      </div>
+      <div class="category-field">
+        <label for="category-description">Descripción <small>(opcional)</small></label>
+        <textarea id="category-description" name="descripcion" rows="3" aria-describedby="category-description-error"></textarea>
+        <span id="category-description-error" class="category-field-error" data-field-error="descripcion"></span>
+      </div>
+      <div class="category-fields-row">
+        <div class="category-field">
+          <label for="category-budget">Presupuesto mensual <small>(opcional)</small></label>
+          <input id="category-budget" name="presupuesto_mensual" type="number" min="0" step="0.01" inputmode="decimal" aria-describedby="category-budget-hint category-budget-error">
+          <small id="category-budget-hint" class="category-field-hint">En dólares (USD), mayor o igual a cero.</small>
+          <span id="category-budget-error" class="category-field-error" data-field-error="presupuesto_mensual"></span>
+        </div>
+        <div class="category-field">
+          <label for="category-status">Estado</label>
+          <select id="category-status" name="estado" aria-describedby="category-status-error">
+            <option value="activo">Activa</option>
+            <option value="inactivo">Inactiva</option>
+          </select>
+          <span id="category-status-error" class="category-field-error" data-field-error="estado"></span>
+        </div>
+      </div>
+      <label class="category-check-field">
+        <input id="category-deductible" name="es_deducible_por_defecto" type="checkbox">
+        <span><strong>Deducible por defecto</strong><small>Se aplicará al registrar nuevos gastos de esta categoría.</small></span>
+      </label>
+      <p id="category-form-summary" class="categories-alert categories-alert-error" role="alert" tabindex="-1" hidden></p>
+      <div class="category-form-actions">
+        <button id="category-form-cancel" class="categories-secondary-action" type="button">Cancelar</button>
+        <button id="category-submit-button" class="categories-primary-action" type="submit">Guardar categoría</button>
+      </div>
+    </form>
+  </aside>
+
+  <dialog id="category-remove-dialog" class="category-confirm-dialog" aria-labelledby="category-remove-dialog-title">
+    <form method="dialog">
+      <h2 id="category-remove-dialog-title">Confirmar acción</h2>
+      <p id="category-remove-dialog-copy">Esta acción actualizará el catálogo local.</p>
+      <div>
+        <button type="submit" value="cancel" class="categories-secondary-action">Cancelar</button>
+        <button type="submit" value="confirm" class="categories-danger-action">Confirmar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="category-toast" class="category-toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+
+  <script src="../assets/js/category-model.js" defer></script>
+  <script src="../assets/data/mock-data.js" defer></script>
+  <script src="../assets/js/mock-data-loader.js" defer></script>
+  <script src="../assets/js/activity-log.js" defer></script>
+  <script src="../assets/js/app-shell.js" defer></script>
+  <script src="../assets/js/categorias.js" defer></script>
+</body>
+</html>

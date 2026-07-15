@@ -40,7 +40,8 @@
         ['clientes.html', 'Clientes', 'clients'],
         ['proyectos.html', 'Proyectos', 'projects'],
         ['facturas.html', 'Facturas', 'invoices'],
-        ['reportes.html', 'Reportes', 'reports']
+        ['reportes.html', 'Reportes', 'reports'],
+        ['categorias.html', 'Categorías', 'categories']
       ]
     }
   ];

@@ -12,6 +12,7 @@
     'proyectos.html': 'Proyectos',
     'facturas.html': 'Facturas',
     'reportes.html': 'Reportes',
+    'categorias.html': 'Categorías',
     'bitacora.html': 'Bitácora'
   };
 

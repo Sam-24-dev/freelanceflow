@@ -12,7 +12,8 @@ test('app shell exposes Bitácora only for administrative profile', () => {
     'clientes.html',
     'proyectos.html',
     'facturas.html',
-    'reportes.html'
+    'reportes.html',
+    'categorias.html'
   ]);
   assert.deepEqual(flatten(shell.getNavigationGroupsForProfile('administrative')), ['bitacora.html']);
 });
@@ -23,12 +24,17 @@ test('app shell redirects profiles away from unauthorized modules', () => {
   assert.equal(shell.getProtectedRedirect('bitacora.html', 'administrative'), '');
   assert.equal(shell.getProtectedRedirect('dashboard.html', 'administrative'), 'bitacora.html');
   assert.equal(shell.getProtectedRedirect('transacciones.html', 'administrative'), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('categorias.html', 'administrative'), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('categorias.html', ''), 'acceso.html');
+  assert.equal(shell.getProtectedRedirect('categorias.html', 'operational'), '');
   assert.equal(shell.getProtectedRedirect('dashboard.html', 'operational'), '');
 });
 
 test('bottom navigation is operational-only', () => {
   assert.deepEqual(shell.getBottomNavigationForProfile('administrative'), []);
-  assert.equal(shell.getBottomNavigationForProfile('operational').length, 5);
+  const operationalBottomNav = shell.getBottomNavigationForProfile('operational');
+  assert.equal(operationalBottomNav.length, 5);
+  assert.equal(operationalBottomNav.some(([href]) => href === 'categorias.html'), false);
 });
 
 test('app shell escapes stored actor copy before injecting it', () => {

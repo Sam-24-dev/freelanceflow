@@ -74,5 +74,20 @@ test('activity log only records operational page visits', () => {
   assert.equal(activity.shouldRecordPageVisit('bitacora.html', 'operational'), false);
   assert.equal(activity.shouldRecordPageVisit('bitacora.html', 'administrative'), false);
   assert.equal(activity.shouldRecordPageVisit('dashboard.html', 'operational'), true);
+  assert.equal(activity.shouldRecordPageVisit('categorias.html', 'operational'), true);
+  assert.equal(activity.pageModules['categorias.html'], 'Categorías');
   assert.equal(activity.shouldRecordPageVisit('dashboard.html', 'administrative'), false);
+});
+
+test('activity log records meaningful Categories search and actions for operational profile only', () => {
+  const api = activity.createActivityLog({
+    storage: storage(),
+    getActor: () => 'Equipo operativo',
+    getProfile: () => 'operational'
+  });
+
+  api.record({ module: 'Categorías', action: 'Búsqueda realizada', description: 'Búsqueda en Categorías: software.' });
+  api.record({ module: 'Categorías', action: 'Categoría creada', description: 'Categoría creada: Comisiones.' });
+
+  assert.deepEqual(api.read().map((item) => item.action), ['Categoría creada', 'Búsqueda realizada']);
 });
