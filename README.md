@@ -16,6 +16,7 @@ Esta versión consolida la estructura funcional y visual del producto antes de i
 - **Proyectos**: vínculo entre clientes, ingresos, gastos, horas y rentabilidad.
 - **Facturas**: listado, detalle, estados y exportación visual a PDF.
 - **Reportes**: vistas consolidadas para lectura financiera y control operativo.
+- **Servicios**: catálogo operativo con tarifas, unidades, filtros y trazabilidad en la Bitácora.
 - **Categorías de gasto**: catálogo operativo con presupuestos, deducibilidad, filtros y trazabilidad en la Bitácora.
 - **Bitácora**: revisión administrativa de la actividad operativa reciente de la sesión.
 
@@ -72,6 +73,7 @@ pages/
   facturas.html
   reportes.html
   categorias.html
+  servicios.html
   bitacora.html
 assets/
   css/

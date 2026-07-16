@@ -41,7 +41,8 @@
         ['proyectos.html', 'Proyectos', 'projects'],
         ['facturas.html', 'Facturas', 'invoices'],
         ['reportes.html', 'Reportes', 'reports'],
-        ['categorias.html', 'Categorías', 'categories']
+        ['categorias.html', 'Categorías', 'categories'],
+        ['servicios.html', 'Servicios', 'services']
       ]
     }
   ];

@@ -75,7 +75,9 @@ test('activity log only records operational page visits', () => {
   assert.equal(activity.shouldRecordPageVisit('bitacora.html', 'administrative'), false);
   assert.equal(activity.shouldRecordPageVisit('dashboard.html', 'operational'), true);
   assert.equal(activity.shouldRecordPageVisit('categorias.html', 'operational'), true);
+  assert.equal(activity.shouldRecordPageVisit('servicios.html', 'operational'), true);
   assert.equal(activity.pageModules['categorias.html'], 'Categorías');
+  assert.equal(activity.pageModules['servicios.html'], 'Servicios');
   assert.equal(activity.shouldRecordPageVisit('dashboard.html', 'administrative'), false);
 });
 
@@ -90,4 +92,11 @@ test('activity log records meaningful Categories search and actions for operatio
   api.record({ module: 'Categorías', action: 'Categoría creada', description: 'Categoría creada: Comisiones.' });
 
   assert.deepEqual(api.read().map((item) => item.action), ['Categoría creada', 'Búsqueda realizada']);
+});
+
+test('activity log records meaningful Services actions for operational profile only', () => {
+  const api = activity.createActivityLog({ storage: storage(), getProfile: () => 'operational' });
+  api.record({ module: 'Servicios', action: 'Servicio creado', description: 'Creó el servicio Consultoría UX/UI.' });
+  api.record({ module: 'Servicios', action: 'Servicio eliminado', description: 'Eliminó el servicio Consultoría UX/UI.' });
+  assert.deepEqual(api.read().map((item) => item.description), ['Eliminó el servicio Consultoría UX/UI.', 'Creó el servicio Consultoría UX/UI.']);
 });
