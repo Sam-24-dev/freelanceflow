@@ -13,7 +13,8 @@ test('app shell exposes Bitácora only for administrative profile', () => {
     'proyectos.html',
     'facturas.html',
     'reportes.html',
-    'categorias.html'
+    'categorias.html',
+    'servicios.html'
   ]);
   assert.deepEqual(flatten(shell.getNavigationGroupsForProfile('administrative')), ['bitacora.html']);
 });
@@ -25,6 +26,9 @@ test('app shell redirects profiles away from unauthorized modules', () => {
   assert.equal(shell.getProtectedRedirect('dashboard.html', 'administrative'), 'bitacora.html');
   assert.equal(shell.getProtectedRedirect('transacciones.html', 'administrative'), 'bitacora.html');
   assert.equal(shell.getProtectedRedirect('categorias.html', 'administrative'), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('servicios.html', 'administrative'), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('servicios.html', ''), 'acceso.html');
+  assert.equal(shell.getProtectedRedirect('servicios.html', 'operational'), '');
   assert.equal(shell.getProtectedRedirect('categorias.html', ''), 'acceso.html');
   assert.equal(shell.getProtectedRedirect('categorias.html', 'operational'), '');
   assert.equal(shell.getProtectedRedirect('dashboard.html', 'operational'), '');

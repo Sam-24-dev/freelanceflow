@@ -75,6 +75,32 @@
       "estado": "activo"
     }
   ],
+  "servicios": [
+    {
+      "id": "srv_001",
+      "nombre_servicio": "Consultoría UX/UI",
+      "descripcion": "Auditoría y recomendaciones para mejorar la experiencia de usuario.",
+      "unidad_medida": "Hora",
+      "tarifa_unitaria": 75,
+      "moneda": "USD"
+    },
+    {
+      "id": "srv_002",
+      "nombre_servicio": "Implementación web",
+      "descripcion": "Diseño y desarrollo de un sitio institucional listo para publicar.",
+      "unidad_medida": "Proyecto",
+      "tarifa_unitaria": 1200,
+      "moneda": "USD"
+    },
+    {
+      "id": "srv_003",
+      "nombre_servicio": "Kit de interfaz",
+      "descripcion": "Entrega de componentes y patrones visuales documentados.",
+      "unidad_medida": "Entregable",
+      "tarifa_unitaria": 340,
+      "moneda": "EUR"
+    }
+  ],
   "proyectos": [
     {
       "id": "proy_001",
