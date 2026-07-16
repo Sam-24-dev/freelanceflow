@@ -482,6 +482,46 @@
       "fecha_actualizacion": "2026-06-20"
     }
   ],
+  "propuestas": [
+    {
+      "id": "prop_001",
+      "cliente_id": "cli_001",
+      "titulo_propuesta": "Rediseño de sitio web corporativo",
+      "fecha_emision": "2026-06-01",
+      "fecha_validez": "2026-06-30",
+      "moneda": "USD",
+      "notas_condiciones": "Alcance aprobado para iniciar el proyecto.",
+      "items": [{ "id": "prop_item_001", "servicio_referencia_id": "srv_002", "descripcion_item": "Implementación web", "unidad_medida": "Proyecto", "cantidad": 1, "precio_unitario": 2400, "subtotal_item": 2400 }],
+      "subtotal_general": 2400, "descuento": 0, "total_propuesta": 2400, "estado": "CONVERTED",
+      "historial_estado": [{ "estado": "DRAFT", "fecha": "2026-06-01T09:00:00.000Z", "detalle": "Propuesta creada como borrador." }, { "estado": "CONVERTED", "fecha": "2026-06-05T10:00:00.000Z", "detalle": "Proyecto creado desde la propuesta." }],
+      "proyecto_convertido_id": "proy_001", "fecha_creacion": "2026-06-01T09:00:00.000Z", "fecha_actualizacion": "2026-06-05T10:00:00.000Z"
+    },
+    {
+      "id": "prop_002", "cliente_id": "cli_002", "titulo_propuesta": "Optimización de campaña digital", "fecha_emision": "2026-07-10", "fecha_validez": "2026-08-10", "moneda": "USD", "notas_condiciones": "Incluye auditoría y plan de mejoras.",
+      "items": [{ "id": "prop_item_002", "servicio_referencia_id": "srv_001", "descripcion_item": "Consultoría UX/UI", "unidad_medida": "Hora", "cantidad": 12, "precio_unitario": 75, "subtotal_item": 900 }],
+      "subtotal_general": 900, "descuento": 0, "total_propuesta": 900, "estado": "SENT", "historial_estado": [{ "estado": "SENT", "fecha": "2026-07-10T10:00:00.000Z", "detalle": "Propuesta marcada como enviada." }], "proyecto_convertido_id": "", "fecha_creacion": "2026-07-10T10:00:00.000Z", "fecha_actualizacion": "2026-07-10T10:00:00.000Z"
+    },
+    {
+      "id": "prop_003", "cliente_id": "cli_001", "titulo_propuesta": "Diseño de portal de proveedores", "fecha_emision": "2026-07-12", "fecha_validez": "2026-08-12", "moneda": "USD", "notas_condiciones": "Lista para convertir cuando se complete la planificación.",
+      "items": [{ "id": "prop_item_003", "servicio_referencia_id": "srv_002", "descripcion_item": "Implementación web", "unidad_medida": "Proyecto", "cantidad": 1, "precio_unitario": 1800, "subtotal_item": 1800 }],
+      "subtotal_general": 1800, "descuento": 100, "total_propuesta": 1700, "estado": "ACCEPTED", "historial_estado": [{ "estado": "ACCEPTED", "fecha": "2026-07-13T11:00:00.000Z", "detalle": "Propuesta marcada como aceptada." }], "proyecto_convertido_id": "", "fecha_creacion": "2026-07-12T10:00:00.000Z", "fecha_actualizacion": "2026-07-13T11:00:00.000Z"
+    },
+    {
+      "id": "prop_004", "cliente_id": "cli_002", "titulo_propuesta": "Auditoría de experiencia de compra", "fecha_emision": "2026-07-08", "fecha_validez": "2026-08-08", "moneda": "USD", "notas_condiciones": "Alternativa comercial rechazada.",
+      "items": [{ "id": "prop_item_004", "servicio_referencia_id": "srv_001", "descripcion_item": "Consultoría UX/UI", "unidad_medida": "Hora", "cantidad": 8, "precio_unitario": 75, "subtotal_item": 600 }],
+      "subtotal_general": 600, "descuento": 0, "total_propuesta": 600, "estado": "REJECTED", "historial_estado": [{ "estado": "REJECTED", "fecha": "2026-07-09T11:00:00.000Z", "detalle": "Propuesta marcada como rechazada." }], "proyecto_convertido_id": "", "fecha_creacion": "2026-07-08T10:00:00.000Z", "fecha_actualizacion": "2026-07-09T11:00:00.000Z"
+    },
+    {
+      "id": "prop_005", "cliente_id": "cli_001", "titulo_propuesta": "Mantenimiento de catálogo", "fecha_emision": "2026-06-01", "fecha_validez": "2026-06-15", "moneda": "USD", "notas_condiciones": "Oferta ya vencida.",
+      "items": [{ "id": "prop_item_005", "servicio_referencia_id": "srv_001", "descripcion_item": "Consultoría UX/UI", "unidad_medida": "Hora", "cantidad": 4, "precio_unitario": 75, "subtotal_item": 300 }],
+      "subtotal_general": 300, "descuento": 0, "total_propuesta": 300, "estado": "SENT", "historial_estado": [{ "estado": "SENT", "fecha": "2026-06-01T09:00:00.000Z", "detalle": "Propuesta marcada como enviada." }], "proyecto_convertido_id": "", "fecha_creacion": "2026-06-01T09:00:00.000Z", "fecha_actualizacion": "2026-06-01T09:00:00.000Z"
+    },
+    {
+      "id": "prop_006", "cliente_id": "cli_002", "titulo_propuesta": "Mapa de mejora de conversión", "fecha_emision": "2026-07-16", "fecha_validez": "2026-08-16", "moneda": "USD", "notas_condiciones": "Borrador comercial pendiente de revisión.",
+      "items": [{ "id": "prop_item_006", "servicio_referencia_id": "", "descripcion_item": "Sesión de descubrimiento", "unidad_medida": "Hora", "cantidad": 3, "precio_unitario": 75, "subtotal_item": 225 }],
+      "subtotal_general": 225, "descuento": 0, "total_propuesta": 225, "estado": "DRAFT", "historial_estado": [{ "estado": "DRAFT", "fecha": "2026-07-16T09:00:00.000Z", "detalle": "Propuesta creada como borrador." }], "proyecto_convertido_id": "", "fecha_creacion": "2026-07-16T09:00:00.000Z", "fecha_actualizacion": "2026-07-16T09:00:00.000Z"
+    }
+  ],
   "cuentas_mock_auxiliar": [
     {
       "id": "aux_cta_001",

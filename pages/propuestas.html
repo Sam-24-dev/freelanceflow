@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Propuestas comerciales | FreelanceFlow</title>
+  <link rel="icon" type="image/png" href="../img/brand/favicon-32.png">
+  <link rel="apple-touch-icon" href="../img/brand/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body class="proposals-app app-shell-page">
+  <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
+  <div data-app-layout class="app-layout min-h-screen"><div data-app-sidebar-slot class="app-sidebar-slot" aria-hidden="true"></div><div data-app-mobile-header-slot class="app-mobile-appbar" aria-hidden="true"></div>
+    <main id="main-content" class="app-main proposals-main">
+      <header class="proposals-heading"><div><p class="proposals-eyebrow">Operación comercial</p><h1>Propuestas comerciales</h1><p>Organiza tus ofertas comerciales antes de convertir el trabajo aceptado en un proyecto.</p></div><button id="proposal-create" class="proposals-primary" type="button">Nueva propuesta</button></header>
+      <section id="proposals-error" class="proposals-alert" role="alert" hidden><strong>No se pudieron cargar las propuestas.</strong><button id="proposals-retry" type="button">Reintentar</button></section>
+      <section id="proposals-loading" class="proposals-loading" role="status">Cargando propuestas…</section>
+      <section id="proposals-content" class="proposals-workspace" hidden>
+        <div class="proposals-list-panel"><div class="proposals-filters"><label>Buscar por cliente, título o ID<input id="proposal-search" type="search" placeholder="Buscar por cliente, título o ID"></label><label>Todos los estados<select id="proposal-status"><option value="todos">Todos los estados</option><option value="DRAFT">Borrador</option><option value="SENT">Enviada</option><option value="ACCEPTED">Aceptada</option><option value="REJECTED">Rechazada</option><option value="EXPIRED">Expirada</option><option value="CONVERTED">Convertida</option></select></label></div><p id="proposal-results" aria-live="polite"></p><div id="proposal-list" class="proposal-list"></div><div id="proposal-empty" class="proposals-empty" hidden>Aún no has creado propuestas.</div><div id="proposal-no-results" class="proposals-empty" hidden><p>No hay propuestas para estos filtros.</p><button id="proposal-clear" type="button">Limpiar filtros</button></div></div>
+        <aside id="proposal-detail" class="proposal-detail" aria-live="polite"><p>Selecciona una propuesta para ver su detalle.</p></aside>
+      </section>
+    </main></div>
+  <div id="proposal-drawer-backdrop" class="proposal-backdrop" hidden></div>
+  <aside id="proposal-drawer" class="proposal-drawer" role="dialog" aria-modal="true" aria-labelledby="proposal-form-title" aria-hidden="true" hidden>
+    <header><div><p class="proposals-eyebrow">Información comercial</p><h2 id="proposal-form-title">Nueva propuesta</h2></div><button id="proposal-form-close" type="button" aria-label="Cerrar formulario">×</button></header>
+    <form id="proposal-form" novalidate><input name="id" type="hidden"><div class="proposal-fields"><label>Cliente<select name="cliente_id" required></select><span data-error="cliente_id"></span></label><label>Título<input name="titulo_propuesta" required><span data-error="titulo_propuesta"></span></label><label>Fecha de emisión<input name="fecha_emision" type="date" required></label><label>Fecha de validez<input name="fecha_validez" type="date" required><span data-error="fecha_validez"></span></label><label>Moneda<select name="moneda"><option>USD</option><option>EUR</option><option>MXN</option></select></label><label>Notas y condiciones<textarea name="notas_condiciones" rows="3"></textarea></label></div>
+      <section><div class="proposal-section-title"><h3>Servicios incluidos</h3><button id="proposal-add-item" type="button">Añadir servicio</button></div><div id="proposal-items"></div><p data-error="items"></p></section>
+      <section class="proposal-summary"><h3>Resumen de propuesta</h3><label>Descuento<input name="descuento" type="number" min="0" step="0.01" value="0"><span data-error="descuento"></span></label><p>Subtotal <strong id="proposal-subtotal">USD 0.00</strong></p><p>Total <strong id="proposal-total">USD 0.00</strong></p><p id="proposal-form-summary" role="alert" hidden></p></section>
+      <footer><button id="proposal-cancel" type="button">Cancelar</button><button id="proposal-save" class="proposals-primary" type="submit">Guardar borrador</button><button id="proposal-send" class="proposals-primary" type="button" hidden>Marcar como enviada</button></footer>
+    </form>
+  </aside>
+  <div id="proposal-toast" class="proposal-toast" role="status" aria-live="polite" hidden></div>
+  <script src="../assets/js/proposal-model.js" defer></script><script src="../assets/data/mock-data.js" defer></script><script src="../assets/js/mock-data-loader.js" defer></script><script src="../assets/js/activity-log.js" defer></script><script src="../assets/js/app-shell.js" defer></script><script src="../assets/js/propuestas.js" defer></script>
+</body></html>

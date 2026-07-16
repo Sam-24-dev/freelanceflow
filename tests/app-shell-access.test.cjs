@@ -11,6 +11,7 @@ test('app shell exposes Bitácora only for administrative profile', () => {
     'transacciones.html',
     'clientes.html',
     'proyectos.html',
+    'propuestas.html',
     'facturas.html',
     'reportes.html',
     'categorias.html',

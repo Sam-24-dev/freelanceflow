@@ -160,11 +160,14 @@
       state.expenses = Array.isArray(data.gastos) ? data.gastos : [];
       state.timeEntries = Array.isArray(data.registros_tiempo) ? data.registros_tiempo : [];
       state.categories = Array.isArray(data.categorias_gasto) ? data.categorias_gasto : [];
-      state.proposals = Array.isArray(data.propuestas) ? data.propuestas : [];
+      state.proposals = window.FreelanceFlowProposalModel
+        ? window.FreelanceFlowProposalModel.mergeProposals(Array.isArray(data.propuestas) ? data.propuestas : [], readStoredProposals())
+        : (Array.isArray(data.propuestas) ? data.propuestas : []);
       state.projects = model.mergeProjects(
         Array.isArray(data.proyectos) ? data.proyectos : [],
         readStoredProjects()
       );
+      reconcileProposalConversions();
 
       populateClientControls();
       populateProposalOptions();
@@ -178,6 +181,7 @@
       elements.loading.hidden = true;
       elements.content.hidden = false;
       elements.dataError.hidden = true;
+      openProposalConversionIfRequested();
     } catch (error) {
       showFatalError(error);
     }
@@ -190,6 +194,39 @@
     } catch {
       return [];
     }
+  }
+
+  function readStoredProposals() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('freelanceflow_proposals_v1') || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  }
+
+  function openProposalConversionIfRequested() {
+    const requested = new URLSearchParams(window.location.search).get('proposal');
+    let draft = null;
+    try { draft = JSON.parse(sessionStorage.getItem('freelanceflow_proposal_conversion_v1') || 'null'); } catch { draft = null; }
+    if (!requested || !draft || draft.propuesta_origen !== requested) return;
+    const proposal = state.proposals.find((item) => item.id === requested);
+    if (!proposal || proposal.estado !== 'ACCEPTED' || proposal.proyecto_convertido_id || state.projects.some((project) => project.propuesta_origen === requested)) return;
+    openCreateForm(null, draft.cliente_id);
+    setFormValue('project-proposal', draft.propuesta_origen);
+    setFormValue('project-name', draft.nombre_proyecto);
+    setFormValue('project-description', draft.descripcion);
+    setFormValue('project-fixed-amount', draft.monto_fijo);
+  }
+
+  function reconcileProposalConversions() {
+    if (!window.FreelanceFlowProposalModel) return;
+    let changed = false;
+    state.proposals = state.proposals.map((proposal) => {
+      const project = state.projects.find((item) => item.propuesta_origen === proposal.id);
+      if (!project || proposal.estado !== 'ACCEPTED' || proposal.proyecto_convertido_id) return proposal;
+      changed = true;
+      return window.FreelanceFlowProposalModel.completeConversion(proposal, project.id);
+    });
+    if (changed) localStorage.setItem('freelanceflow_proposals_v1', JSON.stringify(state.proposals));
   }
 
   function saveProjects() {
@@ -704,6 +741,7 @@
     }
 
     saveProjects();
+    completeProposalConversion(savedProject);
     state.selectedProjectId = savedProject.id;
     updateSelectedProjectUrl();
     renderAll();
@@ -784,8 +822,24 @@
   }
 
   function populateProposalOptions() {
+    const selectedId = elements.formProposal.value;
     elements.formProposal.innerHTML = '<option value="">Sin propuesta vinculada</option>'
-      + state.proposals.map((proposal) => `<option value="${escapeAttribute(proposal.id)}">${escapeHtml(proposal.titulo_propuesta || proposal.id)}</option>`).join('');
+      + state.proposals.filter((proposal) => (proposal.estado === 'ACCEPTED' && !proposal.proyecto_convertido_id) || proposal.id === selectedId).map((proposal) => `<option value="${escapeAttribute(proposal.id)}">${escapeHtml(proposal.titulo_propuesta || proposal.id)}</option>`).join('');
+  }
+
+  function completeProposalConversion(project) {
+    const proposalId = String(project.propuesta_origen || '');
+    if (!proposalId || !window.FreelanceFlowProposalModel) return;
+    const proposal = state.proposals.find((item) => item.id === proposalId);
+    if (!proposal || proposal.estado !== 'ACCEPTED' || proposal.proyecto_convertido_id) return;
+    try {
+      const converted = window.FreelanceFlowProposalModel.completeConversion(proposal, project.id);
+      state.proposals = state.proposals.map((item) => item.id === proposalId ? converted : item);
+      localStorage.setItem('freelanceflow_proposals_v1', JSON.stringify(state.proposals));
+      sessionStorage.removeItem('freelanceflow_proposal_conversion_v1');
+      recordActivity('Propuestas', 'Propuesta convertida', `${proposalId}: ${project.id}.`);
+      showToast('Proyecto creado desde la propuesta.', 'success');
+    } catch { /* A second save cannot convert the proposal again. */ }
   }
 
   function clearFilters() {
