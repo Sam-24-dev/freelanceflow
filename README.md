@@ -17,6 +17,7 @@ Esta versión consolida la estructura funcional y visual del producto antes de i
 - **Facturas**: listado, detalle, estados y exportación visual a PDF.
 - **Reportes**: vistas consolidadas para lectura financiera y control operativo.
 - **Servicios**: catálogo operativo con tarifas, unidades, filtros y trazabilidad en la Bitácora.
+- **Propuestas comerciales**: borradores, servicios con tarifas copiadas, estados comerciales y conversión controlada a proyectos.
 - **Categorías de gasto**: catálogo operativo con presupuestos, deducibilidad, filtros y trazabilidad en la Bitácora.
 - **Bitácora**: revisión administrativa de la actividad operativa reciente de la sesión.
 
@@ -59,6 +60,7 @@ La aplicación consume datos locales desde `assets/data/mock-data.json`.
 
 - La carga principal usa **Fetch API / AJAX** desde el servidor local.
 - Una capa auxiliar mantiene disponibles los mismos datos cuando no existe un backend.
+- Las propuestas y los proyectos creados desde ellas se conservan en el navegador mediante `localStorage`.
 
 ## Estructura principal del proyecto
 

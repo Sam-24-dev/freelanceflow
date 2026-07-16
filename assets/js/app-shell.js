@@ -39,6 +39,7 @@
         ['transacciones.html', 'Movimientos', 'movements'],
         ['clientes.html', 'Clientes', 'clients'],
         ['proyectos.html', 'Proyectos', 'projects'],
+        ['propuestas.html', 'Propuestas', 'proposals'],
         ['facturas.html', 'Facturas', 'invoices'],
         ['reportes.html', 'Reportes', 'reports'],
         ['categorias.html', 'Categorías', 'categories'],

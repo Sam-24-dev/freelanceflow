@@ -10,6 +10,7 @@
     'transacciones.html': 'Movimientos',
     'clientes.html': 'Clientes',
     'proyectos.html': 'Proyectos',
+    'propuestas.html': 'Propuestas',
     'facturas.html': 'Facturas',
     'reportes.html': 'Reportes',
     'categorias.html': 'Categorías',
