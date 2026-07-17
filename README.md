@@ -19,6 +19,7 @@ Esta versión consolida la estructura funcional y visual del producto antes de i
 - **Servicios**: catálogo operativo con tarifas, unidades, filtros y trazabilidad en la Bitácora.
 - **Propuestas comerciales**: borradores, servicios con tarifas copiadas, estados comerciales y conversión controlada a proyectos.
 - **Categorías de gasto**: catálogo operativo con presupuestos, deducibilidad, filtros y trazabilidad en la Bitácora.
+- **Configuración fiscal estimada**: supuestos locales editables y una vista previa referencial que no modifica registros financieros.
 - **Bitácora**: revisión administrativa de la actividad operativa reciente de la sesión.
 
 ### Módulo obligatorio de Clientes
@@ -61,6 +62,7 @@ La aplicación consume datos locales desde `assets/data/mock-data.json`.
 - La carga principal usa **Fetch API / AJAX** desde el servidor local.
 - Una capa auxiliar mantiene disponibles los mismos datos cuando no existe un backend.
 - Las propuestas y los proyectos creados desde ellas se conservan en el navegador mediante `localStorage`.
+- La configuración fiscal estimada se conserva localmente en `freelanceflow_fiscal_config_v1` y solo alimenta su propia vista previa.
 
 ## Estructura principal del proyecto
 
@@ -76,6 +78,7 @@ pages/
   reportes.html
   categorias.html
   servicios.html
+  configuracion-fiscal.html
   bitacora.html
 assets/
   css/

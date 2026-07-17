@@ -76,8 +76,10 @@ test('activity log only records operational page visits', () => {
   assert.equal(activity.shouldRecordPageVisit('dashboard.html', 'operational'), true);
   assert.equal(activity.shouldRecordPageVisit('categorias.html', 'operational'), true);
   assert.equal(activity.shouldRecordPageVisit('servicios.html', 'operational'), true);
+  assert.equal(activity.shouldRecordPageVisit('configuracion-fiscal.html', 'operational'), true);
   assert.equal(activity.pageModules['categorias.html'], 'Categorías');
   assert.equal(activity.pageModules['servicios.html'], 'Servicios');
+  assert.equal(activity.pageModules['configuracion-fiscal.html'], 'Configuración fiscal');
   assert.equal(activity.shouldRecordPageVisit('dashboard.html', 'administrative'), false);
 });
 
