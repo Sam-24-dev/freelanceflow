@@ -13,6 +13,7 @@
     'propuestas.html': 'Propuestas',
     'facturas.html': 'Facturas',
     'reportes.html': 'Reportes',
+    'notificaciones.html': 'Notificaciones',
     'categorias.html': 'Categorías',
     'servicios.html': 'Servicios',
     'configuracion-fiscal.html': 'Configuración fiscal',

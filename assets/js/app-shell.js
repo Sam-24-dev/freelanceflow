@@ -42,6 +42,7 @@
         ['propuestas.html', 'Propuestas', 'proposals'],
         ['facturas.html', 'Facturas', 'invoices'],
         ['reportes.html', 'Reportes', 'reports'],
+        ['notificaciones.html', 'Notificaciones', 'notifications'],
         ['categorias.html', 'Categorías', 'categories'],
         ['servicios.html', 'Servicios', 'services'],
         ['configuracion-fiscal.html', 'Configuración fiscal', 'fiscal'],

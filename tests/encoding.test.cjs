@@ -14,6 +14,7 @@ const USER_FACING_FILES = [
   'pages/proyectos.html',
   'pages/facturas.html',
   'pages/reportes.html',
+  'pages/notificaciones.html',
   'assets/js/activity-log.js',
   'assets/js/acceso.js',
   'assets/js/bitacora.js',
@@ -21,6 +22,7 @@ const USER_FACING_FILES = [
   'assets/js/proyectos.js',
   'assets/js/dashboard.js',
   'assets/js/app-shell.js',
+  'assets/js/notificaciones.js',
   'assets/data/mock-data.json'
 ];
 

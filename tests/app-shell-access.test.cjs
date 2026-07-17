@@ -14,6 +14,7 @@ test('app shell exposes Bitácora only for administrative profile', () => {
     'propuestas.html',
     'facturas.html',
     'reportes.html',
+    'notificaciones.html',
     'categorias.html',
     'servicios.html',
     'configuracion-fiscal.html',
@@ -39,6 +40,9 @@ test('app shell redirects profiles away from unauthorized modules', () => {
   assert.equal(shell.getProtectedRedirect('ajustes.html', 'administrative'), 'bitacora.html');
   assert.equal(shell.getProtectedRedirect('ajustes.html', ''), 'acceso.html');
   assert.equal(shell.getProtectedRedirect('ajustes.html', 'operational'), '');
+  assert.equal(shell.getProtectedRedirect('notificaciones.html', 'administrative'), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('notificaciones.html', ''), 'acceso.html');
+  assert.equal(shell.getProtectedRedirect('notificaciones.html', 'operational'), '');
   assert.equal(shell.getProtectedRedirect('categorias.html', ''), 'acceso.html');
   assert.equal(shell.getProtectedRedirect('categorias.html', 'operational'), '');
   assert.equal(shell.getProtectedRedirect('dashboard.html', 'operational'), '');
@@ -50,6 +54,7 @@ test('bottom navigation is operational-only', () => {
   assert.equal(operationalBottomNav.length, 5);
   assert.equal(operationalBottomNav.some(([href]) => href === 'categorias.html'), false);
   assert.equal(operationalBottomNav.some(([href]) => href === 'ajustes.html'), false);
+  assert.equal(operationalBottomNav.some(([href]) => href === 'notificaciones.html'), false);
 });
 
 test('app shell escapes stored actor copy before injecting it', () => {
