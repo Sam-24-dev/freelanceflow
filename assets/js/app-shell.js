@@ -43,7 +43,8 @@
         ['facturas.html', 'Facturas', 'invoices'],
         ['reportes.html', 'Reportes', 'reports'],
         ['categorias.html', 'Categorías', 'categories'],
-        ['servicios.html', 'Servicios', 'services']
+        ['servicios.html', 'Servicios', 'services'],
+        ['configuracion-fiscal.html', 'Configuración fiscal', 'fiscal']
       ]
     }
   ];

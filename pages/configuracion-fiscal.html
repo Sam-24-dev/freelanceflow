@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Configuración fiscal estimada de FreelanceFlow."><meta name="robots" content="noindex, nofollow"><meta name="theme-color" content="#0F172A">
+  <title>FreelanceFlow | Configuración fiscal</title><link rel="icon" type="image/png" href="../img/brand/favicon-32.png"><link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body class="fiscal-app app-shell-page">
+  <a href="#main-content" class="skip-link">Saltar al contenido principal</a>
+  <div class="app-layout min-h-screen" data-app-layout><div class="app-sidebar-slot" data-app-sidebar-slot aria-hidden="true"></div><div class="app-mobile-appbar" data-app-mobile-header-slot aria-hidden="true"></div>
+    <main id="main-content" class="app-main fiscal-main">
+      <header class="fiscal-heading"><p class="fiscal-eyebrow">Ajustes operativos</p><h1>Configuración fiscal estimada</h1><p>Define los supuestos utilizados para estimar retenciones e impuestos en tus facturas.</p></header>
+      <section id="fiscal-first-time" class="fiscal-notice" aria-labelledby="fiscal-first-time-title"><h2 id="fiscal-first-time-title">Aún no has configurado tus supuestos fiscales.</h2><p>Completa estos datos para visualizar estimaciones en tus facturas.</p></section>
+      <p class="fiscal-scope">Estos valores son estimaciones de referencia y no reemplazan asesoría fiscal profesional.</p>
+      <div class="fiscal-workspace">
+        <form id="fiscal-form" class="fiscal-card fiscal-form" novalidate>
+          <h2>Detalles fiscales</h2><p id="fiscal-form-summary" class="fiscal-error-summary" role="alert" tabindex="-1" hidden></p>
+          <div class="fiscal-field"><label for="fiscal-id">Identificación fiscal <strong aria-hidden="true">*</strong></label><input id="fiscal-id" name="identificacion_fiscal" autocomplete="off" placeholder="Ingresa tu identificación fiscal" aria-describedby="fiscal-id-error"><span id="fiscal-id-error" class="fiscal-field-error" data-field-error="identificacion_fiscal"></span></div>
+          <div class="fiscal-field"><label for="fiscal-regime">Régimen tributario <strong aria-hidden="true">*</strong></label><input id="fiscal-regime" name="regimen_tributario" list="fiscal-regime-options" autocomplete="off" placeholder="Selecciona o ingresa un régimen tributario" aria-describedby="fiscal-regime-error"><datalist id="fiscal-regime-options"><option value="General"><option value="Simplificado"><option value="Otro"></datalist><span id="fiscal-regime-error" class="fiscal-field-error" data-field-error="regimen_tributario"></span></div>
+          <div class="fiscal-field"><label for="fiscal-retention">Retención estimada (%) <strong aria-hidden="true">*</strong></label><input id="fiscal-retention" name="porcentaje_retencion_estimado" type="number" min="0" max="100" step="0.01" inputmode="decimal" aria-describedby="fiscal-retention-error"><span id="fiscal-retention-error" class="fiscal-field-error" data-field-error="porcentaje_retencion_estimado"></span></div>
+          <label class="fiscal-switch" for="fiscal-tax-toggle"><input id="fiscal-tax-toggle" name="aplica_impuesto_valor_agregado" type="checkbox"><span><strong>Aplicar impuesto al valor agregado</strong><small>Calcula un impuesto estimado en la vista previa.</small></span></label>
+          <div id="fiscal-tax-field" class="fiscal-field" hidden><label for="fiscal-tax">Porcentaje de impuesto (%) <strong aria-hidden="true">*</strong></label><input id="fiscal-tax" name="porcentaje_impuesto" type="number" min="0" max="100" step="0.01" inputmode="decimal" disabled aria-describedby="fiscal-tax-error"><span id="fiscal-tax-error" class="fiscal-field-error" data-field-error="porcentaje_impuesto"></span></div>
+          <div class="fiscal-actions"><button id="fiscal-cancel" class="fiscal-secondary" type="button">Cancelar</button><button class="fiscal-primary" type="submit">Guardar configuración</button></div>
+        </form>
+        <aside class="fiscal-card fiscal-preview" aria-labelledby="fiscal-preview-title"><p class="fiscal-eyebrow">Estimación</p><h2 id="fiscal-preview-title">Vista previa de estimación</h2><dl><div><dt>Base de cálculo</dt><dd id="fiscal-base">USD 1,000.00</dd></div><div><dt>Retención estimada</dt><dd id="fiscal-retention-preview">USD 0.00</dd></div><div id="fiscal-tax-row" hidden><dt>Impuesto estimado</dt><dd id="fiscal-tax-preview">USD 0.00</dd></div><div class="fiscal-total"><dt>Total estimado</dt><dd id="fiscal-total">USD 1,000.00</dd></div></dl><p>Esta vista previa es referencial y no modifica tus registros financieros.</p></aside>
+      </div>
+      <div id="fiscal-status" class="fiscal-toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+    </main>
+  </div>
+  <script src="../assets/js/fiscal-config-model.js" defer></script><script src="../assets/js/activity-log.js" defer></script><script src="../assets/js/app-shell.js" defer></script><script src="../assets/js/configuracion-fiscal.js" defer></script>
+</body>
+</html>

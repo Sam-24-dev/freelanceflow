@@ -15,6 +15,7 @@
     'reportes.html': 'Reportes',
     'categorias.html': 'Categorías',
     'servicios.html': 'Servicios',
+    'configuracion-fiscal.html': 'Configuración fiscal',
     'bitacora.html': 'Bitácora'
   };
 
