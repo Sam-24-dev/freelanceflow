@@ -16,6 +16,7 @@
     'categorias.html': 'Categorías',
     'servicios.html': 'Servicios',
     'configuracion-fiscal.html': 'Configuración fiscal',
+    'ajustes.html': 'Ajustes',
     'bitacora.html': 'Bitácora'
   };
 

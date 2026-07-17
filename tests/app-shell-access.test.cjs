@@ -16,13 +16,15 @@ test('app shell exposes Bitácora only for administrative profile', () => {
     'reportes.html',
     'categorias.html',
     'servicios.html',
-    'configuracion-fiscal.html'
+    'configuracion-fiscal.html',
+    'ajustes.html'
   ]);
   assert.deepEqual(flatten(shell.getNavigationGroupsForProfile('administrative')), ['bitacora.html']);
 });
 
 test('app shell redirects profiles away from unauthorized modules', () => {
   assert.equal(shell.getProtectedRedirect('dashboard.html', ''), 'acceso.html');
+  assert.equal(shell.getProtectedRedirect('dashboard.html', 'corrupt'), 'acceso.html');
   assert.equal(shell.getProtectedRedirect('bitacora.html', 'operational'), 'acceso.html');
   assert.equal(shell.getProtectedRedirect('bitacora.html', 'administrative'), '');
   assert.equal(shell.getProtectedRedirect('dashboard.html', 'administrative'), 'bitacora.html');
@@ -34,6 +36,9 @@ test('app shell redirects profiles away from unauthorized modules', () => {
   assert.equal(shell.getProtectedRedirect('configuracion-fiscal.html', 'administrative'), 'bitacora.html');
   assert.equal(shell.getProtectedRedirect('configuracion-fiscal.html', ''), 'acceso.html');
   assert.equal(shell.getProtectedRedirect('configuracion-fiscal.html', 'operational'), '');
+  assert.equal(shell.getProtectedRedirect('ajustes.html', 'administrative'), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('ajustes.html', ''), 'acceso.html');
+  assert.equal(shell.getProtectedRedirect('ajustes.html', 'operational'), '');
   assert.equal(shell.getProtectedRedirect('categorias.html', ''), 'acceso.html');
   assert.equal(shell.getProtectedRedirect('categorias.html', 'operational'), '');
   assert.equal(shell.getProtectedRedirect('dashboard.html', 'operational'), '');
@@ -44,6 +49,7 @@ test('bottom navigation is operational-only', () => {
   const operationalBottomNav = shell.getBottomNavigationForProfile('operational');
   assert.equal(operationalBottomNav.length, 5);
   assert.equal(operationalBottomNav.some(([href]) => href === 'categorias.html'), false);
+  assert.equal(operationalBottomNav.some(([href]) => href === 'ajustes.html'), false);
 });
 
 test('app shell escapes stored actor copy before injecting it', () => {
