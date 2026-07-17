@@ -44,7 +44,8 @@
         ['reportes.html', 'Reportes', 'reports'],
         ['categorias.html', 'Categorías', 'categories'],
         ['servicios.html', 'Servicios', 'services'],
-        ['configuracion-fiscal.html', 'Configuración fiscal', 'fiscal']
+        ['configuracion-fiscal.html', 'Configuración fiscal', 'fiscal'],
+        ['ajustes.html', 'Ajustes', 'settings']
       ]
     }
   ];
@@ -81,6 +82,7 @@
 
   function getProtectedRedirect(file, profile = '') {
     const operationalFiles = baseNavigationGroups.flatMap((group) => group.items.map((item) => item[0]));
+    if ((file === 'bitacora.html' || operationalFiles.includes(file)) && !['operational', 'administrative'].includes(profile)) return 'acceso.html';
     if (!profile && (file === 'bitacora.html' || operationalFiles.includes(file))) return 'acceso.html';
     if (file === 'bitacora.html' && profile !== 'administrative') return 'acceso.html';
     if (profile === 'administrative' && operationalFiles.includes(file)) return 'bitacora.html';
