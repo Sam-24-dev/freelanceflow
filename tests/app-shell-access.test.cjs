@@ -1,9 +1,9 @@
-﻿const test = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const shell = require('../assets/js/app-shell.js');
 
-test('app shell exposes Bitácora only for administrative profile', () => {
+test('app shell exposes BitÃ¡cora only for administrative profile', () => {
   const flatten = (groups) => groups.flatMap((group) => group.items.map((item) => item[0]));
 
   assert.deepEqual(flatten(shell.getNavigationGroupsForProfile('operational')), [
@@ -18,7 +18,8 @@ test('app shell exposes Bitácora only for administrative profile', () => {
     'categorias.html',
     'servicios.html',
     'configuracion-fiscal.html',
-    'ajustes.html'
+    'ajustes.html',
+    'cuenta.html'
   ]);
   assert.deepEqual(flatten(shell.getNavigationGroupsForProfile('administrative')), ['bitacora.html']);
 });
@@ -40,6 +41,9 @@ test('app shell redirects profiles away from unauthorized modules', () => {
   assert.equal(shell.getProtectedRedirect('ajustes.html', 'administrative'), 'bitacora.html');
   assert.equal(shell.getProtectedRedirect('ajustes.html', ''), 'acceso.html');
   assert.equal(shell.getProtectedRedirect('ajustes.html', 'operational'), '');
+  assert.equal(shell.getProtectedRedirect('cuenta.html', 'administrative'), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('cuenta.html', ''), 'acceso.html');
+  assert.equal(shell.getProtectedRedirect('cuenta.html', 'operational'), '');
   assert.equal(shell.getProtectedRedirect('notificaciones.html', 'administrative'), 'bitacora.html');
   assert.equal(shell.getProtectedRedirect('notificaciones.html', ''), 'acceso.html');
   assert.equal(shell.getProtectedRedirect('notificaciones.html', 'operational'), '');

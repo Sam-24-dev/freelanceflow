@@ -1,4 +1,4 @@
-﻿(function activityLogFactory(globalScope) {
+(function activityLogFactory(globalScope) {
   'use strict';
 
   const STORAGE_KEY = 'freelanceflow_activity_log_session';
@@ -18,6 +18,7 @@
     'servicios.html': 'Servicios',
     'configuracion-fiscal.html': 'Configuración fiscal',
     'ajustes.html': 'Ajustes',
+    'cuenta.html': 'Cuenta',
     'bitacora.html': 'Bitácora'
   };
 
@@ -59,7 +60,7 @@
       const actor = getActor();
       const existing = read();
       const previous = existing[0];
-      if (previous
+      if (entry.deduplicate !== false && previous
         && previous.profile === profile
         && previous.module === (entry.module || 'FreelanceFlow')
         && previous.action === entry.action
