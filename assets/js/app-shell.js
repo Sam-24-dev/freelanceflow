@@ -1,4 +1,4 @@
-﻿/*
+/*
   FreelanceFlow shared application shell.
   Provides one responsive navigation pattern for every authenticated app screen.
 */
@@ -46,7 +46,8 @@
         ['categorias.html', 'Categorías', 'categories'],
         ['servicios.html', 'Servicios', 'services'],
         ['configuracion-fiscal.html', 'Configuración fiscal', 'fiscal'],
-        ['ajustes.html', 'Ajustes', 'settings']
+        ['ajustes.html', 'Ajustes', 'settings'],
+        ['cuenta.html', 'Cuenta', 'profile']
       ]
     }
   ];
