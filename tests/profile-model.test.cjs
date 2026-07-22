@@ -56,7 +56,7 @@ test('records each successful Cuenta save without weakening the default activity
     getItem: (key) => data.has(key) ? data.get(key) : null,
     setItem: (key, value) => data.set(key, String(value))
   };
-  const log = activity.createActivityLog({ storage, getProfile: () => 'operational' });
+  const log = activity.createActivityLog({ storage, getContext: () => ({ status: 'valid', membership: require('../assets/js/app-shell.js').MEMBERSHIPS[0] }) });
   const save = { module: 'Cuenta', action: 'Perfil actualizado', description: 'Informaci?n b?sica del perfil actualizada.', deduplicate: false };
 
   log.record(save);

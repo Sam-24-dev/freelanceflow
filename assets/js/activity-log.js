@@ -2,9 +2,8 @@
   'use strict';
 
   const STORAGE_KEY = 'freelanceflow_activity_log_session';
-  const PROFILE_KEY = 'freelanceflow_access_profile';
-  const ACTOR_KEY = 'freelanceflow_access_actor';
   const DEFAULT_LIMIT = 80;
+  const MAX_TEXT_LENGTH = 280;
   const pageModules = {
     'dashboard.html': 'Dashboard',
     'transacciones.html': 'Movimientos',
@@ -14,17 +13,27 @@
     'facturas.html': 'Facturas',
     'reportes.html': 'Reportes',
     'notificaciones.html': 'Notificaciones',
-    'categorias.html': 'Categorías',
+    'categorias.html': 'Categor\u00edas',
     'servicios.html': 'Servicios',
-    'configuracion-fiscal.html': 'Configuración fiscal',
+    'configuracion-fiscal.html': 'Configuraci\u00f3n fiscal',
     'ajustes.html': 'Ajustes',
     'cuenta.html': 'Cuenta',
-    'bitacora.html': 'Bitácora'
+    'bitacora.html': 'Bit\u00e1cora'
   };
+  const context = () => globalScope.FreelanceFlowMembershipContext;
+  const safeText = (value, limit = MAX_TEXT_LENGTH) => String(value ?? '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/ff-(?:operational|administrative)-v1/g, '')
+    .trim()
+    .slice(0, limit);
 
   function safeStorage(storage) {
     if (storage) return storage;
-    try { return globalScope.sessionStorage; } catch { return null; }
+    try {
+      return globalScope.sessionStorage;
+    } catch {
+      return null;
+    }
   }
 
   function createActivityLog(options = {}) {
@@ -33,8 +42,8 @@
     const limit = options.limit || DEFAULT_LIMIT;
     const now = options.now || (() => new Date().toISOString());
     const random = options.random || Math.random;
-    const getActor = options.getActor || (() => storage?.getItem(ACTOR_KEY) || 'Equipo operativo');
-    const getProfile = options.getProfile || (() => storage?.getItem(PROFILE_KEY) || '');
+    const getContext = options.getContext
+      || (() => context()?.readActiveMembership(storage) || { status: 'unavailable' });
     let memory = [];
 
     function read() {
@@ -43,54 +52,68 @@
         const parsed = JSON.parse(storage.getItem(key) || '[]');
         return Array.isArray(parsed) ? parsed : [];
       } catch {
-        return [];
+        return [...memory];
       }
     }
 
     function write(items) {
       const next = items.slice(0, limit);
       memory = next;
-      try { storage?.setItem(key, JSON.stringify(next)); } catch { /* keep memory fallback */ }
+      try {
+        storage?.setItem(key, JSON.stringify(next));
+      } catch {
+        // Keep the in-memory fallback when session storage is unavailable.
+      }
     }
 
     function record(entry = {}) {
-      if (!entry.action || !entry.description) return null;
-      const profile = getProfile();
-      if (profile !== 'operational') return null;
-      const actor = getActor();
-      const existing = read();
-      const previous = existing[0];
-      if (entry.deduplicate !== false && previous
-        && previous.profile === profile
-        && previous.module === (entry.module || 'FreelanceFlow')
-        && previous.action === entry.action
-        && previous.description === entry.description) {
+      const membershipContext = getContext();
+      const membership = membershipContext?.status === 'valid'
+        ? membershipContext.membership
+        : null;
+      const action = safeText(entry.action, 160);
+      const description = safeText(entry.description);
+
+      if (!membership || membership.role !== 'operational' || !action || !description) {
         return null;
       }
+
+      const module = safeText(entry.module || 'FreelanceFlow', 160);
+      const existing = read();
+      const previous = existing[0];
+      const isDuplicate = entry.deduplicate !== false
+        && previous
+        && previous.membershipId === membership.id
+        && previous.module === module
+        && previous.action === action
+        && previous.description === description;
+
+      if (isDuplicate) return null;
+
       const item = {
         id: `act_${Date.now()}_${String(random()).slice(2)}`,
         timestamp: now(),
-        actor,
-        profile,
-        module: entry.module || 'FreelanceFlow',
-        action: entry.action,
-        description: entry.description
+        actor: membership.actor,
+        role: membership.role,
+        membershipId: membership.id,
+        module,
+        action,
+        description
       };
       write([item, ...existing]);
       return item;
     }
 
-    function clear() { write([]); }
-
-    return { read, record, clear };
+    return { read, record, clear: () => write([]) };
   }
 
-  function shouldRecordPageVisit(file, profile = 'operational') {
-    return profile === 'operational' && file !== 'bitacora.html';
+  function shouldRecordPageVisit(file, membershipContext) {
+    return membershipContext?.status === 'valid'
+      && membershipContext.membership?.role === 'operational'
+      && file !== 'bitacora.html';
   }
 
-  const api = { createActivityLog, shouldRecordPageVisit, pageModules, STORAGE_KEY, PROFILE_KEY, ACTOR_KEY };
-
+  const api = { createActivityLog, shouldRecordPageVisit, pageModules, STORAGE_KEY };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 
   if (globalScope.document) {
@@ -103,22 +126,36 @@
       },
       record(entry) {
         const item = log.record(entry);
-        if (item) globalScope.dispatchEvent?.(new CustomEvent('freelanceflow:activity-updated', { detail: item }));
+        if (item) {
+          globalScope.dispatchEvent?.(new CustomEvent('freelanceflow:activity-updated', {
+            detail: item
+          }));
+        }
         return item;
       },
       recordPageVisit() {
         const file = globalScope.location?.pathname?.split('/').pop() || 'dashboard.html';
         const module = pageModules[file];
-        const profile = globalScope.sessionStorage?.getItem(PROFILE_KEY) || '';
-        if (!module || !shouldRecordPageVisit(file, profile)) return null;
-        return browserApi.record({ module, action: 'Ingreso a pantalla', description: `Ingreso al módulo ${module}.` });
+        const membershipContext = context()?.readActiveMembership();
+        if (!module || !shouldRecordPageVisit(file, membershipContext)) return null;
+        return browserApi.record({
+          module,
+          action: 'Ingreso a pantalla',
+          description: `Ingreso al m\u00f3dulo ${module}.`
+        });
       },
       recordSearch(module, query) {
-        const text = String(query || '').trim();
-        if (text.length < 2) return null;
-        return browserApi.record({ module, action: 'Búsqueda realizada', description: `Búsqueda en ${module}: ${text}.` });
+        const text = safeText(query);
+        return text.length < 2
+          ? null
+          : browserApi.record({
+            module,
+            action: 'B\u00fasqueda realizada',
+            description: `B\u00fasqueda en ${safeText(module, 120)}: ${text}.`
+          });
       }
     };
+
     globalScope.FreelanceFlowActivity = browserApi;
     globalScope.document.addEventListener('DOMContentLoaded', () => {
       browserApi.recordPageVisit();

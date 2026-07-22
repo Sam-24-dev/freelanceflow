@@ -8859,3 +8859,143 @@ body.project-detail-modal-open {
 
 /* Account profile */
 .profile-app{--profile-ink:#1c130d;--profile-muted:#6b5b4b;--profile-line:#d8c7b5;background:#f4eee5;color:var(--profile-ink)}.profile-app [hidden]{display:none!important}.profile-main{max-width:1200px;margin:0 auto;padding:clamp(1rem,2vw,2rem);padding-bottom:calc(6rem + env(safe-area-inset-bottom))}.profile-heading,.profile-card{border:1px solid var(--profile-line);border-radius:1.2rem;background:#fffdf8;box-shadow:0 1rem 2rem rgba(37,28,18,.08)}.profile-heading,.profile-card{padding:clamp(1.1rem,2.5vw,1.6rem)}.profile-heading h1,.profile-card h2{margin:0;color:var(--profile-ink);font-weight:950;letter-spacing:-.04em}.profile-heading p,.profile-form section>p,.profile-summary>p,.profile-summary dt{color:var(--profile-muted)}.profile-eyebrow{margin:0 0 .35rem;color:#b45309!important;font-size:.72rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase}.profile-workspace{display:grid;grid-template-columns:minmax(17.5rem,20rem) minmax(0,1fr);gap:1rem;margin-top:1rem}.profile-form{display:grid;gap:1.25rem}.profile-form section{display:grid;gap:.8rem}.profile-form section>p{margin:0}.profile-avatar{display:grid;place-items:center;width:5rem;height:5rem;margin:1rem 0;border-radius:50%;background:#111c33;color:#fef3c7;font-size:1.5rem;font-weight:950}.profile-summary dl{margin:1rem 0 0}.profile-summary dl>div{display:flex;justify-content:space-between;gap:1rem;padding:.75rem 0;border-top:1px solid var(--profile-line)}.profile-summary dd{margin:0;font-weight:900;text-align:right;overflow-wrap:anywhere}.profile-field{display:grid;gap:.35rem;font-weight:800}.profile-field input{width:100%;min-height:2.75rem;border:1px solid var(--profile-line);border-radius:.85rem;background:#fff;padding:0 .85rem;color:var(--profile-ink)}.profile-field input:focus-visible,.profile-primary:focus-visible,.profile-secondary:focus-visible{outline:3px solid #0f766e;outline-offset:3px}.profile-field-error{min-height:1.1rem;color:#b91c1c;font-size:.78rem;font-weight:800}.profile-error-summary{margin:0;border-left:4px solid #b91c1c;background:#fef2f2;padding:.75rem;color:#991b1b;font-weight:800}.profile-actions{display:flex;justify-content:flex-end;gap:.75rem}.profile-primary,.profile-secondary{min-height:2.75rem;border-radius:999px;padding:0 1rem;cursor:pointer;font-weight:900}.profile-primary{border:0;background:#f59e0b;color:#111827}.profile-secondary{border:1px solid var(--profile-line);background:#fffdf8;color:var(--profile-ink)}.profile-secondary:disabled{cursor:not-allowed;opacity:.55}.profile-toast{position:fixed;right:1rem;bottom:calc(5.5rem + env(safe-area-inset-bottom));z-index:100;max-width:min(24rem,calc(100vw - 2rem));border-radius:1rem;background:#f59e0b;padding:.9rem 1rem;color:#111827;font-weight:900;box-shadow:0 1rem 2rem rgba(2,6,23,.3)}@media(max-width:1023px){.profile-workspace{grid-template-columns:1fr}.profile-summary{display:grid;grid-template-columns:auto 1fr;column-gap:1rem;align-items:center}.profile-summary .profile-eyebrow,.profile-summary dl{grid-column:1/-1}.profile-summary .profile-avatar{grid-row:2/4}.profile-summary h2,.profile-summary>p{margin:0}}@media(max-width:767px){.profile-main{padding:.75rem;padding-bottom:calc(6rem + env(safe-area-inset-bottom))}.profile-summary{display:block}.profile-summary h2,.profile-summary>p{margin-block:.5rem}.profile-actions{flex-direction:column-reverse}.profile-primary,.profile-secondary{width:100%;min-height:2.9rem}}@media(max-width:360px){.profile-heading,.profile-card{padding:.85rem}.profile-heading h1{font-size:1.7rem}}@media(prefers-reduced-motion:reduce){.profile-app *{scroll-behavior:auto}}
+/* Access membership context */
+.access-page .access-memberships {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 44rem;
+  margin-top: 1rem;
+}
+
+.access-page .access-membership {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: repeat(4, auto);
+  align-items: center;
+  gap: 0.25rem 1rem;
+  border: 1px solid rgba(120, 93, 67, 0.24);
+  border-radius: 1rem;
+  background: rgba(255, 253, 248, 0.94);
+  padding: 1rem;
+  box-shadow: 0 0.7rem 1.6rem rgba(52, 39, 27, 0.07);
+}
+
+.access-page .access-membership p,
+.access-page .access-membership h2,
+.access-page .access-membership small {
+  margin: 0;
+}
+
+.access-page .access-membership p {
+  color: #0f766e;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.access-page .access-membership h2 {
+  color: #1c130d;
+  font-size: clamp(1.05rem, 2vw, 1.25rem);
+  font-weight: 950;
+  letter-spacing: -0.025em;
+}
+
+.access-page .access-membership span {
+  display: inline-flex;
+  width: max-content;
+  border-radius: 999px;
+  background: #e6f5f2;
+  padding: 0.22rem 0.55rem;
+  color: #115e59;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.access-page .access-membership small {
+  color: #5f5145;
+  line-height: 1.45;
+}
+
+.access-page .access-membership button {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  min-height: 44px;
+  align-self: center;
+  white-space: nowrap;
+}
+
+.access-page :is(.access-error, .access-empty) {
+  max-width: 44rem;
+  margin-top: 1rem;
+  border-radius: 0.85rem;
+  padding: 0.8rem 0.9rem;
+  font-weight: 800;
+}
+
+.access-page .access-error {
+  border: 1px solid #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.access-page .access-empty {
+  border: 1px solid #d8c7b5;
+  background: #fffdf8;
+  color: #5f5145;
+}
+
+@media (max-width: 640px) {
+  .access-page .access-membership {
+    grid-template-columns: 1fr;
+  }
+
+  .access-page .access-membership button {
+    grid-column: 1;
+    grid-row: auto;
+    width: 100%;
+    margin-top: 0.45rem;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 480px) {
+  .access-page .landing-nav {
+    padding-inline: 1rem;
+  }
+
+  .access-page .public-nav,
+  .access-page .hero-visual {
+    display: none;
+  }
+
+  .access-page .hero-section {
+    min-height: auto;
+    padding: 1.25rem 1rem;
+  }
+
+  .access-page .access-membership {
+    padding: 0.9rem;
+  }
+}
+
+@media (max-height: 480px) {
+  .access-page .hero-section {
+    min-height: auto;
+    padding-block: 1rem;
+  }
+
+  .access-page .hero-copy h1 {
+    margin-top: 0.5rem;
+    font-size: clamp(2.25rem, 7vw, 3.25rem);
+  }
+
+  .access-page .hero-subtitle,
+  .access-page .access-memberships {
+    margin-top: 0.65rem;
+  }
+
+  .access-page .hero-visual {
+    display: none;
+  }
+}

@@ -1,37 +1,68 @@
-﻿(function accessFactory(globalScope) {
+(function accessFactory(globalScope) {
   'use strict';
 
-  const PROFILE_KEY = 'freelanceflow_access_profile';
-  const ACTOR_KEY = 'freelanceflow_access_actor';
-  const profiles = {
-    operational: { actor: 'Equipo operativo', redirectTo: 'dashboard.html', label: 'Perfil operativo' },
-    administrative: { actor: 'Administración', redirectTo: 'bitacora.html', label: 'Perfil administrativo' }
-  };
+  const context = () => globalScope.FreelanceFlowMembershipContext;
 
-  function selectAccessProfile(profile, options = {}) {
-    const selected = profiles[profile] ? profile : 'operational';
-    const config = profiles[selected];
-    const storage = options.storage || globalScope.sessionStorage;
-    storage.setItem(PROFILE_KEY, selected);
-    storage.setItem(ACTOR_KEY, config.actor);
-    return { profile: selected, ...config };
+  function activateAccessMembership(id, options = {}) {
+    return context()?.activateMembership(id, options.storage) || null;
   }
 
-  const api = { selectAccessProfile, PROFILE_KEY, ACTOR_KEY, profiles };
+  function showAccessError(error) {
+    error.hidden = false;
+    error.focus?.();
+  }
+
+  function renderMemberships(container, memberships) {
+    container.replaceChildren();
+    memberships.forEach((membership) => {
+      const card = document.createElement('article');
+      card.className = 'access-membership';
+      const organization = document.createElement('p');
+      organization.textContent = membership.organization;
+      const name = document.createElement('h2');
+      name.textContent = membership.name;
+      const role = document.createElement('span');
+      role.textContent = `Rol: ${membership.role === 'operational' ? 'Operativo' : 'Administrativo'}`;
+      const description = document.createElement('small');
+      description.textContent = membership.description;
+      const button = document.createElement('button');
+      button.className = membership.role === 'operational' ? 'primary-cta' : 'secondary-cta';
+      button.type = 'button';
+      button.dataset.membershipId = membership.id;
+      button.textContent = 'Continuar en este espacio';
+      button.setAttribute('aria-label', `Continuar en este espacio: ${membership.name}`);
+      card.append(organization, name, role, description, button);
+      container.append(card);
+    });
+  }
+
+  const api = { activateAccessMembership, renderMemberships };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 
   if (globalScope.document) {
     globalScope.document.addEventListener('DOMContentLoaded', () => {
-      globalScope.document.querySelectorAll('[data-access-profile]').forEach((button) => {
-        button.addEventListener('click', () => {
-          const result = selectAccessProfile(button.dataset.accessProfile);
+      const access = context();
+      const container = document.querySelector('[data-access-memberships]');
+      const error = document.querySelector('[data-access-error]');
+      const empty = document.querySelector('[data-access-empty]');
+      const memberships = access?.MEMBERSHIPS || [];
+      renderMemberships(container, memberships);
+      empty.hidden = memberships.length > 0;
+      container.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-membership-id]');
+        if (!button) return;
+        const membership = activateAccessMembership(button.dataset.membershipId);
+        if (!membership) return showAccessError(error);
+        try {
           globalScope.FreelanceFlowActivity?.record({
             module: 'Acceso',
-            action: 'Perfil seleccionado',
-            description: `${result.label} seleccionado.`
+            action: 'Contexto activado',
+            description: 'Contexto de trabajo activado.'
           });
-          globalScope.location.href = result.redirectTo;
-        });
+        } catch {
+          // Logging is optional and must not block a valid context activation.
+        }
+        globalScope.location.href = membership.destination;
       });
     });
   }

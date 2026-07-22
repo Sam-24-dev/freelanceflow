@@ -1,8 +1,11 @@
 ﻿(function bitacoraFactory(globalScope) {
   'use strict';
 
-  function getAdminRedirect(profile) {
-    return profile === 'administrative' ? '' : 'acceso.html';
+  function getAdminRedirect(membershipContext) {
+    return membershipContext?.status === 'valid'
+      && membershipContext.membership?.role === 'administrative'
+      ? ''
+      : 'acceso.html';
   }
 
   function summarizeEntries(entries = []) {
@@ -16,7 +19,7 @@
   }
 
   function getVisibleEntries(entries = []) {
-    return entries.filter((entry) => entry.profile === 'operational');
+    return entries.filter((entry) => entry.role === 'operational' || entry.profile === 'operational');
   }
 
   function getRecentEntries(entries = [], limit = 5) {
@@ -37,12 +40,9 @@
     const elements = {};
 
     globalScope.document.addEventListener('DOMContentLoaded', () => {
-      const profile = globalScope.sessionStorage?.getItem('freelanceflow_access_profile') || '';
-      const redirect = getAdminRedirect(profile);
-      if (redirect) {
-        globalScope.location.replace(redirect);
-        return;
-      }
+      const membershipContext = globalScope.FreelanceFlowMembershipContext?.readActiveMembership() || { status: 'unavailable' };
+      const redirect = getAdminRedirect(membershipContext);
+      if (redirect) return;
 
       const selectors = { total: 'total', lastAction: 'last-action', lastTime: 'last-time', modules: 'modules', tableBody: 'table-body', mobileList: 'mobile-list', empty: 'empty', tableWrap: 'table-wrap', clear: 'clear', status: 'status' };
       Object.entries(selectors).forEach(([key, attr]) => { elements[key] = globalScope.document.querySelector(`[data-bitacora-${attr}]`); });
