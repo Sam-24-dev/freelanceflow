@@ -2054,6 +2054,7 @@ textarea {
   --landing-muted: #6b5b4b;
   --landing-border: #d8c7b5;
   --landing-dark: #1e160f;
+  --landing-amber-text: #b45309;
   background:
     radial-gradient(circle at 8% 14%, rgba(245, 158, 11, 0.18), transparent 24rem),
     radial-gradient(circle at 88% 12%, rgba(20, 184, 166, 0.16), transparent 25rem),
@@ -2403,7 +2404,7 @@ textarea {
 }
 
 .feature-grid span {
-  color: #d97706;
+  color: var(--landing-amber-text);
   font-weight: 950;
 }
 
@@ -2551,11 +2552,25 @@ textarea {
   .landing-nav {
     position: static;
     width: min(1120px, calc(100% - 2rem));
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
   }
 
   .brand-lockup span { font-size: 0.98rem; }
-  .nav-cta { display: none; }
-  .public-nav a:last-child { display: none; }
+  .nav-cta { justify-self: start; }
+  .public-nav {
+    width: auto;
+    overflow: visible;
+    flex-wrap: wrap;
+    padding-top: 0;
+  }
+  .public-nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    flex: 1 1 calc(50% - 0.25rem);
+  }
   .hero-subtitle { max-width: 21rem; font-size: 1rem; }
 
   .hero-section,
