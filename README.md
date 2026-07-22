@@ -1,127 +1,50 @@
 # FreelanceFlow
 
-FreelanceFlow es la experiencia frontend de un SaaS financiero para freelancers y equipos pequeños. La versión actual integra acceso por perfil, gestión operativa y trazabilidad de actividad, además de movimientos, clientes, proyectos, facturas y reportes.
+FreelanceFlow centraliza la operación financiera y comercial de profesionales independientes y equipos pequeños: clientes, proyectos, movimientos, propuestas, facturas y seguimiento operativo.
 
-## Descripción general
+## Módulos actuales
 
-Esta versión consolida la estructura funcional y visual del producto antes de incorporar persistencia y autenticación de servidor. Permite recorrer el flujo completo desde la landing pública, elegir un perfil de trabajo y acceder a la operación financiera o a la Bitácora administrativa.
+- **Control financiero:** dashboard, movimientos, facturas, pagos, reportes y alertas.
+- **Operación comercial:** clientes, servicios, propuestas y proyectos.
+- **Configuración personal:** categorías de gasto, configuración fiscal estimada, ajustes de facturación y cuenta.
+- **Administración:** Bitácora de actividad.
 
-## Módulos incluidos
+## Roles
 
-- **Landing pública**: entrada comercial del producto.
-- **Acceso por perfil**: separa el trabajo operativo de la revisión administrativa.
-- **Dashboard**: resumen financiero con métricas, actividad reciente y accesos rápidos.
-- **Movimientos**: registro y consulta de ingresos y gastos con validaciones en el cliente.
-- **Clientes**: módulo obligatorio del proyecto, con alta, búsqueda, edición y detalle.
-- **Proyectos**: vínculo entre clientes, ingresos, gastos, horas y rentabilidad.
-- **Facturas**: listado, detalle, estados y exportación visual a PDF.
-- **Reportes**: vistas consolidadas para lectura financiera y control operativo.
-- **Servicios**: catálogo operativo con tarifas, unidades, filtros y trazabilidad en la Bitácora.
-- **Propuestas comerciales**: borradores, servicios con tarifas copiadas, estados comerciales y conversión controlada a proyectos.
-- **Categorías de gasto**: catálogo operativo con presupuestos, deducibilidad, filtros y trazabilidad en la Bitácora.
-- **Configuración fiscal estimada**: supuestos locales editables y una vista previa referencial que no modifica registros financieros.
-- **Bitácora**: revisión administrativa de la actividad operativa reciente de la sesión.
+- **Operativo:** accede a los módulos de gestión y configuración.
+- **Administrativo:** accede únicamente a la Bitácora para consultar la actividad registrada.
 
-### Módulo obligatorio de Clientes
+## Alcance técnico actual
 
-El módulo **Clientes** incorpora los campos y reglas exigidos por el contexto académico, manteniendo el modelo B2B del sistema:
+La aplicación es un frontend web estático de múltiples páginas. Usa datos de ejemplo y persistencia local del navegador para las interacciones disponibles. No incluye backend, autenticación o autorización reales, entrega de correo o notificaciones externas, ni procesamiento de pagos.
 
-- `nombres` y `apellidos` obligatorios.
-- `identificacion` obligatoria y única.
-- `celular` obligatorio.
-- `correo` obligatorio y con formato válido.
-- `estadoCivil` obligatorio con valores controlados.
-- `estado` obligatorio con valores activos o inactivos.
+## Tecnología y estructura
 
-En la interfaz, estos datos representan el **Contacto Principal / Representante Legal** del cliente empresarial.
+- HTML, CSS y JavaScript.
+- Tailwind CSS para compilación de estilos y jsPDF para generación local de documentos.
+- `pages/`: pantallas de la aplicación.
+- `assets/`: estilos, scripts y datos de ejemplo.
+- `tests/`: pruebas automatizadas de lógica y controladores.
 
-## Instrucciones de ejecución
-
-No hace falta instalar un backend ni levantar una base de datos para ejecutar esta versión.
-
-### Ejecución local
-
-1. Cloná el repositorio e ingresá a su directorio.
-2. Ejecutá `python -m http.server 4177`.
-3. Abrí `http://127.0.0.1:4177/` y elegí el perfil de trabajo desde la landing.
-
-> La información operativa y la Bitácora se mantienen en el navegador durante esta etapa frontend.
-
-## Detalles técnicos
-
-### Stack
-
-- HTML5
-- CSS3 + Tailwind CSS
-- JavaScript Vanilla (ES6+)
-
-### Datos locales
-
-La aplicación consume datos locales desde `assets/data/mock-data.json`.
-
-- La carga principal usa **Fetch API / AJAX** desde el servidor local.
-- Una capa auxiliar mantiene disponibles los mismos datos cuando no existe un backend.
-- Las propuestas y los proyectos creados desde ellas se conservan en el navegador mediante `localStorage`.
-- La configuración fiscal estimada se conserva localmente en `freelanceflow_fiscal_config_v1` y solo alimenta su propia vista previa.
-
-## Estructura principal del proyecto
-
-```text
-index.html
-pages/
-  acceso.html
-  dashboard.html
-  transacciones.html
-  clientes.html
-  proyectos.html
-  facturas.html
-  reportes.html
-  categorias.html
-  servicios.html
-  configuracion-fiscal.html
-  bitacora.html
-assets/
-  css/
-  js/
-  data/
-img/brand/
-docs/
-tests/
-README.md
-```
-
-## Archivos importantes del repositorio
-
-Para que la app funcione y el repositorio tenga valor real, conviene mantener estos grupos de archivos:
-
-- HTML principales: `index.html` y las pantallas de `pages/`.
-- Estilos y configuración visual: `assets/css/` y `tailwind.config.js`.
-- Lógica de frontend: `assets/js/`.
-- Datos simulados: `assets/data/`.
-- Branding usado por la app: `img/brand/`.
-- Documentación funcional y de handoff: `docs/`.
-- Pruebas de validación: `tests/`.
-- Soporte del proyecto: `package.json`, `package-lock.json`, `robots.txt`, `site.webmanifest`.
-
-## Archivos que no deberían subirse
-
-No conviene subir archivos temporales o ajenos al producto, por ejemplo:
-
-- capturas o exports temporales,
-- carpetas de pruebas visuales locales,
-- artefactos de agentes o tooling local,
-- archivos descartados,
-- recursos no utilizados por la versión actual.
-
-## Validación recomendada
-
-Antes de preparar un commit o una subida, podés correr:
+## Ejecutar localmente
 
 ```bash
-npm test
-npm run validate
+python -m http.server 4177
 ```
 
-## Alcance actual
+Abre `http://127.0.0.1:4177/` en el navegador.
 
-Esta entrega corresponde a una **versión frontend estática**. No incluye backend, base de datos, autenticación real ni APIs externas. El acceso por perfil y la Bitácora funcionan en el navegador y preparan la evolución posterior del producto.
+## Validar cambios
+
+```bash
+npm ci
+npm run validate
+npm test
+python -m json.tool assets/data/mock-data.json
+```
+
+## Documentación
+
+- [Visión del producto](docs/product-overview.md)
+- [Historias de usuario](docs/user-stories.md)
+- [Decisiones vigentes](docs/decisions.md)
