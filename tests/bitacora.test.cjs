@@ -4,11 +4,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const bitacora = require('../assets/js/bitacora.js');
+const context = require('../assets/js/app-shell.js');
 
 test('bitácora admin guard redirects non-admin profiles', () => {
-  assert.equal(bitacora.getAdminRedirect('operational'), 'acceso.html');
-  assert.equal(bitacora.getAdminRedirect(''), 'acceso.html');
-  assert.equal(bitacora.getAdminRedirect('administrative'), '');
+  assert.equal(bitacora.getAdminRedirect({ status: 'valid', membership: context.MEMBERSHIPS[0] }), 'acceso.html');
+  assert.equal(bitacora.getAdminRedirect({ status: 'invalid' }), 'acceso.html');
+  assert.equal(bitacora.getAdminRedirect({ status: 'valid', membership: context.MEMBERSHIPS[1] }), '');
 });
 
 test('bitácora summary exposes total, last action and modules', () => {

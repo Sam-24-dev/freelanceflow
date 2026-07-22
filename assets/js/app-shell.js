@@ -9,6 +9,70 @@
   const SIDEBAR_STORAGE_KEY = 'freelanceflow_sidebar_collapsed';
   const LANDING_HREF = '../index.html';
   const DESKTOP_QUERY = '(min-width: 1024px)';
+  const ACTIVE_MEMBERSHIP_KEY = 'freelanceflow_active_membership.v1';
+  const LEGACY_PROFILE_KEY = 'freelanceflow_access_profile';
+  const LEGACY_ACTOR_KEY = 'freelanceflow_access_actor';
+  const MEMBERSHIPS = Object.freeze([
+    Object.freeze({
+      id: 'ff-operational-v1',
+      organization: 'FreelanceFlow',
+      name: 'Operaci\u00f3n FreelanceFlow',
+      role: 'operational',
+      actor: 'Equipo operativo',
+      description: 'Gestion\u00e1 finanzas, clientes y proyectos.',
+      destination: 'dashboard.html'
+    }),
+    Object.freeze({
+      id: 'ff-administrative-v1',
+      organization: 'FreelanceFlow',
+      name: 'Administraci\u00f3n FreelanceFlow',
+      role: 'administrative',
+      actor: 'Administraci\u00f3n',
+      description: 'Revis\u00e1 la actividad operativa en Bit\u00e1cora.',
+      destination: 'bitacora.html'
+    })
+  ]);
+
+  function getSafeStorage(scope = globalThis) {
+    try {
+      return scope?.sessionStorage || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function findMembership(id) {
+    return typeof id === 'string'
+      ? MEMBERSHIPS.find((membership) => membership.id === id) || null
+      : null;
+  }
+
+  function readActiveMembership(storage = getSafeStorage()) {
+    if (!storage) return { status: 'unavailable', membership: null };
+    try {
+      const id = storage.getItem(ACTIVE_MEMBERSHIP_KEY);
+      const membership = findMembership(id);
+      if (membership) return { status: 'valid', membership };
+      return id === null
+        ? { status: 'available', membership: null }
+        : { status: 'invalid', membership: null };
+    } catch {
+      return { status: 'unavailable', membership: null };
+    }
+  }
+
+  function activateMembership(id, storage = getSafeStorage()) {
+    const membership = findMembership(id);
+    if (!membership || !storage) return null;
+    try {
+      storage.removeItem?.(LEGACY_PROFILE_KEY);
+      storage.removeItem?.(LEGACY_ACTOR_KEY);
+      storage.setItem(ACTIVE_MEMBERSHIP_KEY, membership.id);
+      return membership;
+    } catch {
+      return null;
+    }
+  }
 
   const icons = {
     dashboard: '<path d="M4 13h6V4H4v9Zm10 7h6V11h-6v9ZM4 20h6v-3H4v3Zm10-13h6V4h-6v3Z"/>',
@@ -53,20 +117,12 @@
   ];
 
 
-  function getStoredProfile() {
-    try {
-      return sessionStorage.getItem('freelanceflow_access_profile') || '';
-    } catch {
-      return '';
-    }
+  function getMembershipContext() {
+    return readActiveMembership();
   }
 
-  function getStoredActor() {
-    try {
-      return sessionStorage.getItem('freelanceflow_access_actor') || 'Equipo operativo';
-    } catch {
-      return 'Equipo operativo';
-    }
+  function getActor(membershipContext) {
+    return membershipContext?.status === 'valid' ? membershipContext.membership.actor : '';
   }
 
   function escapeHTML(value) {
@@ -75,19 +131,25 @@
     })[character]);
   }
 
-  function getNavigationGroupsForProfile(profile = 'operational') {
-    if (profile === 'administrative') {
-      return [{ label: 'Administración', items: [['bitacora.html', 'Bit\u00e1cora', 'log']] }];
+  function getNavigationGroupsForMembership(membership) {
+    if (membership?.role === 'administrative') {
+      return [{
+        label: 'Administraci\u00f3n',
+        items: [['bitacora.html', 'Bit\u00e1cora', 'log']]
+      }];
     }
-    return baseNavigationGroups.map((group) => ({ ...group, items: [...group.items] }));
+    if (membership?.role === 'operational') {
+      return baseNavigationGroups.map((group) => ({ ...group, items: [...group.items] }));
+    }
+    return [];
   }
 
-  function getProtectedRedirect(file, profile = '') {
+  function getProtectedRedirect(file, membershipContext = { status: 'unavailable' }) {
     const operationalFiles = baseNavigationGroups.flatMap((group) => group.items.map((item) => item[0]));
-    if ((file === 'bitacora.html' || operationalFiles.includes(file)) && !['operational', 'administrative'].includes(profile)) return 'acceso.html';
-    if (!profile && (file === 'bitacora.html' || operationalFiles.includes(file))) return 'acceso.html';
-    if (file === 'bitacora.html' && profile !== 'administrative') return 'acceso.html';
-    if (profile === 'administrative' && operationalFiles.includes(file)) return 'bitacora.html';
+    const membership = membershipContext?.status === 'valid' ? membershipContext.membership : null;
+    if (!membership && (file === 'bitacora.html' || operationalFiles.includes(file))) return 'acceso.html';
+    if (file === 'bitacora.html' && membership?.role !== 'administrative') return 'acceso.html';
+    if (membership?.role === 'administrative' && operationalFiles.includes(file)) return 'bitacora.html';
     return '';
   }
 
@@ -124,7 +186,7 @@
       </li>`;
   }
 
-  function buildSidebar(activeFile, profile) {
+  function buildSidebar(activeFile, membership) {
     const aside = document.createElement('aside');
     aside.id = 'app-sidebar';
     aside.className = 'app-sidebar';
@@ -143,7 +205,7 @@
           <p class="app-sidebar-tagline">Control financiero para trabajar con claridad.</p>
         </header>
         <nav class="app-sidebar-navigation" aria-label="Navegación principal">
-          ${getNavigationGroupsForProfile(profile).map((group) => `
+          ${getNavigationGroupsForMembership(membership).map((group) => `
             <section class="app-sidebar-group" aria-label="${group.label}">
               <p class="app-sidebar-section-title">${group.label}</p>
               <ul>${group.items.map((item) => navLink(item, activeFile)).join('')}</ul>
@@ -153,8 +215,8 @@
           <div class="app-sidebar-profile" aria-label="Usuario actual">
             <span class="app-sidebar-avatar" aria-hidden="true">AV</span>
             <span class="app-sidebar-profile-copy">
-              <strong>${escapeHTML(getStoredActor())}</strong>
-              <small>${profile === 'administrative' ? 'Perfil administrativo' : 'Perfil operativo'}</small>
+              <strong>${escapeHTML(membership.actor)}</strong>
+              <small>${membership.role === 'administrative' ? 'Perfil administrativo' : 'Perfil operativo'}</small>
             </span>
           </div>
         </footer>
@@ -179,15 +241,15 @@
     return header;
   }
 
-  function getBottomNavigationForProfile(profile = 'operational') {
-    return profile === 'administrative' ? [] : bottomNavigation;
+  function getBottomNavigationForMembership(membership) {
+    return membership?.role === 'operational' ? bottomNavigation : [];
   }
 
-  function buildBottomNavigation(activeFile, profile) {
+  function buildBottomNavigation(activeFile, membership) {
     const nav = document.createElement('nav');
     nav.className = 'app-bottom-navigation';
     nav.setAttribute('aria-label', 'Navegación móvil');
-    const items = getBottomNavigationForProfile(profile);
+    const items = getBottomNavigationForMembership(membership);
     nav.hidden = items.length === 0;
     nav.innerHTML = items.map(([href, label, iconName]) => {
       const isActive = href === activeFile;
@@ -219,10 +281,11 @@
     if (!layout || !slot || !main) return;
 
     const activeFile = currentFile();
-    const profile = getStoredProfile();
-    const redirect = getProtectedRedirect(activeFile, profile);
+    const membershipContext = getMembershipContext();
+    const membership = membershipContext.membership;
+    const redirect = getProtectedRedirect(activeFile, membershipContext);
     if (redirect) { window.location.replace(redirect); return; }
-    const sidebar = buildSidebar(activeFile, profile);
+    const sidebar = buildSidebar(activeFile, membership);
     slot.replaceWith(sidebar);
 
     const mobileHeaderSlot = document.querySelector('[data-app-mobile-header-slot]');
@@ -232,7 +295,7 @@
       main.before(buildMobileAppBar());
     }
 
-    const bottomNav = buildBottomNavigation(activeFile, profile);
+    const bottomNav = buildBottomNavigation(activeFile, membership);
     document.body.append(bottomNav);
 
     const backdrop = document.createElement('button');
@@ -366,7 +429,24 @@
     syncShell();
   }
 
-  const api = { getNavigationGroupsForProfile, getProtectedRedirect, getBottomNavigationForProfile, escapeHTML, LANDING_HREF };
+  const api = {
+    ACTIVE_MEMBERSHIP_KEY,
+    LEGACY_PROFILE_KEY,
+    LEGACY_ACTOR_KEY,
+    MEMBERSHIPS,
+    getSafeStorage,
+    findMembership,
+    readActiveMembership,
+    activateMembership,
+    getNavigationGroupsForMembership,
+    getProtectedRedirect,
+    getBottomNavigationForMembership,
+    getActor,
+    escapeHTML,
+    LANDING_HREF
+  };
+  globalThis.FreelanceFlowMembershipContext = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
+
   if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', initAppShell);
 })();

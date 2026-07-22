@@ -2,11 +2,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const shell = require('../assets/js/app-shell.js');
+const operational = () => shell.MEMBERSHIPS[0];
+const administrative = () => shell.MEMBERSHIPS[1];
+const operationalContext = () => ({ status: 'valid', membership: operational() });
+const administrativeContext = () => ({ status: 'valid', membership: administrative() });
 
-test('app shell exposes BitÃ¡cora only for administrative profile', () => {
+test('app shell exposes Bitácora only for administrative profile', () => {
   const flatten = (groups) => groups.flatMap((group) => group.items.map((item) => item[0]));
 
-  assert.deepEqual(flatten(shell.getNavigationGroupsForProfile('operational')), [
+  assert.deepEqual(flatten(shell.getNavigationGroupsForMembership(operational())), [
     'dashboard.html',
     'transacciones.html',
     'clientes.html',
@@ -21,40 +25,40 @@ test('app shell exposes BitÃ¡cora only for administrative profile', () => {
     'ajustes.html',
     'cuenta.html'
   ]);
-  assert.deepEqual(flatten(shell.getNavigationGroupsForProfile('administrative')), ['bitacora.html']);
+  assert.deepEqual(flatten(shell.getNavigationGroupsForMembership(administrative())), ['bitacora.html']);
 });
 
 test('app shell redirects profiles away from unauthorized modules', () => {
   assert.equal(shell.getProtectedRedirect('dashboard.html', ''), 'acceso.html');
   assert.equal(shell.getProtectedRedirect('dashboard.html', 'corrupt'), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('bitacora.html', 'operational'), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('bitacora.html', 'administrative'), '');
-  assert.equal(shell.getProtectedRedirect('dashboard.html', 'administrative'), 'bitacora.html');
-  assert.equal(shell.getProtectedRedirect('transacciones.html', 'administrative'), 'bitacora.html');
-  assert.equal(shell.getProtectedRedirect('categorias.html', 'administrative'), 'bitacora.html');
-  assert.equal(shell.getProtectedRedirect('servicios.html', 'administrative'), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('bitacora.html', operationalContext()), 'acceso.html');
+  assert.equal(shell.getProtectedRedirect('bitacora.html', administrativeContext()), '');
+  assert.equal(shell.getProtectedRedirect('dashboard.html', administrativeContext()), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('transacciones.html', administrativeContext()), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('categorias.html', administrativeContext()), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('servicios.html', administrativeContext()), 'bitacora.html');
   assert.equal(shell.getProtectedRedirect('servicios.html', ''), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('servicios.html', 'operational'), '');
-  assert.equal(shell.getProtectedRedirect('configuracion-fiscal.html', 'administrative'), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('servicios.html', operationalContext()), '');
+  assert.equal(shell.getProtectedRedirect('configuracion-fiscal.html', administrativeContext()), 'bitacora.html');
   assert.equal(shell.getProtectedRedirect('configuracion-fiscal.html', ''), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('configuracion-fiscal.html', 'operational'), '');
-  assert.equal(shell.getProtectedRedirect('ajustes.html', 'administrative'), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('configuracion-fiscal.html', operationalContext()), '');
+  assert.equal(shell.getProtectedRedirect('ajustes.html', administrativeContext()), 'bitacora.html');
   assert.equal(shell.getProtectedRedirect('ajustes.html', ''), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('ajustes.html', 'operational'), '');
-  assert.equal(shell.getProtectedRedirect('cuenta.html', 'administrative'), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('ajustes.html', operationalContext()), '');
+  assert.equal(shell.getProtectedRedirect('cuenta.html', administrativeContext()), 'bitacora.html');
   assert.equal(shell.getProtectedRedirect('cuenta.html', ''), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('cuenta.html', 'operational'), '');
-  assert.equal(shell.getProtectedRedirect('notificaciones.html', 'administrative'), 'bitacora.html');
+  assert.equal(shell.getProtectedRedirect('cuenta.html', operationalContext()), '');
+  assert.equal(shell.getProtectedRedirect('notificaciones.html', administrativeContext()), 'bitacora.html');
   assert.equal(shell.getProtectedRedirect('notificaciones.html', ''), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('notificaciones.html', 'operational'), '');
+  assert.equal(shell.getProtectedRedirect('notificaciones.html', operationalContext()), '');
   assert.equal(shell.getProtectedRedirect('categorias.html', ''), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('categorias.html', 'operational'), '');
-  assert.equal(shell.getProtectedRedirect('dashboard.html', 'operational'), '');
+  assert.equal(shell.getProtectedRedirect('categorias.html', operationalContext()), '');
+  assert.equal(shell.getProtectedRedirect('dashboard.html', operationalContext()), '');
 });
 
 test('bottom navigation is operational-only', () => {
-  assert.deepEqual(shell.getBottomNavigationForProfile('administrative'), []);
-  const operationalBottomNav = shell.getBottomNavigationForProfile('operational');
+  assert.deepEqual(shell.getBottomNavigationForMembership(administrative()), []);
+  const operationalBottomNav = shell.getBottomNavigationForMembership(operational());
   assert.equal(operationalBottomNav.length, 5);
   assert.equal(operationalBottomNav.some(([href]) => href === 'categorias.html'), false);
   assert.equal(operationalBottomNav.some(([href]) => href === 'ajustes.html'), false);

@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Ingreso por perfil a FreelanceFlow para operación financiera o revisión administrativa.">
+  <meta name="description" content="Activa uno de los contextos de trabajo disponibles en FreelanceFlow sin modificar el rol asignado.">
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#0F172A">
   <title>FreelanceFlow | Acceso</title>
@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="../img/brand/apple-touch-icon.png">
   <link rel="stylesheet" href="../assets/css/styles.css">
 </head>
-<body class="landing-shell min-h-screen text-[#1C130D]">
+<body class="landing-shell access-page min-h-screen text-[#1C130D]">
   <a href="#main-content" class="skip-link">Saltar al contenido principal</a>
 
   <header class="landing-nav" aria-label="Barra superior">
@@ -29,22 +29,15 @@
   <main id="main-content">
     <section class="hero-section" aria-labelledby="access-title">
       <div class="hero-copy reveal-up">
-        <p class="eyebrow">Ingreso al producto</p>
-        <h1 id="access-title">Elige el perfil de trabajo para continuar</h1>
-        <p class="hero-subtitle">Usa el perfil operativo para gestionar finanzas, clientes y proyectos. El perfil administrativo abre únicamente la Bitácora para revisar la actividad reciente.</p>
-        <div class="hero-actions" aria-label="Perfiles disponibles">
-          <button class="primary-cta" type="button" data-access-profile="operational">Gestionar operación</button>
-          <button class="secondary-cta" type="button" data-access-profile="administrative">Revisar Bitácora</button>
-        </div>
-        <ul class="trust-chips" aria-label="Alcance del acceso">
-          <li>Ingreso por perfil</li>
-          <li>Actividad operativa visible</li>
-          <li>Perfil operativo</li>
-          <li>Perfil administrativo</li>
-        </ul>
+        <p class="eyebrow">Contexto de trabajo</p>
+        <h1 id="access-title">Eleg&#237; d&#243;nde trabajar</h1>
+        <p class="hero-subtitle">Estos espacios y roles ya est&#225;n asignados. Elegir un espacio no modifica tus permisos.</p>
+        <p data-access-error class="access-error" role="alert" aria-live="assertive" tabindex="-1" hidden>No pudimos cargar tus accesos. Volv&#233; a intentarlo.</p>
+        <p data-access-empty class="access-empty" hidden>No hay espacios disponibles para esta identidad. Contact&#225; al administrador.</p>
+        <div class="access-memberships" data-access-memberships aria-label="Espacios disponibles"></div>
       </div>
 
-      <div class="hero-visual reveal-up" aria-label="Resumen de perfiles de FreelanceFlow">
+      <div class="hero-visual reveal-up" aria-label="Resumen de contextos de trabajo de FreelanceFlow">
         <div class="dashboard-preview-card">
           <div class="preview-topbar"><span></span><span></span><span></span><strong>Acceso</strong></div>
           <div class="preview-grid">
@@ -62,6 +55,7 @@
     <p>© 2026 FreelanceFlow. Todos los derechos reservados.</p>
   </footer>
 
+  <script src="../assets/js/app-shell.js"></script>
   <script src="../assets/js/activity-log.js"></script>
   <script src="../assets/js/acceso.js"></script>
 </body>
