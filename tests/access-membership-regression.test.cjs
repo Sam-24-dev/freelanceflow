@@ -59,7 +59,7 @@ test('raw and legacy values cannot override a recognized membership', () => {
   assert.equal(active.membership.destination, 'dashboard.html');
 });
 
-test('Bitacora reads role-based operational entries while retaining legacy read compatibility', () => {
+test('Bitácora reads only role-derived operational entries and discards legacy free-form entries', () => {
   const entries = [
     { role: 'operational', module: 'Dashboard' },
     { role: 'administrative', module: 'Bitacora' },
@@ -67,7 +67,7 @@ test('Bitacora reads role-based operational entries while retaining legacy read 
   ];
   assert.deepEqual(
     bitacora.getVisibleEntries(entries).map((entry) => entry.module),
-    ['Dashboard', 'Legacy']
+    ['Dashboard']
   );
 });
 
@@ -84,8 +84,8 @@ test('activity preserves limit and clear for a valid operational membership', ()
     limit: 1,
     getContext: () => membershipContext
   });
-  log.record({ module: 'Clientes', action: 'Uno', description: 'Uno' });
-  log.record({ module: 'Servicios', action: 'Dos', description: 'Dos' });
+  log.record({ module: 'Clientes', action: 'Cliente registrado', description: 'Cliente privado.' });
+  log.record({ module: 'Servicios', action: 'Servicio creado', description: 'Servicio privado.' });
   assert.deepEqual(log.read().map((entry) => entry.module), ['Servicios']);
   log.clear();
   assert.deepEqual(log.read(), []);
@@ -105,20 +105,28 @@ test('activity rejects administrative and absent contexts', () => {
   }
 });
 
-test('activity derives identity and bounds adversarial text without exposing membership IDs', () => {
+test('activity derives trusted mapped data and never persists or exposes producer free text', () => {
+  const session = storage();
   const log = activity.createActivityLog({
-    storage: storage(),
+    storage: session,
+    now: () => '2026-06-27T10:00:00.000Z',
     getContext: () => ({ status: 'valid', membership: shell.MEMBERSHIPS[0] })
   });
   const entry = log.record({
-    module: 'Dashboard\nInjected',
-    action: 'Opened\tcontext',
-    description: `ff-operational-v1\r\n${'x'.repeat(400)}`
+    module: 'Clientes',
+    action: 'Cliente registrado',
+    description: '<img src=x onerror=alert(1)> ACME RUC 0999999999001 token secreto $500'
   });
   assert.equal(entry.actor, 'Equipo operativo');
   assert.equal(entry.role, 'operational');
-  assert.doesNotMatch(`${entry.module}${entry.action}${entry.description}`, /[\r\n\t]|ff-operational-v1/);
-  assert.ok(entry.description.length <= 280);
+  assert.deepEqual(JSON.parse(session.getItem(activity.STORAGE_KEY)), [{
+    version: 1,
+    type: 'clients.registered',
+    timestamp: '2026-06-27T10:00:00.000Z',
+    membershipId: 'ff-operational-v1'
+  }]);
+  assert.equal(entry.description, 'Se registró un cliente.');
+  assert.doesNotMatch(JSON.stringify(entry), /ACME|0999999999001|token secreto|\$500|<img/);
 });
 
 test('shell keeps expected operational mobile exclusions', () => {

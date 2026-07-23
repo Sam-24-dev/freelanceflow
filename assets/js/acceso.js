@@ -53,15 +53,6 @@
         if (!button) return;
         const membership = activateAccessMembership(button.dataset.membershipId);
         if (!membership) return showAccessError(error);
-        try {
-          globalScope.FreelanceFlowActivity?.record({
-            module: 'Acceso',
-            action: 'Contexto activado',
-            description: 'Contexto de trabajo activado.'
-          });
-        } catch {
-          // Logging is optional and must not block a valid context activation.
-        }
         globalScope.location.href = membership.destination;
       });
     });

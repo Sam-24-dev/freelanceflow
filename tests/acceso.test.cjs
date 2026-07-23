@@ -45,3 +45,8 @@ test('access screen exposes required copy, membership-only actions, and accessib
   assert.match(html, /data-access-error[^>]*role="alert"[^>]*aria-live="assertive"/);
   assert.doesNotMatch(html, /data-access-(?:profile|role|actor)/);
 });
+
+test('access activation never emits an operational activity event', () => {
+  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '../assets/js/acceso.js'), 'utf8');
+  assert.doesNotMatch(source, /Contexto activado|FreelanceFlowActivity/);
+});
