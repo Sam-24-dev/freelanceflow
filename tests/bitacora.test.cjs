@@ -1,4 +1,4 @@
-﻿const test = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -27,7 +27,7 @@ test('bitácora summary exposes total, last action and modules', () => {
 test('bitácora only exposes operational entries', () => {
   const entries = bitacora.getVisibleEntries([
     { profile: 'administrative', module: 'Bitácora', action: 'Ingreso a pantalla' },
-    { profile: 'operational', module: 'Dashboard', action: 'Ingreso a pantalla' }
+    { role: 'operational', module: 'Dashboard', action: 'Ingreso a pantalla' }
   ]);
 
   assert.deepEqual(entries.map((entry) => entry.module), ['Dashboard']);
@@ -35,7 +35,7 @@ test('bitácora only exposes operational entries', () => {
 
 test('bitácora card list is limited to latest five visible entries', () => {
   const entries = Array.from({ length: 7 }, (_, index) => ({
-    profile: 'operational',
+    role: 'operational',
     module: `Módulo ${index + 1}`,
     action: 'Ingreso a pantalla'
   }));
@@ -57,6 +57,10 @@ test('bitácora shows one activity representation per viewport', () => {
   assert.match(html, /class="reports-summary bitacora-summary"/);
   assert.match(css, /\.bitacora-summary\s*\{\s*grid-template-columns:\s*repeat\(3,/);
   assert.match(source, /globalScope\.confirm\?\./);
+  assert.match(html, /Limpiar actividad de esta sesión/);
+  assert.match(source, /¿Limpiar la actividad de esta sesión\?/);
+  assert.match(source, /Actividad de esta sesión limpiada\./);
+  assert.doesNotMatch(source, /\.innerHTML\s*=/);
   assert.match(html, /data-bitacora-table-wrap class="[^"]*bitacora-table/);
   assert.match(html, /data-bitacora-mobile-list class="[^"]*bitacora-mobile-list/);
   assert.match(css, /\.bitacora-mobile-list\s*\{\s*display:\s*none/);

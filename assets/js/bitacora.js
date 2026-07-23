@@ -1,4 +1,4 @@
-﻿(function bitacoraFactory(globalScope) {
+(function bitacoraFactory(globalScope) {
   'use strict';
 
   function getAdminRedirect(membershipContext) {
@@ -19,17 +19,11 @@
   }
 
   function getVisibleEntries(entries = []) {
-    return entries.filter((entry) => entry.role === 'operational' || entry.profile === 'operational');
+    return entries.filter((entry) => entry.role === 'operational');
   }
 
   function getRecentEntries(entries = [], limit = 5) {
     return getVisibleEntries(entries).slice(0, limit);
-  }
-
-  function escapeHTML(value) {
-    return String(value ?? '').replace(/[&<>'"]/g, (character) => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
-    })[character]);
   }
 
   const api = { getAdminRedirect, summarizeEntries, getVisibleEntries, getRecentEntries };
@@ -48,10 +42,10 @@
       Object.entries(selectors).forEach(([key, attr]) => { elements[key] = globalScope.document.querySelector(`[data-bitacora-${attr}]`); });
 
       elements.clear?.addEventListener('click', () => {
-        if (!globalScope.confirm?.('¿Limpiar toda la actividad operativa registrada en esta sesión?')) return;
+        if (!globalScope.confirm?.('¿Limpiar la actividad de esta sesión?')) return;
         globalScope.FreelanceFlowActivity?.clear();
         render();
-        if (elements.status) elements.status.textContent = 'Bitácora limpiada.';
+        if (elements.status) elements.status.textContent = 'Actividad de esta sesión limpiada.';
       });
       globalScope.addEventListener?.('freelanceflow:activity-updated', render);
       globalScope.addEventListener?.('freelanceflow:activity-cleared', render);
@@ -74,16 +68,45 @@
       if (elements.empty) elements.empty.hidden = entries.length > 0;
       if (elements.tableWrap) elements.tableWrap.hidden = entries.length === 0;
       if (elements.mobileList) elements.mobileList.hidden = entries.length === 0;
-      if (elements.tableBody) elements.tableBody.innerHTML = entries.map(renderRow).join('');
-      if (elements.mobileList) elements.mobileList.innerHTML = recentEntries.map(renderCard).join('');
+      if (elements.tableBody) elements.tableBody.replaceChildren(...entries.map(renderRow));
+      if (elements.mobileList) elements.mobileList.replaceChildren(...recentEntries.map(renderCard));
     }
 
     function renderRow(entry) {
-      return `<tr><td>${escapeHTML(formatDate(entry.timestamp))}</td><td><strong>${escapeHTML(entry.actor)}</strong></td><td>${escapeHTML(entry.module)}</td><td>${escapeHTML(entry.action)}</td><td>${escapeHTML(entry.description)}</td></tr>`;
+      const row = globalScope.document.createElement('tr');
+      const date = globalScope.document.createElement('td');
+      date.textContent = formatDate(entry.timestamp);
+      const actor = globalScope.document.createElement('td');
+      const actorName = globalScope.document.createElement('strong');
+      actorName.textContent = entry.actor;
+      actor.append(actorName);
+      const module = globalScope.document.createElement('td');
+      module.textContent = entry.module;
+      const action = globalScope.document.createElement('td');
+      action.textContent = entry.action;
+      const description = globalScope.document.createElement('td');
+      description.textContent = entry.description;
+      row.append(date, actor, module, action, description);
+      return row;
     }
 
     function renderCard(entry) {
-      return `<article class="report-access-card"><span class="report-access-icon report-access-teal" aria-hidden="true">✓</span><span><strong>${escapeHTML(entry.action)}</strong><small>${escapeHTML(formatDate(entry.timestamp))} · ${escapeHTML(entry.module)}</small><small>${escapeHTML(entry.actor)} · ${escapeHTML(entry.description)}</small></span></article>`;
+      const card = globalScope.document.createElement('article');
+      card.className = 'report-access-card';
+      const icon = globalScope.document.createElement('span');
+      icon.className = 'report-access-icon report-access-teal';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = '✓';
+      const content = globalScope.document.createElement('span');
+      const action = globalScope.document.createElement('strong');
+      action.textContent = entry.action;
+      const details = globalScope.document.createElement('small');
+      details.textContent = `${formatDate(entry.timestamp)} · ${entry.module}`;
+      const actor = globalScope.document.createElement('small');
+      actor.textContent = `${entry.actor} · ${entry.description}`;
+      content.append(action, details, actor);
+      card.append(icon, content);
+      return card;
     }
   }
 }(typeof globalThis !== 'undefined' ? globalThis : window));
