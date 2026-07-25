@@ -5,7 +5,7 @@ Estas historias describen el comportamiento actual del frontend.
 ## Visitante público
 
 - **US-PUB-01:** Como visitante público, quiero conocer el propósito de FreelanceFlow para decidir si responde a mis necesidades de gestión.
-- **US-PUB-02:** Como visitante público, quiero elegir un perfil de trabajo para entrar a la interfaz correspondiente.
+- **US-PUB-02:** Como visitante público, quiero elegir un espacio de membresía para entrar a la interfaz correspondiente.
 
 ## Operativo
 

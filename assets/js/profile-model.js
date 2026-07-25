@@ -40,6 +40,13 @@
   function readProfile(storage) {
     try { return parseStoredProfile(storage?.getItem(PROFILE_STORAGE_KEY)); } catch { return getDefaultProfile(); }
   }
+  function saveProfile(storage, profile = {}) {
+    if (!storage) return false;
+    try {
+      storage.setItem(PROFILE_STORAGE_KEY, serializeProfile(profile));
+      return true;
+    } catch { return false; }
+  }
   function serializeProfile(profile = {}) {
     const value = normalizeProfile(profile);
     return JSON.stringify({ version: PROFILE_VERSION, fullName: value.fullName, email: value.email, country: value.country });
@@ -48,7 +55,7 @@
     return String(fullName).trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join('') || '—';
   }
 
-  const api = { PROFILE_STORAGE_KEY, PROFILE_VERSION, getDefaultProfile, normalizeProfile, validateProfile, parseStoredProfile, getSafeStorage, readProfile, serializeProfile, initials };
+  const api = { PROFILE_STORAGE_KEY, PROFILE_VERSION, getDefaultProfile, normalizeProfile, validateProfile, parseStoredProfile, getSafeStorage, readProfile, saveProfile, serializeProfile, initials };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   globalScope.FreelanceFlowProfileModel = api;
 }(typeof globalThis !== 'undefined' ? globalThis : window));
