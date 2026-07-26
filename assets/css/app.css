@@ -4628,6 +4628,10 @@ body.client-drawer-open {
 }
 
 /* Dashboard — Editorial Fintech Ledger */
+.dashboard-app .app-sidebar-brand { min-height: 44px; }
+.dashboard-app .app-sidebar-toggle { min-width: 44px; min-height: 44px; }
+.dashboard-app [aria-label="FreelanceFlow, ir a la página de inicio"] { display: flex; align-items: center; min-height: 44px; }
+.dashboard-app .app-sidebar-section-title { color: #94a3b8; }
 .dashboard-app {
   background:
     radial-gradient(circle at 95% 2%, rgba(20, 184, 166, 0.11), transparent 24rem),
@@ -7977,6 +7981,11 @@ body.project-detail-modal-open {
   }
 
   .mobile-home-section-header a {
+    display: inline-flex;
+    align-items: center;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
     color: #0f766e;
     font-size: 0.76rem;
     font-weight: 900;
@@ -8014,24 +8023,18 @@ body.project-detail-modal-open {
   .mobile-home-transaction-dot.is-expense { background: #ef4444; }
 
   .mobile-home-transaction-item h3 {
-    overflow: hidden;
     color: #0f172a;
     font-size: 0.82rem;
     font-weight: 900;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .mobile-home-transaction-item p,
   .mobile-home-transaction-item small {
     display: block;
     margin-top: 0.12rem;
-    overflow: hidden;
     color: #64748b;
     font-size: 0.67rem;
     font-weight: 700;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .mobile-home-transaction-item strong {
@@ -8112,6 +8115,8 @@ body.project-detail-modal-open {
     height: 1.05rem;
   }
 }
+
+.dashboard-due-link { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; }
 
 @media (max-width: 374px) {
   .mobile-home-flow-card strong {

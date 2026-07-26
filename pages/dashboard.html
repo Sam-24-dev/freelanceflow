@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Dashboard financiero de FreelanceFlow para revisar ingresos, gastos, flujo neto y cuentas por cobrar.">
+  <meta name="description" content="Dashboard financiero de FreelanceFlow para revisar cobros, gastos registrados y cuentas por cobrar.">
+  <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#0F172A">
   <title>FreelanceFlow | Dashboard</title>
   <link rel="icon" type="image/png" href="../img/brand/favicon-32.png">
@@ -16,7 +17,7 @@
   <div class="app-layout min-h-screen" data-app-layout>
     <div class="app-sidebar-slot" data-app-sidebar-slot aria-hidden="true"></div>
 
-    <main id="main-content" class="app-main dashboard-main min-w-0 pb-24 lg:pb-10">
+    <main id="main-content" tabindex="-1" class="app-main dashboard-main min-w-0 pb-24 lg:pb-10">
       <header data-app-mobile-header class="sticky top-0 z-30 border-b border-[#D8C7B5]/70 bg-[#F4EFE6]/95 px-4 py-3 backdrop-blur-lg sm:px-6 lg:px-8">
         <div class="mx-auto flex max-w-[96rem] items-center justify-between gap-3">
           <div class="flex min-w-0 items-center gap-2.5 lg:hidden">
@@ -32,8 +33,7 @@
           <div class="flex items-center gap-2 sm:gap-3">
             <label for="dashboard-period" class="sr-only">Período del dashboard</label>
             <select id="dashboard-period" name="period" class="min-h-11 rounded-xl border border-[#D8C7B5] bg-white px-3 py-2 text-sm font-bold text-slate-800 shadow-sm sm:px-4">
-              <option value="2026-06">Junio 2026</option>
-              <option value="2026-05">Mayo 2026</option>
+              <option value="" selected disabled>Sin períodos disponibles</option>
             </select>
             <a href="transacciones.html#transaction-form-panel" class="dashboard-top-action inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-amber-400 px-4 py-2 text-sm font-black text-slate-950 shadow-lg shadow-amber-500/20 transition-colors hover:bg-amber-300 sm:px-5">
               <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-width="2.2" stroke-linecap="round"/></svg><span class="hidden sm:inline">Movimiento</span><span class="sm:hidden">Nuevo</span>
@@ -48,7 +48,7 @@
         <section class="mobile-home" aria-labelledby="mobile-home-title">
           <header class="mobile-home-header">
             <div>
-              <p id="mobile-home-month" class="mobile-home-eyebrow">Junio 2026</p>
+              <p id="mobile-home-month" class="mobile-home-eyebrow">Sin período</p>
               <h1 id="mobile-home-title"><span id="mobile-home-greeting">Hola</span>, <span id="mobile-home-user">Andrés</span>.</h1>
             </div>
             <a class="mobile-home-alert" id="mobile-invoice-alert" href="facturas.html">
@@ -58,9 +58,9 @@
           </header>
 
           <article class="mobile-home-flow-card" aria-labelledby="mobile-flow-title">
-            <p id="mobile-flow-title">Flujo de caja neto</p>
+            <p id="mobile-flow-title">Cobros menos gastos registrados</p>
             <strong id="mobile-cash-flow-total">$0.00</strong>
-            <span id="mobile-cash-flow-copy">Tu flujo aparecerá cuando registres movimientos.</span>
+            <span id="mobile-cash-flow-copy">El resultado aparecerá cuando registres actividad.</span>
             <div class="mobile-home-flow-signal" aria-hidden="true">
               <span id="mobile-flow-income-signal"></span>
               <span id="mobile-flow-expense-signal"></span>
@@ -70,13 +70,13 @@
           <div class="mobile-home-mini-grid" aria-label="Ingresos y gastos del período">
             <article class="mobile-home-mini-card">
               <span class="mobile-home-mini-icon is-income" aria-hidden="true">↗</span>
-              <p>Ingresos</p>
+              <p>Ingresos registrados</p>
               <strong id="mobile-income-total">$0.00</strong>
               <small>Entradas del mes</small>
             </article>
             <article class="mobile-home-mini-card">
               <span class="mobile-home-mini-icon is-expense" aria-hidden="true">↘</span>
-              <p>Gastos</p>
+              <p>Gastos registrados</p>
               <strong id="mobile-expenses-total">$0.00</strong>
               <small>Salidas registradas</small>
             </article>
@@ -88,7 +88,7 @@
                 <p class="mobile-home-eyebrow">Actividad reciente</p>
                 <h2 id="mobile-transactions-title">Últimos movimientos</h2>
               </div>
-              <a href="transacciones.html">Ver todos</a>
+              <a href="transacciones.html" data-period-link="movements">Ver todos</a>
             </div>
             <div id="mobile-home-transactions" class="mobile-home-list"></div>
             <p id="mobile-home-transactions-empty" class="mobile-home-empty hidden">Aún no has registrado movimientos.</p>
@@ -118,7 +118,7 @@
         <section class="dashboard-hero overflow-hidden rounded-[2rem] bg-slate-950 p-6 text-white shadow-2xl shadow-slate-950/20 sm:p-8" aria-labelledby="dashboard-title">
           <div class="relative z-10 grid gap-7 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
             <div>
-              <p class="text-xs font-black uppercase tracking-[0.25em] text-amber-300">Tu salud financiera · <span id="period-label">Junio 2026</span></p>
+              <p class="text-xs font-black uppercase tracking-[0.25em] text-amber-300">Tu salud financiera · <span id="period-label">Sin período</span></p>
               <h1 id="dashboard-title" class="mt-4 max-w-3xl text-3xl font-black tracking-[-0.04em] sm:text-4xl xl:text-5xl"><span id="greeting-label">Hola</span>, <span id="user-name">Freelancer</span>.</h1>
               <p id="health-message" class="mt-3 min-h-12 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base" aria-live="polite">Aquí verás el balance del período y las prioridades de cobro.</p>
             </div>
@@ -138,26 +138,26 @@
 
         <section class="dashboard-metrics-grid mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-labelledby="metrics-title">
           <h2 id="metrics-title" class="sr-only">Métricas financieras del período</h2>
-          <a class="dashboard-metric-card dashboard-metric-link group" href="reportes.html">
+          <a class="dashboard-metric-card dashboard-metric-link group" href="reportes.html" data-period-link="reports">
             <div class="flex items-start justify-between gap-4"><span class="dashboard-metric-icon bg-green-100 text-green-700"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m5 15 5-5 4 4 5-6m0 0h-4m4 0v4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="rounded-full bg-green-50 px-2.5 py-1 text-xs font-black text-green-700">Ingreso</span></div>
-            <p class="mt-5 text-sm font-bold text-slate-600">Ingresos del período</p>
+            <p class="mt-5 text-sm font-bold text-slate-600">Cobros recibidos</p>
             <p id="income-total" class="mt-2 text-3xl font-black tracking-tight text-slate-950">$0.00</p>
-            <p class="mt-2 text-xs font-semibold text-slate-600">Pagos recibidos en el mes.</p>
+            <p class="mt-2 text-xs font-semibold text-slate-600">Ingresos registrados: <strong id="registered-income-total">$0.00</strong></p>
             <span class="dashboard-metric-action">Ver reporte <span aria-hidden="true">→</span></span>
           </a>
-          <a class="dashboard-metric-card dashboard-metric-link group" href="transacciones.html">
+          <a class="dashboard-metric-card dashboard-metric-link group" href="transacciones.html" data-period-link="movements">
             <div class="flex items-start justify-between gap-4"><span class="dashboard-metric-icon bg-red-100 text-red-700"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m5 9 5 5 4-4 5 6m0 0h-4m4 0v-4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="rounded-full bg-red-50 px-2.5 py-1 text-xs font-black text-red-700">Gasto</span></div>
-            <p class="mt-5 text-sm font-bold text-slate-600">Gastos del período</p>
+            <p class="mt-5 text-sm font-bold text-slate-600">Gastos registrados</p>
             <p id="expenses-total" class="mt-2 text-3xl font-black tracking-tight text-slate-950">$0.00</p>
             <p class="mt-2 text-xs font-semibold text-slate-600">Salidas operativas registradas.</p>
             <span class="dashboard-metric-action">Ver movimientos <span aria-hidden="true">→</span></span>
           </a>
-          <a class="dashboard-metric-card dashboard-metric-link group" href="reportes.html">
-            <div class="flex items-start justify-between gap-4"><span class="dashboard-metric-icon bg-amber-100 text-amber-700"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 17 9 12l3 3 8-9M15 6h5v5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-700">Neto</span></div>
-            <p class="mt-5 text-sm font-bold text-slate-600">Flujo de caja neto</p>
+          <a class="dashboard-metric-card dashboard-metric-link group" href="reportes.html" data-period-link="reports">
+            <div class="flex items-start justify-between gap-4"><span class="dashboard-metric-icon bg-amber-100 text-amber-700"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 17 9 12l3 3 8-9M15 6h5v5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-700">Resultado</span></div>
+            <p class="mt-5 text-sm font-bold text-slate-600">Cobros menos gastos registrados</p>
             <p id="cash-flow-total" class="mt-2 text-3xl font-black tracking-tight text-slate-950">$0.00</p>
-            <p id="cash-flow-status" class="mt-2 text-xs font-semibold text-slate-600">Ingresos menos gastos.</p>
-            <span class="dashboard-metric-action">Analizar flujo <span aria-hidden="true">→</span></span>
+            <p id="cash-flow-status" class="mt-2 text-xs font-semibold text-slate-600" aria-live="polite">Cobros menos gastos registrados.</p>
+            <span class="dashboard-metric-action">Ver reporte <span aria-hidden="true">→</span></span>
           </a>
           <a class="dashboard-metric-card dashboard-metric-link group" href="facturas.html">
             <div class="flex items-start justify-between gap-4"><span class="dashboard-metric-icon bg-teal-100 text-teal-700"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 6h14v12H5V6Zm0 4h14m-5 4h2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-black text-teal-700">Por cobrar</span></div>
@@ -172,7 +172,7 @@
           <section class="dashboard-panel min-w-0" aria-labelledby="transactions-title">
             <header class="flex flex-col gap-3 border-b border-slate-200 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
               <div><p class="dashboard-eyebrow">Ledger operativo</p><h2 id="transactions-title" class="mt-1 text-2xl font-black tracking-tight text-slate-950">Últimos movimientos</h2><p class="mt-1 text-sm text-slate-600">Ingresos y gastos con contexto de cliente y proyecto.</p></div>
-              <a href="transacciones.html" class="inline-flex min-h-11 items-center text-sm font-black text-teal-700 hover:text-teal-900">Ver todos <span aria-hidden="true" class="ml-1">→</span></a>
+              <a href="transacciones.html" data-period-link="movements" class="inline-flex min-h-11 items-center text-sm font-black text-teal-700 hover:text-teal-900">Ver todos <span aria-hidden="true" class="ml-1">→</span></a>
             </header>
 
             <div class="hidden xl:block">
@@ -182,19 +182,19 @@
               </table>
             </div>
             <div id="transactions-mobile-list" class="grid gap-3 p-4 xl:hidden"></div>
-            <div id="transactions-empty-state" class="hidden m-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center"><p class="font-black text-slate-900">Aún no has registrado movimientos</p><p class="mt-2 text-sm text-slate-600">Agrega el primero para empezar a interpretar tu flujo mensual.</p><a href="transacciones.html#transaction-form-panel" class="mt-4 inline-flex min-h-11 items-center rounded-xl bg-amber-400 px-4 py-2 text-sm font-black text-slate-950">Registrar movimiento</a></div>
+                <div id="transactions-empty-state" class="hidden m-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center"><p class="font-black text-slate-900">Aún no has registrado movimientos</p><p class="mt-2 text-sm text-slate-600">Agrega el primero para interpretar cobros y gastos registrados.</p><a href="transacciones.html#transaction-form-panel" class="mt-4 inline-flex min-h-11 items-center rounded-xl bg-amber-400 px-4 py-2 text-sm font-black text-slate-950">Registrar movimiento</a></div>
           </section>
 
           <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-1">
             <section class="dashboard-panel p-5 sm:p-6" aria-labelledby="goal-title">
-              <div class="flex items-start justify-between gap-4"><div><p class="dashboard-eyebrow">Meta mensual</p><h2 id="goal-title" class="mt-1 text-xl font-black text-slate-950">Meta de ingresos</h2></div><span id="income-goal-percent" class="rounded-full bg-amber-100 px-3 py-1 text-sm font-black text-amber-800">0%</span></div>
+              <div class="flex items-start justify-between gap-4"><div><p class="dashboard-eyebrow">Meta mensual</p><h2 id="goal-title" class="mt-1 text-xl font-black text-slate-950">Meta de cobros</h2></div><span id="income-goal-percent" class="rounded-full bg-amber-100 px-3 py-1 text-sm font-black text-amber-800">0%</span></div>
               <div class="mt-7 flex items-end justify-between gap-3"><p><span id="income-goal-current" class="block text-3xl font-black tracking-tight text-slate-950">$0.00</span><span class="mt-1 block text-xs font-semibold text-slate-600">de <strong id="income-goal-target">$2,000.00</strong></span></p><svg class="h-16 w-16 text-amber-500" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="none" stroke="#FDE68A" stroke-width="7"/><circle id="income-goal-ring" cx="32" cy="32" r="26" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" transform="rotate(-90 32 32)" stroke-dasharray="163.36" stroke-dashoffset="163.36"/></svg></div>
-              <div class="mt-5 h-2 overflow-hidden rounded-full bg-amber-100"><div id="income-goal-bar" class="h-full rounded-full bg-amber-500 transition-[width] duration-500" style="width:0%" role="progressbar" aria-label="Avance de la meta de ingresos" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div></div>
-              <p id="income-goal-message" class="mt-3 text-sm leading-6 text-slate-600">Tu avance aparecerá cuando registres ingresos.</p>
+              <div class="mt-5 h-2 overflow-hidden rounded-full bg-amber-100"><div id="income-goal-bar" class="h-full rounded-full bg-amber-500 transition-[width] duration-500" style="width:0%" role="progressbar" aria-label="Avance de la meta de cobros" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div></div>
+              <p id="income-goal-message" class="mt-3 text-sm leading-6 text-slate-600">Tu avance aparecerá cuando recibas cobros.</p>
             </section>
 
             <section class="dashboard-panel p-5 sm:p-6" aria-labelledby="due-title">
-              <div class="flex items-start justify-between gap-4"><div><p class="dashboard-eyebrow">Cobranza</p><h2 id="due-title" class="mt-1 text-xl font-black text-slate-950">Facturas por cobrar</h2></div><a href="facturas.html" class="text-sm font-black text-teal-700 hover:text-teal-900">Ver</a></div>
+              <div class="flex items-start justify-between gap-4"><div><p class="dashboard-eyebrow">Cobranza</p><h2 id="due-title" class="mt-1 text-xl font-black text-slate-950">Facturas por cobrar</h2></div><a href="facturas.html" class="dashboard-due-link text-sm font-black text-teal-700 hover:text-teal-900">Ver</a></div>
               <div id="invoices-due-list" class="mt-5 grid gap-3"></div>
               <p id="invoices-due-empty" class="hidden mt-5 rounded-2xl bg-green-50 p-4 text-sm font-semibold text-green-800">No tienes facturas pendientes.</p>
             </section>
@@ -216,6 +216,11 @@
   <script src="../assets/js/mock-data-loader.js"></script>
   <script src="../assets/js/activity-log.js"></script>
   <script src="../assets/js/app-shell.js"></script>
+  <script src="../assets/js/client-model.js"></script>
+  <script src="../assets/js/project-model.js"></script>
+  <script src="../assets/js/report-model.js"></script>
+  <script src="../assets/js/settings-model.js"></script>
+  <script src="../assets/js/invoice-model.js"></script>
   <script src="../assets/js/dashboard-model.js"></script>
   <script src="../assets/js/dashboard.js"></script>
 </body>

@@ -2,15 +2,8 @@
 
 const MOCK_DATA_URL = '../assets/data/mock-data.json';
 const TRANSACTIONS_STORAGE_KEY = 'freelanceflow_transactions_mock';
-const MONTHLY_INCOME_GOAL = 2000;
-const DEFAULT_PERIOD = '2026-06';
-const DASHBOARD_REFERENCE_DATE = new Date('2026-06-20T12:00:00');
+const DASHBOARD_STORAGE_KEYS = { invoices: 'freelanceflow_invoices_v1', payments: 'freelanceflow_invoice_payments_v1', clients: 'freelanceflow_clients_v2', projects: 'freelanceflow_projects_v1', budgets: 'freelanceflow_budgets_v1', settings: 'freelanceflow_settings_v1' };
 const dashboardModel = globalThis.FreelanceFlowDashboardModel ?? {};
-
-const currencyFormatter = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD'
-});
 
 const compactDateFormatter = new Intl.DateTimeFormat('es-EC', {
   day: '2-digit',
@@ -24,10 +17,15 @@ const periodFormatter = new Intl.DateTimeFormat('es-EC', {
 });
 
 let dashboardData = null;
+let dashboardToday = '';
+let activeCurrency = 'USD';
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     dashboardData = await loadMockData();
+    const now = new Date();
+    dashboardToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    populatePeriodFilter();
     setupPeriodFilter();
     applyPeriodFromUrl();
     renderSelectedPeriod();
@@ -51,42 +49,58 @@ function setupPeriodFilter() {
   });
 }
 
+function populatePeriodFilter() {
+  const select = document.getElementById('dashboard-period');
+  if (!select || !dashboardData) return;
+  const data = composeDashboardData(dashboardData);
+  const periods = typeof dashboardModel.getAvailablePeriods === 'function'
+    ? dashboardModel.getAvailablePeriods(data)
+    : [];
+  if (!periods.length) { select.replaceChildren(new Option('Sin períodos disponibles', '', true, true)); select.disabled = true; return; }
+  select.disabled = false;
+  select.replaceChildren(...periods.map((period) => new Option(formatPeriod(period), period)));
+}
+
 function renderSelectedPeriod() {
   if (!dashboardData) return;
 
-  const selectedMonth = getValue('dashboard-period') || DEFAULT_PERIOD;
-  const movements = getPersistedMovements(dashboardData)
-    .filter((movement) => movement.fecha?.startsWith(selectedMonth));
-  const invoices = dashboardData.facturas ?? [];
-  const clients = dashboardData.clientes ?? [];
-  const projects = dashboardData.proyectos ?? [];
-
-  const totalIncome = sumByType(movements, 'ingreso');
-  const totalExpenses = sumByType(movements, 'gasto');
-  const netCashFlow = totalIncome - totalExpenses;
-  const pendingBalance = invoices.reduce(
-    (total, invoice) => total + Number(invoice.saldo_pendiente || 0),
-    0
-  );
-  const pendingInvoices = invoices.filter(
-    (invoice) => Number(invoice.saldo_pendiente || 0) > 0 && invoice.estado !== 'VOID'
-  );
+  const selectedMonth = getValue('dashboard-period');
+  const data = composeDashboardData(dashboardData);
+  const snapshot = typeof dashboardModel.buildDashboardSnapshot === 'function'
+    ? dashboardModel.buildDashboardSnapshot(data, { period: selectedMonth, today: dashboardToday, invoiceModel: globalThis.FreelanceFlowInvoiceModel })
+    : null;
+  const movements = snapshot?.movements ?? [];
+  const invoices = snapshot?.receivables ?? [];
+  const clients = data.clientes ?? [];
+  const projects = data.proyectos ?? [];
+  const unavailable = snapshot?.status !== 'ready';
+  const receiptsUnavailable = !snapshot?.availability?.receipts;
+  const movementsUnavailable = !snapshot?.availability?.movements;
+  activeCurrency = snapshot?.currency ?? 'USD';
+  const receipts = snapshot?.receipts ?? 0;
+  const totalIncome = snapshot?.registeredIncome ?? 0;
+  const totalExpenses = snapshot?.registeredExpenses ?? 0;
+  const netCashFlow = snapshot?.result ?? 0;
+  const pendingBalance = snapshot?.receivablesTotal ?? 0;
+  const pendingInvoices = invoices;
 
   updateText('period-label', formatPeriod(selectedMonth));
   updateText('mobile-home-month', formatPeriod(selectedMonth));
   updateText('dashboard-context-label', `Vista consolidada de ${formatPeriod(selectedMonth)}`);
-  updateText('income-total', formatCurrency(totalIncome));
-  updateText('mobile-income-total', formatCurrency(totalIncome));
-  updateText('expenses-total', formatCurrency(totalExpenses));
-  updateText('mobile-expenses-total', formatCurrency(totalExpenses));
-  updateText('cash-flow-total', formatCurrency(netCashFlow));
-  updateText('mobile-cash-flow-total', formatCurrency(netCashFlow));
-  updateText('pending-total', formatCurrency(pendingBalance));
-  updateText('cash-flow-status', netCashFlow >= 0 ? 'Flujo positivo en el período.' : 'Los gastos superan los ingresos.');
-  updateText('mobile-cash-flow-copy', netCashFlow >= 0 ? 'Tu flujo es positivo este mes.' : 'Tus gastos superan los ingresos del período.');
-  updateText('health-message', buildHealthMessage(netCashFlow, pendingBalance, pendingInvoices.length));
+  updateText('income-total', receiptsUnavailable ? 'No disponible' : formatCurrency(receipts));
+  updateText('registered-income-total', movementsUnavailable ? 'No disponible' : formatCurrency(totalIncome));
+  updateText('mobile-income-total', movementsUnavailable ? 'No disponible' : formatCurrency(totalIncome));
+  updateText('expenses-total', movementsUnavailable ? 'No disponible' : formatCurrency(totalExpenses));
+  updateText('mobile-expenses-total', movementsUnavailable ? 'No disponible' : formatCurrency(totalExpenses));
+  updateText('cash-flow-total', unavailable ? 'No disponible' : formatCurrency(netCashFlow));
+  updateText('mobile-cash-flow-total', unavailable ? 'No disponible' : formatCurrency(netCashFlow));
+  updateText('pending-total', receiptsUnavailable ? 'No disponible' : formatCurrency(pendingBalance));
+  updateText('cash-flow-status', unavailable ? (snapshot?.message || 'No disponible.') : 'Cobros menos gastos registrados.');
+  updateText('mobile-cash-flow-copy', unavailable ? 'No disponible.' : 'Cobros menos gastos registrados.');
+  updateText('health-message', unavailable ? (snapshot?.message || 'No pudimos consolidar el período.') : buildHealthMessage(netCashFlow, pendingBalance, pendingInvoices.length));
   updateMobileFlowSignal(totalIncome, totalExpenses);
   renderMobileInvoiceAlert(invoices);
+  updatePeriodLinks(selectedMonth);
 
   const activeClients = clients.filter((client) => client.estado !== 'inactivo');
   updateText('client-count', String(activeClients.length));
@@ -103,18 +117,36 @@ function renderSelectedPeriod() {
   updateText('mobile-home-user', fullName.split(' ')[0]);
   updateText('sidebar-user-name', fullName);
 
-  renderTransactions(movements, dashboardData);
-  renderMobileHomeTransactions(movements, dashboardData);
-  renderIncomeGoal(totalIncome);
+  renderTransactions(movements, data);
+  renderMobileHomeTransactions(movements, data);
+  renderIncomeGoal(receipts, snapshot?.incomeGoal ?? 0);
   renderInvoicesDue(invoices, clients);
   renderClientRevenue(movements, clients, projects);
 }
 
-function getPersistedMovements(data) {
-  const stored = localStorage.getItem(TRANSACTIONS_STORAGE_KEY);
-  if (!stored) return data.movimientos_financieros_mock_auxiliar ?? [];
+function composeDashboardData(data) {
+  const models = { invoiceModel: globalThis.FreelanceFlowInvoiceModel, clientModel: globalThis.FreelanceFlowClientModel, projectModel: globalThis.FreelanceFlowProjectModel, reportModel: globalThis.FreelanceFlowReportModel, settingsModel: globalThis.FreelanceFlowSettingsModel };
+  const overlays = Object.fromEntries(Object.entries(DASHBOARD_STORAGE_KEYS).map(([name, key]) => [name, readStored(key)]));
+  const base = { ...data, movimientos_financieros_mock_auxiliar: getPersistedMovements(data) };
+  return typeof dashboardModel.composeDashboardData === 'function' ? dashboardModel.composeDashboardData(base, overlays, models) : base;
+}
 
+function readStored(key) {
+  try { const raw = localStorage.getItem(key) ?? (key === DASHBOARD_STORAGE_KEYS.clients ? localStorage.getItem('freelanceflow_clients_mock') : null); const value = JSON.parse(raw || 'null'); return value ?? (key === DASHBOARD_STORAGE_KEYS.settings ? {} : []); } catch { return key === DASHBOARD_STORAGE_KEYS.settings ? {} : []; }
+}
+
+function updatePeriodLinks(period) {
+  const links = typeof dashboardModel.getPeriodNavigation === 'function'
+    ? dashboardModel.getPeriodNavigation(period)
+    : { movements: 'transacciones.html', reports: 'reportes.html' };
+  document.querySelectorAll('[data-period-link="movements"]').forEach((link) => { link.href = links.movements; });
+  document.querySelectorAll('[data-period-link="reports"]').forEach((link) => { link.href = links.reports; });
+}
+
+function getPersistedMovements(data) {
   try {
+    const stored = localStorage.getItem(TRANSACTIONS_STORAGE_KEY);
+    if (!stored) return data.movimientos_financieros_mock_auxiliar ?? [];
     const parsed = JSON.parse(stored);
     return Array.isArray(parsed) ? parsed : data.movimientos_financieros_mock_auxiliar ?? [];
   } catch (error) {
@@ -128,13 +160,13 @@ function applyPeriodFromUrl() {
   if (!select) return;
   const requestedPeriod = new URLSearchParams(window.location.search).get('period');
   const hasRequestedPeriod = [...select.options].some((option) => option.value === requestedPeriod);
-  select.value = hasRequestedPeriod ? requestedPeriod : DEFAULT_PERIOD;
+  select.value = hasRequestedPeriod ? requestedPeriod : (select.options[0]?.value || '');
 }
 
 function syncPeriodToUrl() {
-  const selectedPeriod = getValue('dashboard-period') || DEFAULT_PERIOD;
+  const selectedPeriod = getValue('dashboard-period');
   const url = new URL(window.location.href);
-  if (selectedPeriod === DEFAULT_PERIOD) url.searchParams.delete('period');
+  if (selectedPeriod === (document.getElementById('dashboard-period')?.options[0]?.value || '')) url.searchParams.delete('period');
   else url.searchParams.set('period', selectedPeriod);
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
 }
@@ -300,19 +332,20 @@ function createTransactionCard(movement, data) {
   return card;
 }
 
-function renderIncomeGoal(totalIncome) {
-  const percent = Math.min(Math.round((totalIncome / MONTHLY_INCOME_GOAL) * 100), 100);
+function renderIncomeGoal(totalIncome, goal) {
+  const target = Number(goal) || 0;
+  const percent = target > 0 ? Math.min(Math.round((totalIncome / target) * 100), 100) : 0;
   const circumference = 163.36;
   const offset = circumference - (circumference * percent) / 100;
 
   updateText('income-goal-current', formatCurrency(totalIncome));
-  updateText('income-goal-target', formatCurrency(MONTHLY_INCOME_GOAL));
+  updateText('income-goal-target', target > 0 ? formatCurrency(target) : 'Sin meta definida');
   updateText('income-goal-percent', `${percent}%`);
   updateText(
     'income-goal-message',
     percent >= 100
       ? 'Meta alcanzada. Excelente cierre de período.'
-      : `Te faltan ${formatCurrency(Math.max(MONTHLY_INCOME_GOAL - totalIncome, 0))} para alcanzar tu meta.`
+      : (target > 0 ? `Te faltan ${formatCurrency(Math.max(target - totalIncome, 0))} para alcanzar tu meta.` : 'Define una meta de cobros en Presupuestos.')
   );
 
   const bar = document.getElementById('income-goal-bar');
@@ -330,16 +363,13 @@ function renderInvoicesDue(invoices, clients) {
   const emptyState = document.getElementById('invoices-due-empty');
   if (!list || !emptyState) return;
 
-  const pending = invoices
-    .filter((invoice) => Number(invoice.saldo_pendiente || 0) > 0 && invoice.estado !== 'VOID')
-    .sort((a, b) => new Date(a.fecha_vencimiento) - new Date(b.fecha_vencimiento))
-    .slice(0, 3);
+  const pending = invoices.slice(0, 3);
 
   list.innerHTML = '';
   emptyState.classList.toggle('hidden', pending.length !== 0);
 
   pending.forEach((invoice) => {
-    const isOverdue = invoice.estado === 'OVERDUE' || new Date(`${invoice.fecha_vencimiento}T12:00:00`) < DASHBOARD_REFERENCE_DATE;
+    const isOverdue = invoice.estado === 'OVERDUE';
     const item = document.createElement('article');
     item.className = 'rounded-2xl border border-slate-200 bg-[#FBF7F1] p-4';
     item.innerHTML = `
@@ -400,7 +430,7 @@ function findProjectName(projects = [], projectId) {
 }
 
 function formatCurrency(value) {
-  return currencyFormatter.format(Number(value || 0));
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: activeCurrency }).format(Number(value || 0));
 }
 
 function formatDate(dateValue) {
