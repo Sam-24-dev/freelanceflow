@@ -9004,3 +9004,10 @@ body.project-detail-modal-open {
     display: none;
   }
 }
+
+/* Movimiento drawer: allow narrow viewports without horizontal overflow. */
+.transaction-drawer, .transaction-form, .transaction-field, .transaction-fields-row { min-width: 0; }
+.transaction-field :is(input, select, textarea) { min-width: 0; max-width: 100%; }
+.transaction-filter-tab, .transactions-row-action, .transaction-category-chip { min-width: 2.75rem; min-height: 2.75rem; }
+.transaction-field > label small, .transaction-type-options small { color: #475569; }
+@media (max-width: 24.375rem) { .transaction-fields-row { grid-template-columns: minmax(0, 1fr); } .transaction-form { padding: 1rem; } }
