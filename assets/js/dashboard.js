@@ -128,7 +128,8 @@ function composeDashboardData(data) {
   const models = { invoiceModel: globalThis.FreelanceFlowInvoiceModel, clientModel: globalThis.FreelanceFlowClientModel, projectModel: globalThis.FreelanceFlowProjectModel, reportModel: globalThis.FreelanceFlowReportModel, settingsModel: globalThis.FreelanceFlowSettingsModel };
   const overlays = Object.fromEntries(Object.entries(DASHBOARD_STORAGE_KEYS).map(([name, key]) => [name, readStored(key)]));
   const base = { ...data, movimientos_financieros_mock_auxiliar: getPersistedMovements(data) };
-  return typeof dashboardModel.composeDashboardData === 'function' ? dashboardModel.composeDashboardData(base, overlays, models) : base;
+  const composed = typeof dashboardModel.composeDashboardData === 'function' ? dashboardModel.composeDashboardData(base, overlays, models) : base;
+  return { ...composed, clientes: globalThis.FreelanceFlowClientModel.getEffectiveClients(data.clientes ?? []) };
 }
 
 function readStored(key) {

@@ -3014,7 +3014,7 @@ textarea {
 }
 
 .client-filter-tab {
-  min-height: 2.55rem;
+  min-height: 2.75rem;
   border: 1px solid var(--clients-line);
   border-radius: 999px;
   padding: 0.55rem 1rem;
@@ -3196,7 +3196,7 @@ textarea {
 .client-inline-select {
   width: 100%;
   min-width: 0;
-  min-height: 2.35rem;
+  min-height: 2.75rem;
   border: 1px solid #d9c9b8;
   border-radius: 0.7rem;
   padding: 0.4rem 1.6rem 0.4rem 0.55rem;
@@ -3227,7 +3227,7 @@ textarea {
 }
 
 .client-row-actions > button:first-child {
-  min-height: 2.35rem;
+  min-height: 2.75rem;
   border-radius: 0.7rem;
   padding: 0.45rem 0.65rem;
   color: #0f766e;
@@ -3241,8 +3241,8 @@ textarea {
 
 .client-icon-action {
   display: grid;
-  width: 2.4rem;
-  height: 2.4rem;
+  width: 2.75rem;
+  height: 2.75rem;
   flex: none;
   place-items: center;
   border: 1px solid var(--clients-line);
@@ -3383,7 +3383,7 @@ textarea {
 }
 
 .client-card footer .clients-secondary-action {
-  min-height: 2.4rem;
+  min-height: 2.75rem;
   padding: 0.5rem 0.75rem;
   font-size: 0.7rem;
 }

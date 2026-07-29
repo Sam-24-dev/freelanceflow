@@ -7,6 +7,7 @@
   const INCOME_CATEGORY_ID = 'income_invoice';
   const CATEGORY_STORAGE_KEY = 'freelanceflow_expense_categories_v1';
   const model = window.FreelanceFlowTransactionModel;
+  const clientModel = window.FreelanceFlowClientModel;
 
   const currencyFormatter = new Intl.NumberFormat('es-EC', {
     style: 'currency',
@@ -42,7 +43,7 @@
   document.addEventListener('DOMContentLoaded', initializeTransactions);
 
   async function initializeTransactions() {
-    if (!model) {
+    if (!model || !clientModel) {
       showDataError('No pudimos preparar el módulo de movimientos. Inténtalo nuevamente.');
       return;
     }
@@ -66,7 +67,8 @@
   }
 
   async function loadData() {
-    return window.FreelanceFlowDataLoader.loadJson(DATA_URL);
+    const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL);
+    return { ...data, clientes: clientModel.getEffectiveClients(data.clientes ?? []) };
   }
 
   function loadTransactions(data) {
@@ -117,12 +119,19 @@
 
   function populateStaticOptions() {
     populateSelect('transaction-account', state.data.cuentas_mock_auxiliar ?? [], 'id', 'nombre_cuenta');
-    populateSelect('transaction-client', state.data.clientes ?? [], 'id', 'nombre_razon_social');
+    populateClientOptions();
     populateCategoryFilter();
     setValue('transactions-category-filter', state.filters.category);
     updateFormCategories('');
     updateProjectOptions('');
     setValue('transaction-date', getLocalDate());
+  }
+
+  function populateClientOptions(selectedId = '') {
+    const select = document.getElementById('transaction-client');
+    if (!select) return;
+    select.innerHTML = '<option value="">Sin cliente</option>';
+    populateSelect('transaction-client', clientModel.getSelectableClients(state.data.clientes ?? [], selectedId), 'id', 'nombre_razon_social', selectedId);
   }
 
   function populateCategoryFilter() {
@@ -458,6 +467,7 @@
     setValue('transaction-amount', transaction.monto);
     setValue('transaction-date', transaction.fecha);
     setValue('transaction-account', transaction.cuenta_id);
+    populateClientOptions(clientId);
     setValue('transaction-client', clientId);
     updateProjectOptions(clientId, transaction.proyecto_id);
     setValue('transaction-notes', transaction.descripcion);
@@ -471,6 +481,7 @@
     clearFormErrors();
     setValue('transaction-id', '');
     setValue('transaction-date', getLocalDate());
+    populateClientOptions();
     updateFormCategories('');
     updateProjectOptions('');
     updateText('transaction-form-title', 'Nuevo movimiento');
