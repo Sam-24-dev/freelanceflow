@@ -144,14 +144,18 @@ function updatePeriodLinks(period) {
 }
 
 function getPersistedMovements(data) {
+  const fallback = data.movimientos_financieros_mock_auxiliar ?? [];
+  const sanitize = (items) => globalThis.FreelanceFlowTransactionModel?.sanitizeTransactions
+    ? globalThis.FreelanceFlowTransactionModel.sanitizeTransactions(items, { projects: data.proyectos ?? [] }).items
+    : items;
   try {
     const stored = localStorage.getItem(TRANSACTIONS_STORAGE_KEY);
-    if (!stored) return data.movimientos_financieros_mock_auxiliar ?? [];
+    if (!stored) return sanitize(fallback);
     const parsed = JSON.parse(stored);
-    return Array.isArray(parsed) ? parsed : data.movimientos_financieros_mock_auxiliar ?? [];
+    return sanitize(Array.isArray(parsed) ? parsed : fallback);
   } catch (error) {
     console.warn('No se pudo leer la persistencia simulada de movimientos.', error);
-    return data.movimientos_financieros_mock_auxiliar ?? [];
+    return sanitize(fallback);
   }
 }
 

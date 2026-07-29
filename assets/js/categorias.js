@@ -107,7 +107,7 @@
     try {
       const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL);
       const stored = readStoredCatalog();
-      state.expenses = data.gastos || [];
+      state.expenses = getMovementExpenses(data);
       state.deletedCategoryIds = stored.deletedIds;
       state.categories = model.mergeCategories(data.categorias_gasto || [], stored);
       renderAll();
@@ -115,6 +115,16 @@
     } catch (error) {
       showFatalError(error);
     }
+  }
+
+  function getMovementExpenses(data) {
+    try {
+      const stored = localStorage.getItem('freelanceflow_transactions_mock');
+      const movements = stored ? JSON.parse(stored) : (data.movimientos_financieros_mock_auxiliar ?? []);
+      return window.FreelanceFlowTransactionModel?.toExpenseRecords
+        ? window.FreelanceFlowTransactionModel.toExpenseRecords(movements, { projects: data.proyectos ?? [] })
+        : data.gastos || [];
+    } catch { return data.gastos || []; }
   }
 
   function readStoredCatalog() {

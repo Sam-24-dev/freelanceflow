@@ -56,7 +56,18 @@
   }
 
   async function loadData() {
-    return window.FreelanceFlowDataLoader.loadJson(DATA_URL);
+    const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL);
+    return { ...data, gastos: getMovementExpenses(data) };
+  }
+
+  function getMovementExpenses(data) {
+    try {
+      const stored = localStorage.getItem('freelanceflow_transactions_mock');
+      const movements = stored ? JSON.parse(stored) : (data.movimientos_financieros_mock_auxiliar ?? []);
+      return window.FreelanceFlowTransactionModel?.toExpenseRecords
+        ? window.FreelanceFlowTransactionModel.toExpenseRecords(movements, { projects: data.proyectos ?? [] })
+        : data.gastos ?? [];
+    } catch { return data.gastos ?? []; }
   }
 
   function loadBudgets(baseBudgets) {

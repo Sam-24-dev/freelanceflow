@@ -15,28 +15,59 @@
     return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
   }
 
-  function validateTransaction(transaction = {}) {
-    if (!TRANSACTION_TYPES.includes(transaction.tipo)) {
-      return { valid: false, field: 'tipo', message: 'Selecciona un tipo de movimiento.' };
+  function validateTransaction(transaction = {}, context = {}) {
+    if (!TRANSACTION_TYPES.includes(transaction.tipo)) return { valid: false, field: 'tipo', message: 'Selecciona un tipo de movimiento.' };
+    if (!Number.isFinite(Number(transaction.monto)) || Number(transaction.monto) <= 0) return { valid: false, field: 'monto', message: 'Ingresa un monto mayor a cero.' };
+    if (!isValidDate(transaction.fecha)) return { valid: false, field: 'fecha', message: 'Ingresa una fecha válida.' };
+    if (!transaction.categoria) return { valid: false, field: 'categoria', message: 'Selecciona una categoría.' };
+    if (!transaction.cuenta_id) return { valid: false, field: 'cuenta_id', message: 'Selecciona una cuenta.' };
+    if (transaction.moneda && transaction.moneda !== 'USD') return { valid: false, field: 'moneda', message: 'Solo se admite USD.' };
+    if (transaction.origen_oficial === 'pago_factura' && !transaction.origen_id) return { valid: false, field: 'origen_id', message: 'El pago debe tener un origen verificable.' };
+    if (transaction.proyecto_id) {
+      const project = (context.projects || []).find((item) => item.id === transaction.proyecto_id);
+      if (!project || (transaction.cliente_id && project.cliente_id !== transaction.cliente_id)) return { valid: false, field: 'proyecto_id', message: 'El proyecto debe pertenecer al cliente seleccionado.' };
     }
-
-    if (!Number.isFinite(Number(transaction.monto)) || Number(transaction.monto) <= 0) {
-      return { valid: false, field: 'monto', message: 'Ingresa un monto mayor a cero.' };
-    }
-
-    if (!isValidDate(transaction.fecha)) {
-      return { valid: false, field: 'fecha', message: 'Ingresa una fecha válida.' };
-    }
-
-    if (!transaction.categoria) {
-      return { valid: false, field: 'categoria', message: 'Selecciona una categoría.' };
-    }
-
-    if (!transaction.cuenta_id) {
-      return { valid: false, field: 'cuenta_id', message: 'Selecciona una cuenta.' };
-    }
-
     return { valid: true };
+  }
+
+  function validateStoredTransaction(transaction, context) {
+    if (!transaction || typeof transaction !== 'object' || !String(transaction.id || '').trim()) return { valid: false, field: 'id' };
+    return validateTransaction({
+      ...transaction,
+      categoria: transaction.tipo === 'ingreso' ? 'income_invoice' : (transaction.categoria_gasto_id || transaction.categoria_mock_auxiliar),
+      moneda: transaction.moneda
+    }, context);
+  }
+
+  function sanitizeTransactions(items = [], context = {}) {
+    if (!Array.isArray(items)) return { items: [], rejected: [{ field: 'storage' }] };
+    const ids = new Set();
+    const duplicates = new Set();
+    items.forEach((item) => { const id = String(item?.id || ''); if (ids.has(id)) duplicates.add(id); ids.add(id); });
+    const rejected = [];
+    const valid = items.filter((item) => {
+      if (duplicates.has(String(item?.id || ''))) { rejected.push({ item, field: 'id' }); return false; }
+      const result = validateStoredTransaction(item, context);
+      if (!result.valid) rejected.push({ item, field: result.field });
+      return result.valid;
+    }).map((item) => {
+      const project = (context.projects || []).find((candidate) => candidate.id === item.proyecto_id);
+      return project && !item.cliente_id ? { ...item, cliente_id: project.cliente_id } : item;
+    });
+    return { items: valid, rejected };
+  }
+
+  function toExpenseRecords(items = [], context = {}) {
+    return sanitizeTransactions(items, context).items
+      .filter((item) => item.tipo === 'gasto')
+      .map((item) => ({
+        id: item.id,
+        categoria_gasto_id: item.categoria_gasto_id,
+        monto: Number(item.monto),
+        fecha_gasto: item.fecha,
+        cliente_id: item.cliente_id || (context.projects || []).find((project) => project.id === item.proyecto_id)?.cliente_id || '',
+        proyecto_relacionado_id: item.proyecto_id || ''
+      }));
   }
 
   function calculateSummary(items = []) {
@@ -95,6 +126,9 @@
     isValidDate,
     normalizeText,
     shouldOpenTransactionFormFromHash,
+    sanitizeTransactions,
+    toExpenseRecords,
+    validateStoredTransaction,
     validateTransaction
   };
 

@@ -5,6 +5,7 @@
   const STORAGE_KEY = 'freelanceflow_transactions_mock';
   const DEFAULT_PERIOD = '2026-06';
   const INCOME_CATEGORY_ID = 'income_invoice';
+  const CATEGORY_STORAGE_KEY = 'freelanceflow_expense_categories_v1';
   const model = window.FreelanceFlowTransactionModel;
 
   const currencyFormatter = new Intl.NumberFormat('es-EC', {
@@ -50,6 +51,7 @@
       state.data = await loadData();
       state.transactions = loadTransactions(state.data);
       setInitialPeriod();
+      updateFilterUrl();
       populateStaticOptions();
       bindFilters();
       bindDrawer();
@@ -69,15 +71,17 @@
 
   function loadTransactions(data) {
     const fallback = data.movimientos_financieros_mock_auxiliar ?? [];
+    let source = fallback;
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      const source = stored ? JSON.parse(stored) : fallback;
-      return Array.isArray(source) ? source.map(normalizeTransaction) : fallback.map(normalizeTransaction);
-    } catch (error) {
-      console.warn('Se descartó un historial local inválido.', error);
-      localStorage.removeItem(STORAGE_KEY);
-      return fallback.map(normalizeTransaction);
-    }
+      if (stored) {
+        try { source = JSON.parse(stored); }
+        catch { try { localStorage.removeItem(STORAGE_KEY); } catch {} showDataError('Se descartó un historial local dañado. Puedes volver a guardar tus movimientos.'); }
+      }
+    } catch { showDataError('El almacenamiento del navegador no esta disponible. Tus cambios no se guardaran hasta que se restablezca.'); }
+    const result = model.sanitizeTransactions(source, { projects: data.proyectos ?? [] });
+    if (result.rejected.length) showDataError('Omitimos movimientos locales inválidos para proteger tus totales. Corrige o vuelve a registrar los datos.');
+    return result.items.map(normalizeTransaction);
   }
 
   function normalizeTransaction(transaction) {
@@ -124,7 +128,7 @@
   function populateCategoryFilter() {
     const options = [
       { id: INCOME_CATEGORY_ID, label: 'Ingreso por factura' },
-      ...(state.data.categorias_gasto ?? []).map((category) => ({ id: category.id, label: category.nombre_categoria }))
+      ...getEffectiveCategories().map((category) => ({ id: category.id, label: category.nombre_categoria }))
     ];
     populateSelect('transactions-category-filter', options, 'id', 'label');
   }
@@ -148,7 +152,7 @@
     const categories = [];
     if (!type || type === 'ingreso') categories.push({ id: INCOME_CATEGORY_ID, label: 'Ingreso por factura' });
     if (!type || type === 'gasto') {
-      categories.push(...(state.data.categorias_gasto ?? []).map((category) => ({ id: category.id, label: category.nombre_categoria })));
+      categories.push(...getEffectiveCategories().map((category) => ({ id: category.id, label: category.nombre_categoria })));
     }
 
     select.innerHTML = '<option value="">Selecciona una categoría</option>';
@@ -371,19 +375,21 @@
     clearFormErrors();
 
     const formData = readForm();
-    const validation = model.validateTransaction(formData);
+    const validation = model.validateTransaction(formData, { projects: state.data.proyectos ?? [] });
     if (!validation.valid) {
       showFieldError(validation.field, validation.message);
       return;
     }
 
-    const existing = state.transactions.find((transaction) => transaction.id === formData.id);
+    const matches = state.transactions.filter((transaction) => transaction.id === formData.id);
+    if (matches.length > 1) { showFieldError('id', 'No se puede editar un movimiento con identificador ambiguo.'); return; }
+    const existing = matches[0];
     const transaction = buildTransaction(formData, existing);
     state.transactions = existing
       ? state.transactions.map((item) => item.id === existing.id ? transaction : item)
       : [transaction, ...state.transactions];
 
-    saveTransactions();
+    if (!saveTransactions()) { state.transactions = existing ? state.transactions.map((item) => item.id === existing.id ? existing : item) : state.transactions.filter((item) => item !== transaction); return; }
     renderTransactions();
     state.formDirty = false;
     closeDrawer();
@@ -403,6 +409,8 @@
       fecha: getValue('transaction-date'),
       categoria: getValue('transaction-category'),
       cuenta_id: getValue('transaction-account'),
+      moneda: 'USD',
+      origen_oficial: document.querySelector('input[name="tipo"]:checked')?.value === 'ingreso' ? 'movimiento_manual' : 'gasto',
       cliente_id: getValue('transaction-client'),
       proyecto_id: getValue('transaction-project'),
       descripcion: getValue('transaction-notes')
@@ -413,8 +421,8 @@
     const category = resolveCategory(formData.categoria);
     return normalizeTransaction({
       ...existing,
-      id: existing.id || `mov_${crypto.randomUUID?.() || Date.now()}`,
-      origen_oficial: formData.tipo === 'ingreso' ? 'pago_factura' : 'gasto',
+      id: existing.id || createTransactionId(),
+      origen_oficial: formData.tipo === 'ingreso' ? 'movimiento_manual' : 'gasto',
       tipo: formData.tipo,
       monto: formData.monto,
       fecha: formData.fecha,
@@ -427,9 +435,18 @@
     });
   }
 
+  function createTransactionId() {
+    const base = `mov_${crypto.randomUUID?.() || Date.now()}`;
+    let id = base;
+    let suffix = 1;
+    while (state.transactions.some((item) => item.id === id)) id = `${base}_${suffix++}`;
+    return id;
+  }
+
   function populateFormForEdit(transactionId) {
-    const transaction = state.transactions.find((item) => item.id === transactionId);
-    if (!transaction) return;
+    const matches = state.transactions.filter((item) => item.id === transactionId);
+    if (matches.length !== 1) { showDataError('No se puede editar un movimiento con identificador ambiguo.'); return; }
+    const transaction = matches[0];
 
     const project = (state.data.proyectos ?? []).find((item) => item.id === transaction.proyecto_id);
     const clientId = transaction.cliente_id || project?.cliente_id || '';
@@ -543,8 +560,9 @@
 
     tableWrap.hidden = !hasResults;
     cardList.hidden = !hasResults;
-    emptyState.hidden = hasStoredData;
-    noResults.hidden = !hasStoredData || hasResults;
+    const hasFilters = state.filters.type !== 'todos' || state.filters.category || state.filters.query.trim();
+    emptyState.hidden = hasStoredData || hasFilters;
+    noResults.hidden = !hasStoredData || hasResults || !hasFilters;
 
     items.forEach((transaction) => {
       tableBody.append(createTableRow(transaction));
@@ -603,7 +621,7 @@
 
   function resolveCategory(categoryId) {
     if (categoryId === INCOME_CATEGORY_ID) return { label: 'Ingreso por factura', isExpense: false };
-    const category = (state.data.categorias_gasto ?? []).find((item) => item.id === categoryId);
+    const category = getEffectiveCategories().find((item) => item.id === categoryId);
     return { label: category?.nombre_categoria || 'Sin categoría', isExpense: true };
   }
 
@@ -633,12 +651,32 @@
   }
 
   function saveTransactions() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.transactions));
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.transactions)); return true; }
+    catch { showFormMessage('No pudimos guardar el movimiento. Revisa el espacio o permisos del navegador e inténtalo nuevamente.'); return false; }
   }
 
   function hideLoading() {
     const loading = document.getElementById('transactions-loading');
     if (loading) loading.hidden = true;
+  }
+
+  function showFormMessage(message) {
+    const alert = document.getElementById('transaction-form-message');
+    if (!alert) return;
+    alert.hidden = false;
+    alert.className = 'transactions-alert transactions-alert-error';
+    alert.textContent = message;
+  }
+
+  function getEffectiveCategories() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(CATEGORY_STORAGE_KEY) || '[]');
+      const overlay = Array.isArray(stored) ? stored : (stored.items || []);
+      const deleted = new Set(Array.isArray(stored?.deletedIds) ? stored.deletedIds.map(String) : []);
+      const categories = new Map((state.data.categorias_gasto ?? []).map((item) => [String(item.id), item]));
+      overlay.forEach((item) => { if (item?.id && !deleted.has(String(item.id))) categories.set(String(item.id), item); });
+      return [...categories.values()].filter((item) => item.estado !== 'inactivo' && !deleted.has(String(item.id)));
+    } catch { return state.data.categorias_gasto ?? []; }
   }
 
   function showDataError(message) {
