@@ -5,6 +5,7 @@
   const STORAGE_KEY = 'freelanceflow_projects_v1';
   const DETAIL_QUERY = '(min-width: 1280px)';
   const model = window.FreelanceFlowProjectModel;
+  const clientModel = window.FreelanceFlowClientModel;
 
   const state = {
     clients: [],
@@ -155,7 +156,7 @@
     showLoadingState();
     try {
       const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL);
-      state.clients = Array.isArray(data.clientes) ? data.clientes : [];
+      state.clients = clientModel.getEffectiveClients(data.clientes ?? []);
       state.invoices = Array.isArray(data.facturas) ? data.facturas : [];
       state.expenses = Array.isArray(data.gastos) ? data.gastos : [];
       state.timeEntries = Array.isArray(data.registros_tiempo) ? data.registros_tiempo : [];
@@ -816,7 +817,7 @@
   }
 
   function populateProjectClientOptions(selectedId = '', editing = false) {
-    const options = state.clients.filter((client) => client.estado !== 'inactivo' || (editing && String(client.id) === String(selectedId)));
+    const options = clientModel.getSelectableClients(state.clients, editing ? selectedId : '');
     elements.formClient.innerHTML = '<option value="">Selecciona un cliente</option>'
       + options.map((client) => `<option value="${escapeAttribute(client.id)}"${String(client.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(client.nombre_razon_social)}${client.estado === 'inactivo' ? ' — Inactivo' : ''}</option>`).join('');
   }

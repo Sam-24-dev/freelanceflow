@@ -1,4 +1,6 @@
 (function clientModelFactory(globalScope) {
+  const CLIENT_STORAGE_KEY = 'freelanceflow_clients_v2';
+  const LEGACY_CLIENT_STORAGE_KEY = 'freelanceflow_clients_mock';
   const CIVIL_STATUS_OPTIONS = ['soltero', 'casado', 'divorciado', 'separado', 'unión libre'];
   const CLIENT_STATUS_OPTIONS = ['activo', 'inactivo'];
 
@@ -10,12 +12,16 @@
       .replace(/[\u0300-\u036f]/g, '');
   }
 
+  function normalizeIdentification(value) {
+    return normalizeText(value).replace(/[^a-z0-9]/g, '');
+  }
+
   function normalizeClient(client = {}) {
     const identification = String(client.identificacion ?? client.identificacion_fiscal ?? '').trim();
     const email = String(client.correo ?? client.correo_electronico ?? '').trim();
 
     return {
-      id: String(client.id ?? ''),
+      id: String(client.id ?? '').trim(),
       nombre_razon_social: String(client.nombre_razon_social ?? '').trim(),
       tipo_cliente: String(client.tipo_cliente ?? 'Empresa').trim() || 'Empresa',
       nombres: String(client.nombres ?? '').trim(),
@@ -68,7 +74,7 @@
     }
 
     const duplicate = existingClients.some((existing) => (
-      normalizeText(existing.identificacion ?? existing.identificacion_fiscal) === normalizeText(candidate.identificacion)
+      normalizeIdentification(existing.identificacion ?? existing.identificacion_fiscal) === normalizeIdentification(candidate.identificacion)
       && String(existing.id) !== String(candidate.id)
     ));
     if (candidate.identificacion && duplicate) {
@@ -103,12 +109,74 @@
   }
 
   function mergeClients(baseClients = [], storedClients = []) {
-    const merged = new Map(baseClients.map((client) => [String(client.id), normalizeClient(client)]));
-    storedClients.forEach((client) => {
-      const normalized = normalizeClient(client);
-      merged.set(normalized.id, normalized);
-    });
+    const baseline = Array.isArray(baseClients)
+      ? baseClients
+        .filter((client) => client && typeof client === 'object' && !Array.isArray(client))
+        .map(normalizeClient)
+        .filter((client) => client.id)
+      : [];
+    const merged = new Map(baseline.map((client) => [client.id, client]));
+    if (Array.isArray(storedClients)) {
+      storedClients
+        .filter((client) => client && typeof client === 'object' && !Array.isArray(client))
+        .map(normalizeClient)
+        .filter((client) => client.id)
+        .forEach((client) => merged.set(client.id, client));
+    }
     return [...merged.values()];
+  }
+
+  function sanitizeStoredClients(storedClients = [], baseClients = []) {
+    if (!Array.isArray(storedClients)) return [];
+
+    const candidates = storedClients
+      .filter((client) => client && typeof client === 'object' && !Array.isArray(client))
+      .filter((client) => CLIENT_STATUS_OPTIONS.includes(client.estado) && CIVIL_STATUS_OPTIONS.includes(client.estadoCivil))
+      .map(normalizeClient)
+      .filter((client) => client.id && validateClient(client, []).valid);
+    const idCounts = new Map();
+    const identificationIds = new Map();
+
+    candidates.forEach((client) => {
+      idCounts.set(client.id, (idCounts.get(client.id) || 0) + 1);
+      const identification = normalizeIdentification(client.identificacion);
+      if (!identificationIds.has(identification)) identificationIds.set(identification, new Set());
+      identificationIds.get(identification).add(client.id);
+    });
+
+    const baseline = Array.isArray(baseClients) ? baseClients.map(normalizeClient) : [];
+    return candidates.reduce((accepted, client) => {
+      const identification = normalizeIdentification(client.identificacion);
+      if (idCounts.get(client.id) > 1 || identificationIds.get(identification).size > 1) return accepted;
+      if (!validateClient(client, [...baseline, ...accepted]).valid) return accepted;
+      accepted.push(client);
+      return accepted;
+    }, []);
+  }
+
+  function getEffectiveClients(baseClients = [], storage) {
+    try {
+      const targetStorage = storage ?? globalScope.localStorage;
+      const serialized = targetStorage?.getItem(CLIENT_STORAGE_KEY) ?? targetStorage?.getItem(LEGACY_CLIENT_STORAGE_KEY);
+      if (!serialized) return mergeClients(baseClients, []);
+      const parsed = JSON.parse(serialized);
+      return mergeClients(baseClients, sanitizeStoredClients(parsed, baseClients));
+    } catch {
+      return mergeClients(baseClients, []);
+    }
+  }
+
+  function persistClients(clients, storage) {
+    try {
+      (storage ?? globalScope.localStorage).setItem(CLIENT_STORAGE_KEY, JSON.stringify(clients));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function getSelectableClients(clients = [], selectedId = '') {
+    return clients.filter((client) => client.estado !== 'inactivo' || String(client.id) === String(selectedId));
   }
 
   function createClientRecord(client, metadata = {}) {
@@ -123,13 +191,20 @@
   }
 
   const api = {
+    CLIENT_STORAGE_KEY,
+    LEGACY_CLIENT_STORAGE_KEY,
     CIVIL_STATUS_OPTIONS,
     CLIENT_STATUS_OPTIONS,
     createClientRecord,
     filterClients,
+    getEffectiveClients,
+    getSelectableClients,
     mergeClients,
     normalizeClient,
+    normalizeIdentification,
     normalizeText,
+    persistClients,
+    sanitizeStoredClients,
     validateClient
   };
 

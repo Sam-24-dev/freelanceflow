@@ -2,7 +2,8 @@
   'use strict';
 
   const model = window.FreelanceFlowInvoiceModel;
-  if (!model) return;
+  const clientModel = window.FreelanceFlowClientModel;
+  if (!model || !clientModel) return;
 
   const STORAGE_KEYS = {
     invoices: 'freelanceflow_invoices_v1',
@@ -268,14 +269,19 @@
   function renderClientAndProjectOptions() {
     const clientOptions = state.clients.map((client) => `<option value="${escapeHTML(client.id)}">${escapeHTML(client.nombre_razon_social)}</option>`).join('');
     selectors.filters.elements.clientId.innerHTML = '<option value="todos">Todos los clientes</option>';
-    selectors.invoiceForm.elements.cliente_id.innerHTML = '<option value="">Selecciona un cliente</option>';
     selectors.filters.elements.clientId.insertAdjacentHTML('beforeend', clientOptions);
-    selectors.invoiceForm.elements.cliente_id.insertAdjacentHTML('beforeend', clientOptions);
+    populateInvoiceClientOptions();
     const projectOptions = state.projects.map((project) => `<option value="${escapeHTML(project.id)}">${escapeHTML(project.nombre_proyecto)}</option>`).join('');
     selectors.filters.elements.projectId.innerHTML = '<option value="todos">Todos los proyectos</option>';
     selectors.invoiceForm.elements.proyecto_relacionado_id.innerHTML = '<option value="">Sin proyecto asociado</option>';
     selectors.filters.elements.projectId.insertAdjacentHTML('beforeend', projectOptions);
     selectors.invoiceForm.elements.proyecto_relacionado_id.insertAdjacentHTML('beforeend', projectOptions);
+  }
+
+  function populateInvoiceClientOptions(selectedId = '') {
+    const clients = clientModel.getSelectableClients(state.clients, selectedId);
+    selectors.invoiceForm.elements.cliente_id.innerHTML = '<option value="">Selecciona un cliente</option>'
+      + clients.map((client) => `<option value="${escapeHTML(client.id)}">${escapeHTML(client.nombre_razon_social)}</option>`).join('');
   }
 
   function detailMarkup(invoice) {
@@ -427,6 +433,7 @@
     selectors.invoiceItems.innerHTML = '';
     clearErrors(selectors.invoiceForm);
     state.editingId = invoice?.id ?? null;
+    populateInvoiceClientOptions(invoice?.cliente_id ?? '');
     document.querySelector('#invoice-form-title').textContent = invoice ? `Editar ${invoice.numero_factura}` : 'Nueva factura';
     selectors.invoiceForm.elements.numero_factura.value = invoice?.numero_factura ?? nextInvoiceNumber();
     selectors.invoiceForm.elements.fecha_emision.value = invoice?.fecha_emision ?? new Date().toISOString().slice(0, 10);
@@ -740,7 +747,7 @@
     selectors.empty.hidden = true;
     try {
       const data = await window.FreelanceFlowDataLoader.loadJson('../assets/data/mock-data.json');
-      state.clients = data.clientes ?? [];
+      state.clients = clientModel.getEffectiveClients(data.clientes ?? []);
       state.projects = data.proyectos ?? [];
       state.invoices = model.mergeById(data.facturas ?? [], readStorage(STORAGE_KEYS.invoices));
       state.payments = model.mergeById(data.pagos_factura ?? [], readStorage(STORAGE_KEYS.payments));

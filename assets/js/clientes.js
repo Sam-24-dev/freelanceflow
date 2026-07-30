@@ -2,8 +2,6 @@
 
 (function clientsModule() {
   const DATA_URL = '../assets/data/mock-data.json';
-  const STORAGE_KEY = 'freelanceflow_clients_v2';
-  const LEGACY_STORAGE_KEY = 'freelanceflow_clients_mock';
   const model = window.FreelanceFlowClientModel;
 
   const state = {
@@ -125,8 +123,7 @@
 
     try {
       const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL);
-      const stored = readStoredClients();
-      state.clients = model.mergeClients(data.clientes ?? [], stored);
+      state.clients = model.getEffectiveClients(data.clientes ?? []);
       renderAll();
       setLoading(false);
     } catch (error) {
@@ -134,25 +131,10 @@
     }
   }
 
-  function readStoredClients() {
-    try {
-      const serialized = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
-      if (!serialized) return [];
-      const parsed = JSON.parse(serialized);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      console.warn('No se pudieron recuperar los cambios locales de clientes.', error);
-      return [];
-    }
-  }
-
-  function saveClients() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.clients));
-    } catch (error) {
-      console.warn('No se pudieron guardar los cambios locales de clientes.', error);
-      showToast('El cambio se aplicó, pero no pudo guardarse en este navegador.', 'warning');
-    }
+  function saveClients(candidateClients) {
+    const saved = model.persistClients(candidateClients);
+    if (!saved) console.warn('No se pudieron guardar los cambios locales de clientes.');
+    return saved;
   }
 
   function setLoading(isLoading) {
@@ -288,7 +270,6 @@
 
     if (elements.statusDialog.returnValue === 'confirm') {
       applyClientFieldChange(pending.clientId, pending.field, pending.value);
-      showToast('Cliente inactivado. Su historial se mantiene disponible.', 'success');
     } else {
       renderDirectory();
       if (state.drawerMode === 'detail') renderDetail(findClient(state.selectedClientId));
@@ -299,12 +280,23 @@
     const allowed = field === 'estadoCivil' ? model.CIVIL_STATUS_OPTIONS : model.CLIENT_STATUS_OPTIONS;
     if (!allowed.includes(value)) return;
 
-    state.clients = state.clients.map((client) => client.id === clientId ? { ...client, [field]: value } : client);
-    saveClients();
-    renderAll();
-    if (!(field === 'estado' && value === 'inactivo')) {
-      showToast(field === 'estadoCivil' ? 'Estado civil actualizado.' : 'Estado del cliente actualizado.', 'success');
+    const candidateClients = state.clients.map((client) => client.id === clientId ? { ...client, [field]: value } : client);
+    if (!saveClients(candidateClients)) {
+      renderAll();
+      showToast('No se pudo guardar el cambio. El cliente conserva su información anterior.', 'error');
+      return false;
     }
+
+    state.clients = candidateClients;
+    renderAll();
+    recordActivity('Cliente actualizado');
+    const message = field === 'estadoCivil'
+      ? 'Estado civil actualizado.'
+      : value === 'inactivo'
+        ? 'Cliente inactivado. Su historial se mantiene disponible.'
+        : 'Estado del cliente actualizado.';
+    showToast(message, 'success');
+    return true;
   }
 
   function openDetail(client, trigger) {
@@ -470,37 +462,46 @@
     elements.submitButton.textContent = draft.id ? 'Guardando…' : 'Registrando…';
 
     let savedClient;
+    let candidateClients;
     if (draft.id) {
-      state.clients = state.clients.map((client) => client.id === draft.id ? {
-        ...model.normalizeClient({ ...client, ...draft }),
-        id: client.id,
-        fecha_registro: client.fecha_registro,
+      savedClient = {
+        ...model.normalizeClient({ ...findClient(draft.id), ...draft }),
+        id: draft.id,
+        fecha_registro: findClient(draft.id).fecha_registro,
         identificacion_fiscal: draft.identificacion,
         correo_electronico: draft.correo
-      } : client);
-      state.selectedClientId = draft.id;
-      savedClient = findClient(draft.id);
+      };
+      candidateClients = state.clients.map((client) => client.id === draft.id ? savedClient : client);
     } else {
-      const newClient = model.createClientRecord(draft, {
+      savedClient = model.createClientRecord(draft, {
         id: generateClientId(),
         date: getTodayDate()
       });
-      state.clients.unshift(newClient);
-      state.selectedClientId = newClient.id;
-      savedClient = newClient;
+      candidateClients = [savedClient, ...state.clients];
     }
 
-    saveClients();
+    if (!saveClients(candidateClients)) {
+      elements.formSummary.textContent = 'No se pudo guardar el cliente. Revisa el almacenamiento del navegador e inténtalo nuevamente.';
+      elements.formSummary.hidden = false;
+      elements.formSummary.focus();
+      elements.submitButton.disabled = false;
+      elements.submitButton.textContent = draft.id ? 'Guardar cambios' : 'Registrar cliente';
+      return;
+    }
+
+    state.clients = candidateClients;
+    state.selectedClientId = savedClient.id;
     renderAll();
     state.formDirty = false;
     closeDrawer();
-    recordActivity('Clientes', draft.id ? 'Cliente actualizado' : 'Cliente registrado', `${savedClient?.nombre_razon_social || draft.nombre_razon_social}.`);
+    recordActivity(draft.id ? 'Cliente actualizado' : 'Cliente registrado');
     showToast(draft.id ? 'Cliente actualizado exitosamente.' : 'Cliente registrado exitosamente.', 'success');
     elements.submitButton.disabled = false;
+    elements.submitButton.textContent = draft.id ? 'Guardar cambios' : 'Registrar cliente';
   }
 
-  function recordActivity(module, action, description) {
-    window.FreelanceFlowActivity?.record({ module, action, description });
+  function recordActivity(action) {
+    window.FreelanceFlowActivity?.record({ module: 'Clientes', action, deduplicate: false });
   }
 
   function readForm() {
@@ -588,6 +589,8 @@
     window.clearTimeout(state.toastTimer);
     elements.toast.textContent = message;
     elements.toast.dataset.type = type;
+    elements.toast.setAttribute('role', type === 'success' ? 'status' : 'alert');
+    elements.toast.setAttribute('aria-live', type === 'success' ? 'polite' : 'assertive');
     elements.toast.hidden = false;
     requestAnimationFrame(() => elements.toast.classList.add('is-visible'));
     state.toastTimer = window.setTimeout(() => {

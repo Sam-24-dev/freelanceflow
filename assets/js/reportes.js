@@ -7,6 +7,7 @@
   const STORAGE_KEY = 'freelanceflow_budgets_v1';
   const DEFAULT_PERIOD = '2026-06';
   const model = window.FreelanceFlowReportModel;
+  const clientModel = window.FreelanceFlowClientModel;
 
   const money = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
   const number = new Intl.NumberFormat('es-EC', { maximumFractionDigits: 2 });
@@ -36,7 +37,7 @@
   document.addEventListener('DOMContentLoaded', initialize);
 
   async function initialize() {
-    if (!model) {
+    if (!model || !clientModel) {
       showFatalError();
       return;
     }
@@ -57,7 +58,11 @@
 
   async function loadData() {
     const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL);
-    return { ...data, gastos: getMovementExpenses(data) };
+    return {
+      ...data,
+      clientes: clientModel.getEffectiveClients(data.clientes ?? []),
+      gastos: getMovementExpenses(data)
+    };
   }
 
   function getMovementExpenses(data) {
