@@ -3,6 +3,7 @@
 
   const SERVICE_UNIT_OPTIONS = ['Hora', 'Proyecto', 'Entregable'];
   const SERVICE_CURRENCY_OPTIONS = ['USD', 'EUR', 'MXN'];
+  const SERVICE_STORAGE_VERSION = 1;
 
   function normalizeText(value) {
     return String(value ?? '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -24,7 +25,7 @@
       descripcion: String(service.descripcion ?? '').trim(),
       unidad_medida: SERVICE_UNIT_OPTIONS.includes(unit) ? unit : '',
       tarifa_unitaria: Number.isNaN(rate) ? null : rate,
-      moneda: SERVICE_CURRENCY_OPTIONS.includes(currency) ? currency : 'USD'
+      moneda: currency
     };
   }
 
@@ -64,16 +65,40 @@
   function createServiceRecord(service, metadata = {}) { return { ...normalizeService(service), id: metadata.id || normalizeService(service).id }; }
   function updateService(services = [], id, record) { return services.map((service) => String(service.id) === String(id) ? createServiceRecord(record, { id }) : service); }
   function removeService(services = [], id) { return services.filter((service) => String(service.id) !== String(id)); }
-  function normalizeStoredCatalog(stored = []) { return Array.isArray(stored) ? { items: stored, deletedIds: [] } : { items: Array.isArray(stored?.items) ? stored.items : [], deletedIds: Array.isArray(stored?.deletedIds) ? stored.deletedIds.map(String) : [] }; }
+  function normalizeStoredCatalog(stored) {
+    if (!stored || Array.isArray(stored) || typeof stored !== 'object' || stored.version !== SERVICE_STORAGE_VERSION || !Array.isArray(stored.items) || !Array.isArray(stored.deletedIds)) return null;
+    const itemIds = new Set();
+    const deletedIds = new Set();
+    const items = [];
+    for (const service of stored.items) {
+      if (!service || Array.isArray(service) || typeof service !== 'object') return null;
+      if (typeof service.id !== 'string' || typeof service.nombre_servicio !== 'string' || typeof service.descripcion !== 'string' || typeof service.unidad_medida !== 'string' || typeof service.tarifa_unitaria !== 'number' || typeof service.moneda !== 'string') return null;
+      const normalized = normalizeService(service);
+      if (!normalized.id || !normalized.nombre_servicio || !SERVICE_UNIT_OPTIONS.includes(normalized.unidad_medida) || normalized.tarifa_unitaria === null || !SERVICE_CURRENCY_OPTIONS.includes(normalized.moneda) || itemIds.has(normalized.id)) return null;
+      itemIds.add(normalized.id);
+      items.push(normalized);
+    }
+    for (const id of stored.deletedIds) {
+      const normalizedId = typeof id === 'string' ? id.trim() : '';
+      if (!normalizedId || id !== normalizedId || deletedIds.has(normalizedId) || itemIds.has(normalizedId)) return null;
+      deletedIds.add(normalizedId);
+    }
+    return { version: SERVICE_STORAGE_VERSION, items, deletedIds: [...deletedIds] };
+  }
+  function saveStoredCatalog(storage, key, catalog) {
+    const normalized = normalizeStoredCatalog(catalog);
+    if (!normalized) return false;
+    try { storage.setItem(key, JSON.stringify(normalized)); return true; } catch { return false; }
+  }
   function mergeServices(base = [], stored = []) {
-    const overlay = normalizeStoredCatalog(stored);
+    const overlay = normalizeStoredCatalog(stored) || { items: [], deletedIds: [] };
     const deleted = new Set(overlay.deletedIds);
-    const merged = new Map(base.map((service) => [String(service.id), normalizeService(service)]).filter(([id]) => !deleted.has(id)));
+    const merged = new Map(base.map((service) => [String(service.id), normalizeService(service)]).filter(([id, service]) => !deleted.has(id) && SERVICE_CURRENCY_OPTIONS.includes(service.moneda)));
     overlay.items.forEach((service) => { const normalized = normalizeService(service); if (normalized.id && !deleted.has(normalized.id)) merged.set(normalized.id, normalized); });
     return [...merged.values()];
   }
 
-  const api = { SERVICE_UNIT_OPTIONS, SERVICE_CURRENCY_OPTIONS, normalizeText, normalizeService, validateService, filterServices, calculateServiceMetrics, createServiceRecord, updateService, removeService, normalizeStoredCatalog, mergeServices };
+  const api = { SERVICE_UNIT_OPTIONS, SERVICE_CURRENCY_OPTIONS, SERVICE_STORAGE_VERSION, normalizeText, normalizeService, validateService, filterServices, calculateServiceMetrics, createServiceRecord, updateService, removeService, normalizeStoredCatalog, saveStoredCatalog, mergeServices };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   globalScope.FreelanceFlowServiceModel = api;
 }(typeof globalThis !== 'undefined' ? globalThis : window));
