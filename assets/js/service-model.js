@@ -36,6 +36,7 @@
     if (candidate.nombre_servicio && existingServices.some((existing) => normalizeText(existing.nombre_servicio) === normalizeText(candidate.nombre_servicio) && String(existing.id) !== candidate.id)) {
       errors.nombre_servicio = 'Ya existe un servicio con ese nombre.';
     }
+    if (!SERVICE_CURRENCY_OPTIONS.includes(candidate.moneda)) errors.moneda = 'Seleccioná una moneda válida.';
     if (!SERVICE_UNIT_OPTIONS.includes(candidate.unidad_medida)) errors.unidad_medida = 'Seleccioná una unidad de medida.';
     if (Number.isNaN(parseRate(service.tarifa_unitaria)) || candidate.tarifa_unitaria === null) errors.tarifa_unitaria = 'Ingresá una tarifa mayor que cero.';
     return { valid: Object.keys(errors).length === 0, errors };
@@ -74,7 +75,7 @@
       if (!service || Array.isArray(service) || typeof service !== 'object') return null;
       if (typeof service.id !== 'string' || typeof service.nombre_servicio !== 'string' || typeof service.descripcion !== 'string' || typeof service.unidad_medida !== 'string' || typeof service.tarifa_unitaria !== 'number' || typeof service.moneda !== 'string') return null;
       const normalized = normalizeService(service);
-      if (!normalized.id || !normalized.nombre_servicio || !SERVICE_UNIT_OPTIONS.includes(normalized.unidad_medida) || normalized.tarifa_unitaria === null || !SERVICE_CURRENCY_OPTIONS.includes(normalized.moneda) || itemIds.has(normalized.id)) return null;
+      if (service.id !== normalized.id || !normalized.id || !normalized.nombre_servicio || !SERVICE_UNIT_OPTIONS.includes(normalized.unidad_medida) || normalized.tarifa_unitaria === null || !SERVICE_CURRENCY_OPTIONS.includes(normalized.moneda) || itemIds.has(normalized.id)) return null;
       itemIds.add(normalized.id);
       items.push(normalized);
     }

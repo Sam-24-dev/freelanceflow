@@ -21,6 +21,7 @@ test('validates required unique names, approved units and positive finite rates'
   assert.equal(model.validateService({ nombre_servicio: 'Nuevo', unidad_medida: 'Mensual', tarifa_unitaria: 10 }, services).errors.unidad_medida, 'Seleccioná una unidad de medida.');
   assert.equal(model.validateService({ nombre_servicio: 'Nuevo', unidad_medida: 'Hora', tarifa_unitaria: 'Infinity' }, services).errors.tarifa_unitaria, 'Ingresá una tarifa mayor que cero.');
   assert.equal(model.validateService({ nombre_servicio: 'Nuevo', unidad_medida: 'Hora', tarifa_unitaria: '12.50', moneda: 'MXN' }, services).valid, true);
+  assert.deepEqual(model.validateService({ nombre_servicio: 'Nuevo', unidad_medida: 'Hora', tarifa_unitaria: 10, moneda: 'GBP' }, services), { valid: false, errors: { moneda: 'Seleccioná una moneda válida.' } });
 });
 
 test('filters by normalized name or description and unit', () => {
@@ -62,6 +63,7 @@ test('rejects malformed, unsupported, whitespace and canonical-duplicate storage
     { version: 1, items: null, deletedIds: [] },
     { version: 1, items: [null], deletedIds: [] },
     { version: 1, items: [services[0], { ...services[0] }], deletedIds: [] },
+    { version: 1, items: [{ ...services[0], id: ' srv_001 ' }], deletedIds: [] },
     { version: 1, items: [], deletedIds: [' srv_002 '] },
     { version: 1, items: [], deletedIds: ['srv_002', ' srv_002'] }
   ].forEach((stored) => assert.equal(model.normalizeStoredCatalog(stored), null));
@@ -84,6 +86,15 @@ test('rejects unsupported currencies from stored catalogs instead of normalizing
   const corrupt = { version: 1, items: [{ ...services[0], moneda: 'GBP' }], deletedIds: [] };
   assert.equal(model.normalizeStoredCatalog(corrupt), null);
   assert.deepEqual(model.mergeServices(services, corrupt).map((service) => service.id), services.map((service) => service.id));
+});
+
+test('exposes one accessible currency error target in the Services form', () => {
+  const html = require('node:fs').readFileSync(require('node:path').join(__dirname, '../pages/servicios.html'), 'utf8');
+  const targets = html.match(/<span\b[^>]*\bid="service-currency-error"[^>]*\bdata-field-error="moneda"[^>]*><\/span>/g) || [];
+
+  assert.equal(targets.length, 1);
+  assert.equal((html.match(/\bid="service-currency-error"/g) || []).length, 1);
+  assert.match(html, /<select id="service-currency" name="moneda" aria-describedby="service-currency-error">/);
 });
 
 test('keeps the service drawer within the available viewport without containment masking', () => {
