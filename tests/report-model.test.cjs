@@ -3,6 +3,9 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 
 const modelPath = path.resolve(__dirname, '../assets/js/report-model.js');
+const categoryModel = require('../assets/js/category-model.js');
+const transactionModel = require('../assets/js/transaction-model.js');
+const canonicalMockData = require('../assets/data/mock-data.json');
 
 const data = {
   clientes: [
@@ -189,4 +192,48 @@ test('protege la exportación CSV contra fórmulas inyectadas en texto', () => {
   }, { period: '2026-06' });
 
   assert.match(exported.content, /'=CMD\(\);50,00;100%/);
+});
+
+test('FF-CAT-006 resolves report names and budgets from the effective overlay catalog', () => {
+  const categories = categoryModel.mergeCategories(canonicalMockData.categorias_gasto, {
+    version: 2,
+    items: [
+      { ...canonicalMockData.categorias_gasto[0], nombre_categoria: 'Software local' },
+      { ...canonicalMockData.categorias_gasto[1], id: 'cat_999', nombre_categoria: 'Comisiones', presupuesto_mensual: 25 }
+    ],
+    deletedIds: ['cat_003']
+  });
+  const expenses = transactionModel.toExpenseRecords(canonicalMockData.movimientos_financieros_mock_auxiliar, {
+    projects: canonicalMockData.proyectos,
+    categories
+  });
+  const reportData = { ...canonicalMockData, categorias_gasto: categories, gastos: expenses };
+  const report = require(modelPath).buildReport('expenses', reportData, { period: '2026-06' });
+  const rows = require(modelPath).calculateBudgetRows(reportData, canonicalMockData.presupuestos[0], { period: '2026-06' });
+
+  assert.equal(report.rows.find(({ categoryId }) => categoryId === 'cat_001').categoryName, 'Software local');
+  assert.equal(categories.some(({ id }) => id === 'cat_999'), true);
+  assert.equal(categories.some(({ id }) => id === 'cat_003'), false);
+  assert.equal(rows.find(({ categoryId }) => categoryId === 'cat_001').categoryName, 'Software local');
+
+  const invalidOverlay = categoryModel.mergeCategories(canonicalMockData.categorias_gasto, {
+    version: 2,
+    items: [{ ...canonicalMockData.categorias_gasto[0], nombre_categoria: 'Invalid overlay', presupuesto_mensual: '120' }],
+    deletedIds: []
+  });
+  assert.deepEqual(invalidOverlay, canonicalMockData.categorias_gasto);
+});
+
+test('FF-CAT-007 reports USD 67.49 once and keeps the deductible share at 100 percent', () => {
+  const expenses = transactionModel.toExpenseRecords(canonicalMockData.movimientos_financieros_mock_auxiliar, {
+    projects: canonicalMockData.proyectos,
+    categories: canonicalMockData.categorias_gasto
+  });
+  const reportData = { ...canonicalMockData, gastos: expenses };
+  const summary = require(modelPath).calculateFinancialSummary(reportData, canonicalMockData.presupuestos[0], { period: '2026-06' });
+  const report = require(modelPath).buildReport('expenses', reportData, { period: '2026-06' });
+
+  assert.equal(summary.realExpenses, 67.49);
+  assert.equal(Number(report.rows.reduce((sum, row) => sum + row.amount, 0).toFixed(2)), 67.49);
+  assert.deepEqual(report.rows.map(({ deductibleShare }) => deductibleShare), [100, 100]);
 });

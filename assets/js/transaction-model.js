@@ -21,6 +21,15 @@
     if (!isValidDate(transaction.fecha)) return { valid: false, field: 'fecha', message: 'Ingresa una fecha válida.' };
     if (!transaction.categoria) return { valid: false, field: 'categoria', message: 'Selecciona una categoría.' };
     if (!transaction.cuenta_id) return { valid: false, field: 'cuenta_id', message: 'Selecciona una cuenta.' };
+    if (transaction.tipo === 'gasto') {
+      const category = Array.isArray(context.categories)
+        ? context.categories.find((item) => String(item?.id) === String(transaction.categoria))
+        : null;
+      const selectedInactive = String(context.selectedCategoryId || '') === String(transaction.categoria);
+      if (!category || (category.estado !== 'activo' && !selectedInactive)) {
+        return { valid: false, field: 'categoria', message: 'Selecciona una categoría de gasto válida.' };
+      }
+    }
     if (transaction.moneda && transaction.moneda !== 'USD') return { valid: false, field: 'moneda', message: 'Solo se admite USD.' };
     if (transaction.origen_oficial === 'pago_factura' && !transaction.origen_id) return { valid: false, field: 'origen_id', message: 'El pago debe tener un origen verificable.' };
     if (transaction.proyecto_id) {
@@ -32,11 +41,12 @@
 
   function validateStoredTransaction(transaction, context) {
     if (!transaction || typeof transaction !== 'object' || !String(transaction.id || '').trim()) return { valid: false, field: 'id' };
+    const expenseCategoryId = transaction.categoria_gasto_id || transaction.categoria_mock_auxiliar;
     return validateTransaction({
       ...transaction,
-      categoria: transaction.tipo === 'ingreso' ? 'income_invoice' : (transaction.categoria_gasto_id || transaction.categoria_mock_auxiliar),
+      categoria: transaction.tipo === 'ingreso' ? 'income_invoice' : expenseCategoryId,
       moneda: transaction.moneda
-    }, context);
+    }, { ...context, selectedCategoryId: transaction.tipo === 'gasto' ? expenseCategoryId : '' });
   }
 
   function sanitizeTransactions(items = [], context = {}) {
@@ -60,14 +70,19 @@
   function toExpenseRecords(items = [], context = {}) {
     return sanitizeTransactions(items, context).items
       .filter((item) => item.tipo === 'gasto')
-      .map((item) => ({
-        id: item.id,
-        categoria_gasto_id: item.categoria_gasto_id,
-        monto: Number(item.monto),
-        fecha_gasto: item.fecha,
-        cliente_id: item.cliente_id || (context.projects || []).find((project) => project.id === item.proyecto_id)?.cliente_id || '',
-        proyecto_relacionado_id: item.proyecto_id || ''
-      }));
+      .map((item) => {
+        const effectiveCategoryId = item.categoria_gasto_id || item.categoria_mock_auxiliar;
+        const category = context.categories.find((candidate) => String(candidate.id) === String(effectiveCategoryId));
+        return {
+          id: item.id,
+          categoria_gasto_id: effectiveCategoryId,
+          monto: Number(item.monto),
+          fecha_gasto: item.fecha,
+          cliente_id: item.cliente_id || (context.projects || []).find((project) => project.id === item.proyecto_id)?.cliente_id || '',
+          proyecto_relacionado_id: item.proyecto_id || '',
+          es_deducible: category.es_deducible_por_defecto === true
+        };
+      });
   }
 
   function calculateSummary(items = []) {

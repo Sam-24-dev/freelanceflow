@@ -4,10 +4,10 @@
   'use strict';
 
   const DATA_URL = '../assets/data/mock-data.json';
-  const STORAGE_KEY = 'freelanceflow_expense_categories_v1';
   const model = window.FreelanceFlowCategoryModel;
 
   const state = {
+    baseCategories: [],
     categories: [],
     expenses: [],
     filters: { query: '', deductible: 'todas', status: 'todos' },
@@ -106,10 +106,11 @@
     elements.dataError.hidden = true;
     try {
       const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL);
-      const stored = readStoredCatalog();
-      state.expenses = getMovementExpenses(data);
-      state.deletedCategoryIds = stored.deletedIds;
-      state.categories = model.mergeCategories(data.categorias_gasto || [], stored);
+      state.baseCategories = model.mergeCategories(data.categorias_gasto || []);
+      const catalog = model.readEffectiveCatalog(state.baseCategories);
+      state.deletedCategoryIds = catalog.deletedIds;
+      state.categories = catalog.categories;
+      state.expenses = getMovementExpenses(data, state.categories);
       renderAll();
       setLoading(false);
     } catch (error) {
@@ -117,37 +118,14 @@
     }
   }
 
-  function getMovementExpenses(data) {
+  function getMovementExpenses(data, categories) {
     try {
       const stored = localStorage.getItem('freelanceflow_transactions_mock');
       const movements = stored ? JSON.parse(stored) : (data.movimientos_financieros_mock_auxiliar ?? []);
       return window.FreelanceFlowTransactionModel?.toExpenseRecords
-        ? window.FreelanceFlowTransactionModel.toExpenseRecords(movements, { projects: data.proyectos ?? [] })
+        ? window.FreelanceFlowTransactionModel.toExpenseRecords(movements, { projects: data.proyectos ?? [], categories })
         : data.gastos || [];
     } catch { return data.gastos || []; }
-  }
-
-  function readStoredCatalog() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-      return model.normalizeStoredCatalog(parsed);
-    } catch (error) {
-      console.warn('No se pudieron recuperar las categorías locales.', error);
-      return { items: [], deletedIds: [] };
-    }
-  }
-
-  function saveCategories() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        version: 2,
-        items: state.categories,
-        deletedIds: state.deletedCategoryIds
-      }));
-    } catch (error) {
-      console.warn('No se pudieron guardar las categorías locales.', error);
-      showToast('El cambio se aplicó, pero no pudo guardarse en este navegador.', 'warning');
-    }
   }
 
   function setLoading(isLoading) {
@@ -285,7 +263,7 @@
     if (action.dataset.action === 'create-category') openForm(null, action);
     if (action.dataset.action === 'clear-category-filters') clearFilters();
     if (action.dataset.action === 'edit-category') openForm(findCategory(action.dataset.categoryId), action);
-    if (action.dataset.action === 'remove-category') openRemovalDialog(action.dataset.categoryId);
+    if (action.dataset.action === 'remove-category') openRemovalDialog(action.dataset.categoryId, action);
   }
 
   function findCategory(id) {
@@ -328,6 +306,7 @@
   function formData() {
     const data = Object.fromEntries(new FormData(elements.form).entries());
     data.es_deducible_por_defecto = elements.form.elements.es_deducible_por_defecto.checked;
+    data.presupuesto_mensual = data.presupuesto_mensual === '' ? null : Number(data.presupuesto_mensual);
     return data;
   }
 
@@ -335,23 +314,27 @@
     event.preventDefault();
     const data = formData();
     const existing = state.categories.filter((category) => category.id !== state.editingId);
-    const result = model.validateCategory({ ...data, id: state.editingId }, existing);
+    const id = state.editingId || `cat_${Date.now()}`;
+    const rawRecord = { ...data, id };
+    const result = model.validateCategory(rawRecord, existing);
     if (!result.valid) {
       showErrors(result.errors);
       return;
     }
 
-    const record = model.createCategoryRecord({ ...data, id: state.editingId }, { id: state.editingId || `cat_${Date.now()}` });
-    if (state.editingId) {
-      state.categories = state.categories.map((category) => category.id === state.editingId ? record : category);
-      recordActivity('Categoría actualizada', `Categoría actualizada: ${record.nombre_categoria}.`);
-      showToast('Categoría actualizada.');
-    } else {
-      state.categories = [...state.categories, record];
-      recordActivity('Categoría creada', `Categoría creada: ${record.nombre_categoria}.`);
-      showToast('Categoría creada.');
+    const record = model.createCategoryRecord(rawRecord, { id });
+    const candidate = state.editingId
+      ? state.categories.map((category) => category.id === state.editingId ? record : category)
+      : [...state.categories, record];
+    const persisted = model.saveEffectiveCatalog(state.baseCategories, candidate, state.deletedCategoryIds);
+    if (!persisted.ok) {
+      showPersistenceError();
+      return;
     }
-    saveCategories();
+
+    state.categories = candidate;
+    recordCategoryActivity(state.editingId ? 'Categoría actualizada' : 'Categoría creada');
+    showToast(state.editingId ? 'Categoría actualizada.' : 'Categoría creada.');
     closeForm();
     renderAll();
   }
@@ -387,10 +370,11 @@
     if (!onlyField) elements.formSummary.hidden = true;
   }
 
-  function openRemovalDialog(id) {
+  function openRemovalDialog(id, trigger) {
     const category = findCategory(id);
     if (!category) return;
     state.pendingRemovalId = id;
+    state.lastTrigger = trigger || document.activeElement;
     const action = model.getCategoryRemovalAction(category);
     elements.removeCopy.textContent = action === 'inactivate'
       ? 'Esta categoría ya tiene gastos asociados. Se inactivará para conservar el historial.'
@@ -403,18 +387,31 @@
     const category = findCategory(state.pendingRemovalId);
     if (!category) return;
     const action = model.getCategoryRemovalAction(category);
+    const candidate = action === 'inactivate'
+      ? state.categories.map((item) => item.id === category.id ? { ...item, estado: 'inactivo' } : item)
+      : state.categories.filter((item) => item.id !== category.id);
+    const isBaseline = state.baseCategories.some((item) => item.id === category.id);
+    const candidateDeletedIds = action === 'delete' && isBaseline
+      ? [...new Set([...state.deletedCategoryIds, category.id])]
+      : state.deletedCategoryIds;
+    const persisted = model.saveEffectiveCatalog(state.baseCategories, candidate, candidateDeletedIds);
+    if (!persisted.ok) {
+      showToast('No pudimos guardar el cambio. Revisa el espacio o permisos del navegador e inténtalo nuevamente.', 'error');
+      elements.removeDialog.showModal();
+      elements.removeDialog.querySelector('[value="confirm"]')?.focus();
+      return;
+    }
+
+    state.categories = candidate;
+    state.deletedCategoryIds = candidateDeletedIds;
     if (action === 'inactivate') {
-      state.categories = state.categories.map((item) => item.id === category.id ? { ...item, estado: 'inactivo' } : item);
-      recordActivity('Categoría inactivada', `Categoría inactivada por uso histórico: ${category.nombre_categoria}.`);
+      recordCategoryActivity('Categoría inactivada');
       showToast('La categoría tenía movimientos; quedó inactiva para proteger el historial.');
     } else {
-      state.categories = state.categories.filter((item) => item.id !== category.id);
-      state.deletedCategoryIds = [...new Set([...state.deletedCategoryIds, category.id])];
-      recordActivity('Categoría eliminada', `Categoría eliminada: ${category.nombre_categoria}.`);
+      recordCategoryActivity('Categoría eliminada');
       showToast('Categoría eliminada.');
     }
     state.pendingRemovalId = '';
-    saveCategories();
     renderAll();
   }
 
@@ -436,14 +433,22 @@
     }
   }
 
-  function recordActivity(action, description) {
-    window.FreelanceFlowActivity?.record({ module: 'Categorías', action, description });
+  function showPersistenceError() {
+    elements.formSummary.hidden = false;
+    elements.formSummary.textContent = 'No pudimos guardar el cambio. Revisa el espacio o permisos del navegador e inténtalo nuevamente.';
+    elements.submitButton?.focus();
+  }
+
+  function recordCategoryActivity(action) {
+    window.FreelanceFlowActivity?.record({ module: 'Categorías', action, deduplicate: false });
   }
 
   function showToast(message, tone = 'success') {
     window.clearTimeout(state.toastTimer);
     elements.toast.textContent = message;
     elements.toast.dataset.tone = tone;
+    elements.toast.setAttribute('role', tone === 'error' ? 'alert' : 'status');
+    elements.toast.setAttribute('aria-live', tone === 'error' ? 'assertive' : 'polite');
     elements.toast.hidden = false;
     state.toastTimer = window.setTimeout(() => { elements.toast.hidden = true; }, 3600);
   }

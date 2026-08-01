@@ -14,7 +14,10 @@ const clientModel = require('../assets/js/client-model.js');
 const projectModel = require('../assets/js/project-model.js');
 const reportModel = require('../assets/js/report-model.js');
 const settingsModel = require('../assets/js/settings-model.js');
+const transactionModel = require('../assets/js/transaction-model.js');
 const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 
 const movements = [
   { id: 'old', fecha: '2026-06-01' },
@@ -93,10 +96,61 @@ test('composes owner overlays and safely falls back for blocked storage', () => 
   assert.equal(composeDashboardData({ presupuestos: { id: 'base-budget' } }, {}, models).presupuestos[0].id, 'base-budget');
 });
 
+test('dashboard controller falls back to raw categories when the category catalog reader is unavailable', async () => {
+  const listeners = {};
+  let composed;
+  const select = { options: [], value: '', disabled: false, addEventListener() {}, replaceChildren(...options) { this.options = options; } };
+  const context = {
+    console: { error() {}, warn() {} },
+    document: {
+      addEventListener(type, callback) { if (type === 'DOMContentLoaded') listeners.load = callback; },
+      getElementById(id) { return id === 'dashboard-period' ? select : null; },
+      querySelectorAll() { return []; }
+    },
+    Intl,
+    Date,
+    URL,
+    URLSearchParams,
+    Option: function Option(label, value) { this.text = label; this.value = value; },
+    localStorage: { getItem() { return null; } },
+    location: { href: 'http://test.local/pages/dashboard.html', search: '' },
+    history: { replaceState() {} },
+    addEventListener() {},
+    FreelanceFlowDataLoader: { loadJson: async () => ({ categorias_gasto: [{ id: 'cat_base', estado: 'activo' }], movimientos_financieros_mock_auxiliar: [], clientes: [], proyectos: [], facturas: [], pagos_factura: [], presupuestos: [] }) },
+    FreelanceFlowCategoryModel: {},
+    FreelanceFlowClientModel: { getEffectiveClients: (items) => items },
+    FreelanceFlowDashboardModel: { composeDashboardData(data) { composed = data; return data; }, getAvailablePeriods: () => ['2026-06'] }
+  };
+  Object.assign(context, { window: context, globalThis: context });
+
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../assets/js/dashboard.js'), 'utf8'), context);
+  await listeners.load();
+
+  assert.deepEqual(composed.categorias_gasto, [{ id: 'cat_base', estado: 'activo' }]);
+});
+
 test('dashboard markup keeps private accessible mobile states and scoped period links', () => {
   const html = fs.readFileSync(require.resolve('../pages/dashboard.html'), 'utf8');
   const css = fs.readFileSync(require.resolve('../assets/css/app.css'), 'utf8');
   assert.match(html, /name="robots" content="noindex, nofollow"/); assert.match(html, /<main id="main-content"[^>]*tabindex="-1"/); assert.match(html, /<a href="transacciones\.html" data-period-link="movements">Ver todos<\/a>/);
   assert.match(html, /id="cash-flow-status"[^>]*aria-live="polite"/); assert.match(html, /dashboard-due-link/);
   assert.match(css, /\.dashboard-due-link\s*\{[^}]*min-width: 44px/); assert.match(css, /\.dashboard-app \.app-sidebar-brand\s*\{[^}]*min-height: 44px/); assert.match(css, /\.dashboard-app \[aria-label="FreelanceFlow, ir a la página de inicio"\]\s*\{[^}]*min-height: 44px/); assert.match(css, /\.dashboard-app \.app-sidebar-toggle\s*\{[^}]*min-width: 44px[^}]*min-height: 44px/); assert.match(css, /\.dashboard-app \.app-sidebar-section-title\s*\{[^}]*#94a3b8/); assert.doesNotMatch(css, /mobile-home-transaction-item h3\s*\{[^}]*ellipsis/);
+});
+
+test('FF-CAT-004 dashboard excludes unknown expense categories without duplicating income', () => {
+  const categories = [{ id: 'cat_known', estado: 'activo' }];
+  const sanitized = transactionModel.sanitizeTransactions([
+    { id: 'income', tipo: 'ingreso', monto: 20, fecha: '2026-06-01', moneda: 'USD', cuenta_id: 'a' },
+    { id: 'known', tipo: 'gasto', monto: 5, fecha: '2026-06-02', moneda: 'USD', categoria_gasto_id: 'cat_known', cuenta_id: 'a' },
+    { id: 'unknown', tipo: 'gasto', monto: 99, fecha: '2026-06-03', moneda: 'USD', categoria_gasto_id: 'cat_unknown', cuenta_id: 'a' }
+  ], { categories }).items;
+  const snapshot = buildDashboardSnapshot({
+    facturas: [],
+    pagos_factura: [],
+    movimientos_financieros_mock_auxiliar: sanitized
+  }, { period: '2026-06', today: '2026-06-20', invoiceModel });
+
+  assert.equal(snapshot.registeredIncome, 20);
+  assert.equal(snapshot.registeredExpenses, 5);
+  assert.equal(snapshot.movements.length, 2);
 });

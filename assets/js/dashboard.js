@@ -4,6 +4,7 @@ const MOCK_DATA_URL = '../assets/data/mock-data.json';
 const TRANSACTIONS_STORAGE_KEY = 'freelanceflow_transactions_mock';
 const DASHBOARD_STORAGE_KEYS = { invoices: 'freelanceflow_invoices_v1', payments: 'freelanceflow_invoice_payments_v1', clients: 'freelanceflow_clients_v2', projects: 'freelanceflow_projects_v1', budgets: 'freelanceflow_budgets_v1', settings: 'freelanceflow_settings_v1' };
 const dashboardModel = globalThis.FreelanceFlowDashboardModel ?? {};
+const categoryModel = globalThis.FreelanceFlowCategoryModel ?? {};
 
 const compactDateFormatter = new Intl.DateTimeFormat('es-EC', {
   day: '2-digit',
@@ -127,7 +128,14 @@ function renderSelectedPeriod() {
 function composeDashboardData(data) {
   const models = { invoiceModel: globalThis.FreelanceFlowInvoiceModel, clientModel: globalThis.FreelanceFlowClientModel, projectModel: globalThis.FreelanceFlowProjectModel, reportModel: globalThis.FreelanceFlowReportModel, settingsModel: globalThis.FreelanceFlowSettingsModel };
   const overlays = Object.fromEntries(Object.entries(DASHBOARD_STORAGE_KEYS).map(([name, key]) => [name, readStored(key)]));
-  const base = { ...data, movimientos_financieros_mock_auxiliar: getPersistedMovements(data) };
+  const categories = typeof categoryModel.readEffectiveCatalog === 'function'
+    ? categoryModel.readEffectiveCatalog(data.categorias_gasto ?? []).categories
+    : data.categorias_gasto ?? [];
+  const base = {
+    ...data,
+    categorias_gasto: categories,
+    movimientos_financieros_mock_auxiliar: getPersistedMovements(data, categories)
+  };
   const composed = typeof dashboardModel.composeDashboardData === 'function' ? dashboardModel.composeDashboardData(base, overlays, models) : base;
   return { ...composed, clientes: globalThis.FreelanceFlowClientModel.getEffectiveClients(data.clientes ?? []) };
 }
@@ -144,10 +152,13 @@ function updatePeriodLinks(period) {
   document.querySelectorAll('[data-period-link="reports"]').forEach((link) => { link.href = links.reports; });
 }
 
-function getPersistedMovements(data) {
+function getPersistedMovements(data, categories) {
   const fallback = data.movimientos_financieros_mock_auxiliar ?? [];
   const sanitize = (items) => globalThis.FreelanceFlowTransactionModel?.sanitizeTransactions
-    ? globalThis.FreelanceFlowTransactionModel.sanitizeTransactions(items, { projects: data.proyectos ?? [] }).items
+    ? globalThis.FreelanceFlowTransactionModel.sanitizeTransactions(items, {
+      projects: data.proyectos ?? [],
+      categories
+    }).items
     : items;
   try {
     const stored = localStorage.getItem(TRANSACTIONS_STORAGE_KEY);

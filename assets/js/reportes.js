@@ -7,6 +7,7 @@
   const STORAGE_KEY = 'freelanceflow_budgets_v1';
   const DEFAULT_PERIOD = '2026-06';
   const model = window.FreelanceFlowReportModel;
+  const categoryModel = window.FreelanceFlowCategoryModel;
   const clientModel = window.FreelanceFlowClientModel;
 
   const money = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
@@ -37,7 +38,7 @@
   document.addEventListener('DOMContentLoaded', initialize);
 
   async function initialize() {
-    if (!model || !clientModel) {
+    if (!model || !categoryModel || !clientModel) {
       showFatalError();
       return;
     }
@@ -58,19 +59,24 @@
 
   async function loadData() {
     const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL);
+    const categories = categoryModel.readEffectiveCatalog(data.categorias_gasto ?? []).categories;
     return {
       ...data,
       clientes: clientModel.getEffectiveClients(data.clientes ?? []),
-      gastos: getMovementExpenses(data)
+      categorias_gasto: categories,
+      gastos: getMovementExpenses(data, categories)
     };
   }
 
-  function getMovementExpenses(data) {
+  function getMovementExpenses(data, categories) {
     try {
       const stored = localStorage.getItem('freelanceflow_transactions_mock');
       const movements = stored ? JSON.parse(stored) : (data.movimientos_financieros_mock_auxiliar ?? []);
       return window.FreelanceFlowTransactionModel?.toExpenseRecords
-        ? window.FreelanceFlowTransactionModel.toExpenseRecords(movements, { projects: data.proyectos ?? [] })
+        ? window.FreelanceFlowTransactionModel.toExpenseRecords(movements, {
+          projects: data.proyectos ?? [],
+          categories
+        })
         : data.gastos ?? [];
     } catch { return data.gastos ?? []; }
   }
@@ -81,7 +87,7 @@
       return model.mergeBudgets(baseBudgets, Array.isArray(stored) ? stored : []);
     } catch (error) {
       console.warn('Se descartó un presupuesto local inválido.', error);
-      localStorage.removeItem(STORAGE_KEY);
+      try { localStorage.removeItem(STORAGE_KEY); } catch {}
       return model.mergeBudgets(baseBudgets, []);
     }
   }

@@ -5,8 +5,8 @@
   const STORAGE_KEY = 'freelanceflow_transactions_mock';
   const DEFAULT_PERIOD = '2026-06';
   const INCOME_CATEGORY_ID = 'income_invoice';
-  const CATEGORY_STORAGE_KEY = 'freelanceflow_expense_categories_v1';
   const model = window.FreelanceFlowTransactionModel;
+  const categoryModel = window.FreelanceFlowCategoryModel;
   const clientModel = window.FreelanceFlowClientModel;
 
   const currencyFormatter = new Intl.NumberFormat('es-EC', {
@@ -37,13 +37,14 @@
     },
     previousFocus: null,
     toastTimer: null,
-    formDirty: false
+    formDirty: false,
+    catalogWritable: false
   };
 
   document.addEventListener('DOMContentLoaded', initializeTransactions);
 
   async function initializeTransactions() {
-    if (!model || !clientModel) {
+    if (!model || !categoryModel || !clientModel) {
       showDataError('No pudimos preparar el módulo de movimientos. Inténtalo nuevamente.');
       return;
     }
@@ -68,7 +69,13 @@
 
   async function loadData() {
     const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL);
-    return { ...data, clientes: clientModel.getEffectiveClients(data.clientes ?? []) };
+    const catalog = categoryModel.readEffectiveCatalog(data.categorias_gasto ?? []);
+    state.catalogWritable = catalog.ok;
+    return {
+      ...data,
+      categorias_gasto: catalog.categories,
+      clientes: clientModel.getEffectiveClients(data.clientes ?? [])
+    };
   }
 
   function loadTransactions(data) {
@@ -81,7 +88,10 @@
         catch { try { localStorage.removeItem(STORAGE_KEY); } catch {} showDataError('Se descartó un historial local dañado. Puedes volver a guardar tus movimientos.'); }
       }
     } catch { showDataError('El almacenamiento del navegador no esta disponible. Tus cambios no se guardaran hasta que se restablezca.'); }
-    const result = model.sanitizeTransactions(source, { projects: data.proyectos ?? [] });
+    const result = model.sanitizeTransactions(source, {
+      projects: data.proyectos ?? [],
+      categories: data.categorias_gasto ?? []
+    });
     if (result.rejected.length) showDataError('Omitimos movimientos locales inválidos para proteger tus totales. Corrige o vuelve a registrar los datos.');
     return result.items.map(normalizeTransaction);
   }
@@ -137,7 +147,7 @@
   function populateCategoryFilter() {
     const options = [
       { id: INCOME_CATEGORY_ID, label: 'Ingreso por factura' },
-      ...getEffectiveCategories().map((category) => ({ id: category.id, label: category.nombre_categoria }))
+      ...(state.data.categorias_gasto ?? []).map((category) => ({ id: category.id, label: category.nombre_categoria }))
     ];
     populateSelect('transactions-category-filter', options, 'id', 'label');
   }
@@ -161,7 +171,8 @@
     const categories = [];
     if (!type || type === 'ingreso') categories.push({ id: INCOME_CATEGORY_ID, label: 'Ingreso por factura' });
     if (!type || type === 'gasto') {
-      categories.push(...getEffectiveCategories().map((category) => ({ id: category.id, label: category.nombre_categoria })));
+      categories.push(...categoryModel.getSelectableCategories(state.data.categorias_gasto, selectedValue)
+        .map((category) => ({ id: category.id, label: category.nombre_categoria })));
     }
 
     select.innerHTML = '<option value="">Selecciona una categoría</option>';
@@ -384,15 +395,19 @@
     clearFormErrors();
 
     const formData = readForm();
-    const validation = model.validateTransaction(formData, { projects: state.data.proyectos ?? [] });
+    const matches = state.transactions.filter((transaction) => transaction.id === formData.id);
+    if (matches.length > 1) { showFieldError('id', 'No se puede editar un movimiento con identificador ambiguo.'); return; }
+    const existing = matches[0];
+    const validation = model.validateTransaction(formData, {
+      projects: state.data.proyectos ?? [],
+      categories: state.data.categorias_gasto ?? [],
+      selectedCategoryId: existing?.categoria_gasto_id || ''
+    });
     if (!validation.valid) {
       showFieldError(validation.field, validation.message);
       return;
     }
 
-    const matches = state.transactions.filter((transaction) => transaction.id === formData.id);
-    if (matches.length > 1) { showFieldError('id', 'No se puede editar un movimiento con identificador ambiguo.'); return; }
-    const existing = matches[0];
     const transaction = buildTransaction(formData, existing);
     state.transactions = existing
       ? state.transactions.map((item) => item.id === existing.id ? transaction : item)
@@ -632,13 +647,12 @@
 
   function resolveCategory(categoryId) {
     if (categoryId === INCOME_CATEGORY_ID) return { label: 'Ingreso por factura', isExpense: false };
-    const category = getEffectiveCategories().find((item) => item.id === categoryId);
+    const category = (state.data.categorias_gasto ?? []).find((item) => item.id === categoryId);
     return { label: category?.nombre_categoria || 'Sin categoría', isExpense: true };
   }
 
   function getCategoryName(transaction) {
     if (transaction.tipo === 'ingreso') return 'Ingreso por factura';
-    if (transaction.categoria_mock_auxiliar) return transaction.categoria_mock_auxiliar;
     return resolveCategory(transaction.categoria_gasto_id).label;
   }
 
@@ -662,6 +676,11 @@
   }
 
   function saveTransactions() {
+    if (!state.catalogWritable) {
+      showFormMessage('No pudimos guardar el movimiento porque las categorías no están disponibles. Recarga la página e inténtalo nuevamente.');
+      document.getElementById('transaction-submit-button')?.focus();
+      return false;
+    }
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.transactions)); return true; }
     catch { showFormMessage('No pudimos guardar el movimiento. Revisa el espacio o permisos del navegador e inténtalo nuevamente.'); return false; }
   }
@@ -677,17 +696,6 @@
     alert.hidden = false;
     alert.className = 'transactions-alert transactions-alert-error';
     alert.textContent = message;
-  }
-
-  function getEffectiveCategories() {
-    try {
-      const stored = JSON.parse(localStorage.getItem(CATEGORY_STORAGE_KEY) || '[]');
-      const overlay = Array.isArray(stored) ? stored : (stored.items || []);
-      const deleted = new Set(Array.isArray(stored?.deletedIds) ? stored.deletedIds.map(String) : []);
-      const categories = new Map((state.data.categorias_gasto ?? []).map((item) => [String(item.id), item]));
-      overlay.forEach((item) => { if (item?.id && !deleted.has(String(item.id))) categories.set(String(item.id), item); });
-      return [...categories.values()].filter((item) => item.estado !== 'inactivo' && !deleted.has(String(item.id)));
-    } catch { return state.data.categorias_gasto ?? []; }
   }
 
   function showDataError(message) {

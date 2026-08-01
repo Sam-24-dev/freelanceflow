@@ -189,6 +189,34 @@ test('activity log records meaningful Categories search and actions for operatio
   assert.deepEqual(api.read().map((item) => item.action), ['Categoría creada', 'Búsqueda realizada']);
 });
 
+test('FF-CAT-008 records consecutive category CRUD events separately without producer details', () => {
+  let tick = 0;
+  const session = storage();
+  const api = activity.createActivityLog({
+    storage: session,
+    now: () => new Date(Date.UTC(2026, 5, 27, 10, 0, tick++)).toISOString(),
+    getContext: operational
+  });
+
+  ['Categoría creada', 'Categoría creada', 'Categoría actualizada', 'Categoría actualizada', 'Categoría eliminada', 'Categoría eliminada']
+    .forEach((action) => api.record({
+      module: 'Categorías',
+      action,
+      description: 'Comisiones cat_999 $500 PII',
+      deduplicate: false
+    }));
+
+  assert.deepEqual(api.read().map(({ action }) => action), [
+    'Categoría eliminada',
+    'Categoría eliminada',
+    'Categoría actualizada',
+    'Categoría actualizada',
+    'Categoría creada',
+    'Categoría creada'
+  ]);
+  assert.doesNotMatch(JSON.stringify(api.read()), /Comisiones|cat_999|\$500|PII/);
+});
+
 test('activity log records meaningful Services actions for operational profile only', () => {
   const api = activity.createActivityLog({ storage: storage(), getContext: operational });
   api.record({ module: 'Servicios', action: 'Servicio creado', description: 'Creó el servicio Consultoría UX/UI.' });
