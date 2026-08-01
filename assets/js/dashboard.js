@@ -128,7 +128,9 @@ function renderSelectedPeriod() {
 function composeDashboardData(data) {
   const models = { invoiceModel: globalThis.FreelanceFlowInvoiceModel, clientModel: globalThis.FreelanceFlowClientModel, projectModel: globalThis.FreelanceFlowProjectModel, reportModel: globalThis.FreelanceFlowReportModel, settingsModel: globalThis.FreelanceFlowSettingsModel };
   const overlays = Object.fromEntries(Object.entries(DASHBOARD_STORAGE_KEYS).map(([name, key]) => [name, readStored(key)]));
-  const categories = categoryModel.readEffectiveCatalog(data.categorias_gasto ?? []).categories;
+  const categories = typeof categoryModel.readEffectiveCatalog === 'function'
+    ? categoryModel.readEffectiveCatalog(data.categorias_gasto ?? []).categories
+    : data.categorias_gasto ?? [];
   const base = {
     ...data,
     categorias_gasto: categories,

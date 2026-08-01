@@ -16,6 +16,8 @@ const reportModel = require('../assets/js/report-model.js');
 const settingsModel = require('../assets/js/settings-model.js');
 const transactionModel = require('../assets/js/transaction-model.js');
 const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 
 const movements = [
   { id: 'old', fecha: '2026-06-01' },
@@ -92,6 +94,39 @@ test('composes owner overlays and safely falls back for blocked storage', () => 
   assert.equal(result.facturas[0].id, 'i1'); assert.equal(result.clientes[0].nombre_razon_social, 'Local'); assert.equal(result.presupuestos[0].id, 'b1'); assert.equal(result.settings.default_currency, 'USD');
   assert.deepEqual(composeDashboardData({ clientes: [{ id: 'base' }] }, { clients: null }, models).clientes.map((item) => item.id), ['base']);
   assert.equal(composeDashboardData({ presupuestos: { id: 'base-budget' } }, {}, models).presupuestos[0].id, 'base-budget');
+});
+
+test('dashboard controller falls back to raw categories when the category catalog reader is unavailable', async () => {
+  const listeners = {};
+  let composed;
+  const select = { options: [], value: '', disabled: false, addEventListener() {}, replaceChildren(...options) { this.options = options; } };
+  const context = {
+    console: { error() {}, warn() {} },
+    document: {
+      addEventListener(type, callback) { if (type === 'DOMContentLoaded') listeners.load = callback; },
+      getElementById(id) { return id === 'dashboard-period' ? select : null; },
+      querySelectorAll() { return []; }
+    },
+    Intl,
+    Date,
+    URL,
+    URLSearchParams,
+    Option: function Option(label, value) { this.text = label; this.value = value; },
+    localStorage: { getItem() { return null; } },
+    location: { href: 'http://test.local/pages/dashboard.html', search: '' },
+    history: { replaceState() {} },
+    addEventListener() {},
+    FreelanceFlowDataLoader: { loadJson: async () => ({ categorias_gasto: [{ id: 'cat_base', estado: 'activo' }], movimientos_financieros_mock_auxiliar: [], clientes: [], proyectos: [], facturas: [], pagos_factura: [], presupuestos: [] }) },
+    FreelanceFlowCategoryModel: {},
+    FreelanceFlowClientModel: { getEffectiveClients: (items) => items },
+    FreelanceFlowDashboardModel: { composeDashboardData(data) { composed = data; return data; }, getAvailablePeriods: () => ['2026-06'] }
+  };
+  Object.assign(context, { window: context, globalThis: context });
+
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../assets/js/dashboard.js'), 'utf8'), context);
+  await listeners.load();
+
+  assert.deepEqual(composed.categorias_gasto, [{ id: 'cat_base', estado: 'activo' }]);
 });
 
 test('dashboard markup keeps private accessible mobile states and scoped period links', () => {

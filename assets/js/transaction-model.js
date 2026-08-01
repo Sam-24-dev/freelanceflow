@@ -71,10 +71,11 @@
     return sanitizeTransactions(items, context).items
       .filter((item) => item.tipo === 'gasto')
       .map((item) => {
-        const category = context.categories.find((candidate) => String(candidate.id) === String(item.categoria_gasto_id));
+        const effectiveCategoryId = item.categoria_gasto_id || item.categoria_mock_auxiliar;
+        const category = context.categories.find((candidate) => String(candidate.id) === String(effectiveCategoryId));
         return {
           id: item.id,
-          categoria_gasto_id: item.categoria_gasto_id,
+          categoria_gasto_id: effectiveCategoryId,
           monto: Number(item.monto),
           fecha_gasto: item.fecha,
           cliente_id: item.cliente_id || (context.projects || []).find((project) => project.id === item.proyecto_id)?.cliente_id || '',

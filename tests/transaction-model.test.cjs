@@ -154,6 +154,15 @@ test('toExpenseRecords keeps valid project-linked expenses for downstream report
   assert.deepEqual(records, [{ id: 'project-expense', categoria_gasto_id: 'cat', monto: 18, fecha_gasto: '2026-06-03', cliente_id: 'c1', proyecto_relacionado_id: 'p1', es_deducible: true }]);
 });
 
+test('toExpenseRecords resolves legacy auxiliary category ids and deductible metadata', () => {
+  const { toExpenseRecords } = require('../assets/js/transaction-model.js');
+  const records = toExpenseRecords([
+    { id: 'legacy-expense', tipo: 'gasto', monto: 9, fecha: '2026-06-04', moneda: 'USD', categoria_mock_auxiliar: 'cat_legacy', cuenta_id: 'a' }
+  ], { categories: [{ id: 'cat_legacy', estado: 'activo', es_deducible_por_defecto: false }] });
+
+  assert.deepEqual(records, [{ id: 'legacy-expense', categoria_gasto_id: 'cat_legacy', monto: 9, fecha_gasto: '2026-06-04', cliente_id: '', proyecto_relacionado_id: '', es_deducible: false }]);
+});
+
 const canonicalMockData = require('../assets/data/mock-data.json');
 
 test('keeps canonical mov_003 without cliente_id and adapts its project client', () => {
