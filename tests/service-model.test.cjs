@@ -21,6 +21,7 @@ test('validates required unique names, approved units and positive finite rates'
   assert.equal(model.validateService({ nombre_servicio: 'Nuevo', unidad_medida: 'Mensual', tarifa_unitaria: 10 }, services).errors.unidad_medida, 'Seleccioná una unidad de medida.');
   assert.equal(model.validateService({ nombre_servicio: 'Nuevo', unidad_medida: 'Hora', tarifa_unitaria: 'Infinity' }, services).errors.tarifa_unitaria, 'Ingresá una tarifa mayor que cero.');
   assert.equal(model.validateService({ nombre_servicio: 'Nuevo', unidad_medida: 'Hora', tarifa_unitaria: '12.50', moneda: 'MXN' }, services).valid, true);
+  assert.deepEqual(model.validateService({ nombre_servicio: 'Nuevo', unidad_medida: 'Hora', tarifa_unitaria: 10, moneda: 'GBP' }, services), { valid: false, errors: { moneda: 'Seleccioná una moneda válida.' } });
 });
 
 test('filters by normalized name or description and unit', () => {
@@ -44,8 +45,61 @@ test('creates updates and removes records without mutating the catalogue', () =>
   assert.deepEqual(removed.map((service) => service.id), ['srv_001', 'srv_003']);
 });
 
-test('merges incomplete local overlays while retaining baseline records and deletions', () => {
-  const merged = model.mergeServices(services, { items: [{ id: 'srv_001', nombre_servicio: 'Consultoría editada', unidad_medida: 'Hora', tarifa_unitaria: 80 }], deletedIds: ['srv_002', null] });
+test('merges valid local overlays while retaining baseline records and deletions', () => {
+  const merged = model.mergeServices(services, { version: 1, items: [{ id: 'srv_001', nombre_servicio: 'Consultoría editada', descripcion: 'Auditoría editada', unidad_medida: 'Hora', tarifa_unitaria: 80, moneda: 'USD' }], deletedIds: ['srv_002'] });
   assert.deepEqual(merged.map((service) => service.id), ['srv_001', 'srv_003']);
   assert.equal(merged[0].moneda, 'USD');
+});
+
+test('accepts only the supported versioned storage catalog', () => {
+  const stored = { version: 1, items: [services[0]], deletedIds: ['srv_002'] };
+  assert.deepEqual(model.normalizeStoredCatalog(stored), stored);
+});
+
+test('rejects malformed, unsupported, whitespace and canonical-duplicate storage catalogs without an overlay', () => {
+  [
+    null,
+    { version: 999, items: [], deletedIds: [] },
+    { version: 1, items: null, deletedIds: [] },
+    { version: 1, items: [null], deletedIds: [] },
+    { version: 1, items: [services[0], { ...services[0] }], deletedIds: [] },
+    { version: 1, items: [{ ...services[0], id: ' srv_001 ' }], deletedIds: [] },
+    { version: 1, items: [], deletedIds: [' srv_002 '] },
+    { version: 1, items: [], deletedIds: ['srv_002', ' srv_002'] }
+  ].forEach((stored) => assert.equal(model.normalizeStoredCatalog(stored), null));
+  assert.deepEqual(model.mergeServices(services, { version: 1, items: [], deletedIds: [' srv_002 '] }).map((service) => service.id), services.map((service) => service.id));
+});
+
+test('does not leak a failed candidate into a later save', () => {
+  const confirmed = { version: 1, items: [services[0]], deletedIds: [] };
+  const candidate = { version: 1, items: [...confirmed.items, services[1]], deletedIds: [] };
+  let stored = '';
+  let attempts = 0;
+  const storage = { setItem(key, value) { if (!attempts++) throw new Error('QuotaExceededError'); stored = value; } };
+
+  assert.equal(model.saveStoredCatalog(storage, 'freelanceflow_services_v1', candidate), false);
+  assert.equal(model.saveStoredCatalog(storage, 'freelanceflow_services_v1', confirmed), true);
+  assert.deepEqual(JSON.parse(stored), confirmed);
+});
+
+test('rejects unsupported currencies from stored catalogs instead of normalizing them', () => {
+  const corrupt = { version: 1, items: [{ ...services[0], moneda: 'GBP' }], deletedIds: [] };
+  assert.equal(model.normalizeStoredCatalog(corrupt), null);
+  assert.deepEqual(model.mergeServices(services, corrupt).map((service) => service.id), services.map((service) => service.id));
+});
+
+test('exposes one accessible currency error target in the Services form', () => {
+  const html = require('node:fs').readFileSync(require('node:path').join(__dirname, '../pages/servicios.html'), 'utf8');
+  const targets = html.match(/<span\b[^>]*\bid="service-currency-error"[^>]*\bdata-field-error="moneda"[^>]*><\/span>/g) || [];
+
+  assert.equal(targets.length, 1);
+  assert.equal((html.match(/\bid="service-currency-error"/g) || []).length, 1);
+  assert.match(html, /<select id="service-currency" name="moneda" aria-describedby="service-currency-error">/);
+});
+
+test('keeps the service drawer within the available viewport without containment masking', () => {
+  const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '../assets/css/app.css'), 'utf8');
+  assert.match(css, /\.service-drawer\s*\{[^}]*width:min\(100%,420px\)/);
+  assert.doesNotMatch(css, /\.services-table-wrap\s*\{[^}]*contain:paint/);
+  assert.match(css, /\.services-table\s*\{[^}]*table-layout:fixed/);
 });
