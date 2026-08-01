@@ -43,6 +43,11 @@ const sampleTransactions = [
   }
 ];
 
+const expenseCategories = [
+  { id: 'cat', estado: 'activo', es_deducible_por_defecto: true },
+  { id: 'cat_inactive', estado: 'inactivo', es_deducible_por_defecto: false }
+];
+
 test('calculateSummary returns income, expenses, net flow and count', () => {
   assert.deepEqual(calculateSummary(sampleTransactions.slice(0, 2)), {
     income: 850,
@@ -92,7 +97,7 @@ test('validateTransaction accepts a complete transaction', () => {
     fecha: '2026-06-12',
     categoria: 'cat_002',
     cuenta_id: 'aux_cta_002'
-  }), { valid: true });
+  }, { categories: [{ id: 'cat_002', estado: 'activo' }] }), { valid: true });
 });
 
 test('isValidDate rejects calendar overflow dates', () => {
@@ -118,7 +123,7 @@ test('sanitizeTransactions excludes malformed, non-USD and duplicate persisted r
     { id: 'eur', tipo: 'ingreso', monto: 10, fecha: '2026-06-10', moneda: 'EUR', categoria_gasto_id: 'income_invoice', cuenta_id: 'account' },
     { id: 'dup', tipo: 'ingreso', monto: 10, fecha: '2026-06-10', moneda: 'USD', categoria_gasto_id: 'income_invoice', cuenta_id: 'account' },
     { id: 'dup', tipo: 'gasto', monto: 10, fecha: '2026-06-11', moneda: 'USD', categoria_gasto_id: 'cat', cuenta_id: 'account' }
-  ]);
+  ], { categories: expenseCategories });
   assert.deepEqual(result.items.map((item) => item.id), ['ok']);
   assert.equal(result.rejected.length, 4);
   assert.deepEqual(calculateSummary(result.items), { income: 0, expense: 10, net: -10, count: 1 });
@@ -137,16 +142,16 @@ test('toExpenseRecords adapts only valid expense movements without double counti
   const records = toExpenseRecords([
     { id: 'income', tipo: 'ingreso', monto: 20, fecha: '2026-06-01', moneda: 'USD', cuenta_id: 'a' },
     { id: 'expense', tipo: 'gasto', monto: 12.5, fecha: '2026-06-02', moneda: 'USD', categoria_gasto_id: 'cat', cuenta_id: 'a' }
-  ]);
-  assert.deepEqual(records, [{ id: 'expense', categoria_gasto_id: 'cat', monto: 12.5, fecha_gasto: '2026-06-02', cliente_id: '', proyecto_relacionado_id: '' }]);
+  ], { categories: expenseCategories });
+  assert.deepEqual(records, [{ id: 'expense', categoria_gasto_id: 'cat', monto: 12.5, fecha_gasto: '2026-06-02', cliente_id: '', proyecto_relacionado_id: '', es_deducible: true }]);
 });
 
 test('toExpenseRecords keeps valid project-linked expenses for downstream reports and categories', () => {
   const { toExpenseRecords } = require('../assets/js/transaction-model.js');
   const records = toExpenseRecords([
     { id: 'project-expense', tipo: 'gasto', monto: 18, fecha: '2026-06-03', moneda: 'USD', categoria_gasto_id: 'cat', cuenta_id: 'a', cliente_id: 'c1', proyecto_id: 'p1' }
-  ], { projects: [{ id: 'p1', cliente_id: 'c1' }] });
-  assert.deepEqual(records, [{ id: 'project-expense', categoria_gasto_id: 'cat', monto: 18, fecha_gasto: '2026-06-03', cliente_id: 'c1', proyecto_relacionado_id: 'p1' }]);
+  ], { projects: [{ id: 'p1', cliente_id: 'c1' }], categories: expenseCategories });
+  assert.deepEqual(records, [{ id: 'project-expense', categoria_gasto_id: 'cat', monto: 18, fecha_gasto: '2026-06-03', cliente_id: 'c1', proyecto_relacionado_id: 'p1', es_deducible: true }]);
 });
 
 const canonicalMockData = require('../assets/data/mock-data.json');
@@ -156,10 +161,11 @@ test('keeps canonical mov_003 without cliente_id and adapts its project client',
   const canonicalExpense = canonicalMockData.movimientos_financieros_mock_auxiliar.find(({ id }) => id === 'mov_003');
   const projects = canonicalMockData.proyectos;
 
-  assert.equal(sanitizeTransactions([canonicalExpense], { projects }).items[0].cliente_id, 'cli_001');
-  assert.deepEqual(toExpenseRecords([canonicalExpense], { projects }), [{
+  const categories = canonicalMockData.categorias_gasto;
+  assert.equal(sanitizeTransactions([canonicalExpense], { projects, categories }).items[0].cliente_id, 'cli_001');
+  assert.deepEqual(toExpenseRecords([canonicalExpense], { projects, categories }), [{
     id: 'mov_003', categoria_gasto_id: 'cat_001', monto: 54.99, fecha_gasto: '2026-06-08',
-    cliente_id: 'cli_001', proyecto_relacionado_id: 'proy_001'
+    cliente_id: 'cli_001', proyecto_relacionado_id: 'proy_001', es_deducible: true
   }]);
 });
 
@@ -168,6 +174,41 @@ test('rejects explicit mismatched and unknown project clients', () => {
   const canonicalExpense = canonicalMockData.movimientos_financieros_mock_auxiliar.find(({ id }) => id === 'mov_003');
   const projects = canonicalMockData.proyectos;
 
-  assert.equal(sanitizeTransactions([{ ...canonicalExpense, cliente_id: 'cli_999' }], { projects }).items.length, 0);
-  assert.equal(sanitizeTransactions([{ ...canonicalExpense, proyecto_id: 'proy_unknown' }], { projects }).items.length, 0);
+  const categories = canonicalMockData.categorias_gasto;
+  assert.equal(sanitizeTransactions([{ ...canonicalExpense, cliente_id: 'cli_999' }], { projects, categories }).items.length, 0);
+  assert.equal(sanitizeTransactions([{ ...canonicalExpense, proyecto_id: 'proy_unknown' }], { projects, categories }).items.length, 0);
+});
+
+test('FF-CAT-004 rejects unknown expense references while retaining active and inactive history', () => {
+  const base = { tipo: 'gasto', monto: 10, fecha: '2026-06-10', cuenta_id: 'account' };
+  assert.equal(validateTransaction({ ...base, categoria: 'unknown' }, { categories: expenseCategories }).field, 'categoria');
+  assert.deepEqual(validateTransaction({ ...base, categoria: 'cat' }, { categories: expenseCategories }), { valid: true });
+  assert.equal(validateTransaction({ ...base, categoria: 'cat_inactive' }, { categories: expenseCategories }).field, 'categoria');
+
+  const stored = require('../assets/js/transaction-model.js').sanitizeTransactions([
+    { id: 'active', ...base, moneda: 'USD', categoria_gasto_id: 'cat' },
+    { id: 'inactive', ...base, moneda: 'USD', categoria_gasto_id: 'cat_inactive' },
+    { id: 'unknown', ...base, moneda: 'USD', categoria_gasto_id: 'unknown' }
+  ], { categories: expenseCategories });
+  assert.deepEqual(stored.items.map(({ id }) => id), ['active', 'inactive']);
+  assert.deepEqual(stored.rejected.map(({ item }) => item.id), ['unknown']);
+});
+
+test('FF-CAT-005 permits the selected inactive category only while editing its historical movement', () => {
+  const transaction = { tipo: 'gasto', monto: 10, fecha: '2026-06-10', categoria: 'cat_inactive', cuenta_id: 'account' };
+  assert.equal(validateTransaction(transaction, { categories: expenseCategories }).valid, false);
+  assert.equal(validateTransaction(transaction, { categories: expenseCategories, selectedCategoryId: 'cat_inactive' }).valid, true);
+  assert.equal(validateTransaction({ ...transaction, categoria: 'unknown' }, { categories: expenseCategories, selectedCategoryId: 'unknown' }).valid, false);
+});
+
+test('FF-CAT-007 derives deductible metadata from the validated effective category', () => {
+  const records = require('../assets/js/transaction-model.js').toExpenseRecords(
+    canonicalMockData.movimientos_financieros_mock_auxiliar,
+    { projects: canonicalMockData.proyectos, categories: canonicalMockData.categorias_gasto }
+  );
+  assert.deepEqual(records.map(({ id, monto, categoria_gasto_id, es_deducible }) => ({ id, monto, categoria_gasto_id, es_deducible })), [
+    { id: 'mov_003', monto: 54.99, categoria_gasto_id: 'cat_001', es_deducible: true },
+    { id: 'mov_004', monto: 12.5, categoria_gasto_id: 'cat_002', es_deducible: true }
+  ]);
+  assert.equal(Number(records.reduce((sum, item) => sum + item.monto, 0).toFixed(2)), 67.49);
 });

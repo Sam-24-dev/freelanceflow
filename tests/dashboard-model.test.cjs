@@ -14,6 +14,7 @@ const clientModel = require('../assets/js/client-model.js');
 const projectModel = require('../assets/js/project-model.js');
 const reportModel = require('../assets/js/report-model.js');
 const settingsModel = require('../assets/js/settings-model.js');
+const transactionModel = require('../assets/js/transaction-model.js');
 const fs = require('node:fs');
 
 const movements = [
@@ -99,4 +100,22 @@ test('dashboard markup keeps private accessible mobile states and scoped period 
   assert.match(html, /name="robots" content="noindex, nofollow"/); assert.match(html, /<main id="main-content"[^>]*tabindex="-1"/); assert.match(html, /<a href="transacciones\.html" data-period-link="movements">Ver todos<\/a>/);
   assert.match(html, /id="cash-flow-status"[^>]*aria-live="polite"/); assert.match(html, /dashboard-due-link/);
   assert.match(css, /\.dashboard-due-link\s*\{[^}]*min-width: 44px/); assert.match(css, /\.dashboard-app \.app-sidebar-brand\s*\{[^}]*min-height: 44px/); assert.match(css, /\.dashboard-app \[aria-label="FreelanceFlow, ir a la página de inicio"\]\s*\{[^}]*min-height: 44px/); assert.match(css, /\.dashboard-app \.app-sidebar-toggle\s*\{[^}]*min-width: 44px[^}]*min-height: 44px/); assert.match(css, /\.dashboard-app \.app-sidebar-section-title\s*\{[^}]*#94a3b8/); assert.doesNotMatch(css, /mobile-home-transaction-item h3\s*\{[^}]*ellipsis/);
+});
+
+test('FF-CAT-004 dashboard excludes unknown expense categories without duplicating income', () => {
+  const categories = [{ id: 'cat_known', estado: 'activo' }];
+  const sanitized = transactionModel.sanitizeTransactions([
+    { id: 'income', tipo: 'ingreso', monto: 20, fecha: '2026-06-01', moneda: 'USD', cuenta_id: 'a' },
+    { id: 'known', tipo: 'gasto', monto: 5, fecha: '2026-06-02', moneda: 'USD', categoria_gasto_id: 'cat_known', cuenta_id: 'a' },
+    { id: 'unknown', tipo: 'gasto', monto: 99, fecha: '2026-06-03', moneda: 'USD', categoria_gasto_id: 'cat_unknown', cuenta_id: 'a' }
+  ], { categories }).items;
+  const snapshot = buildDashboardSnapshot({
+    facturas: [],
+    pagos_factura: [],
+    movimientos_financieros_mock_auxiliar: sanitized
+  }, { period: '2026-06', today: '2026-06-20', invoiceModel });
+
+  assert.equal(snapshot.registeredIncome, 20);
+  assert.equal(snapshot.registeredExpenses, 5);
+  assert.equal(snapshot.movements.length, 2);
 });

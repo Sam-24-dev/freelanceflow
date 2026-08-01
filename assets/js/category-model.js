@@ -1,7 +1,24 @@
 ﻿(function categoryModelFactory(globalScope) {
   'use strict';
 
+  const CATEGORY_STORAGE_KEY = 'freelanceflow_expense_categories_v1';
+  const CATALOG_VERSION = 2;
   const CATEGORY_STATUS_OPTIONS = ['activo', 'inactivo'];
+  const CATEGORY_FIELDS = new Set([
+    'id',
+    'nombre_categoria',
+    'descripcion',
+    'es_deducible_por_defecto',
+    'presupuesto_mensual',
+    'estado'
+  ]);
+  const CATEGORY_ID_PATTERN = /^cat_[A-Za-z0-9_-]+$/;
+
+  function isPlainObject(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  }
 
   function normalizeText(value) {
     return String(value ?? '')
@@ -18,22 +35,32 @@
   }
 
   function normalizeCategory(category = {}) {
-    const budget = parseBudget(category.presupuesto_mensual);
+    const source = isPlainObject(category) ? category : {};
+    const budget = parseBudget(source.presupuesto_mensual);
     return {
-      id: String(category.id ?? '').trim(),
-      nombre_categoria: String(category.nombre_categoria ?? '').trim(),
-      descripcion: String(category.descripcion ?? '').trim(),
-      es_deducible_por_defecto: category.es_deducible_por_defecto === true,
+      id: String(source.id ?? '').trim(),
+      nombre_categoria: String(source.nombre_categoria ?? '').trim(),
+      descripcion: String(source.descripcion ?? '').trim(),
+      es_deducible_por_defecto: source.es_deducible_por_defecto === true,
       presupuesto_mensual: Number.isNaN(budget) ? null : budget,
-      estado: CATEGORY_STATUS_OPTIONS.includes(category.estado) ? category.estado : 'activo'
+      estado: CATEGORY_STATUS_OPTIONS.includes(source.estado) ? source.estado : 'activo'
     };
   }
 
   function validateCategory(category = {}, existingCategories = []) {
-    const candidate = normalizeCategory(category);
     const errors = {};
+    if (!isPlainObject(category)) return { valid: false, errors: { category: 'La categoría debe ser un objeto válido.' } };
+    const candidate = normalizeCategory(category);
+    const unknownFields = Object.keys(category).filter((field) => !CATEGORY_FIELDS.has(field));
 
-    if (!candidate.nombre_categoria) {
+    if (unknownFields.length) errors.category = 'La categoría contiene propiedades no permitidas.';
+    if (typeof category.id !== 'string' || !CATEGORY_ID_PATTERN.test(candidate.id)) {
+      errors.id = 'La categoría debe tener un identificador válido.';
+    } else if (existingCategories.some((existing) => String(existing?.id ?? '').trim() === candidate.id)) {
+      errors.id = 'Ya existe una categoría con ese identificador.';
+    }
+
+    if (typeof category.nombre_categoria !== 'string' || !candidate.nombre_categoria) {
       errors.nombre_categoria = 'Escribe el nombre de la categoría.';
     }
 
@@ -45,15 +72,39 @@
       errors.nombre_categoria = 'Ya existe una categoría con ese nombre.';
     }
 
-    if (Number.isNaN(parseBudget(category.presupuesto_mensual))) {
+    if (category.presupuesto_mensual !== null
+      && (typeof category.presupuesto_mensual !== 'number'
+        || !Number.isFinite(category.presupuesto_mensual)
+        || category.presupuesto_mensual < 0)) {
       errors.presupuesto_mensual = 'Ingresa un presupuesto mensual mayor o igual a cero.';
     }
 
-    if (!CATEGORY_STATUS_OPTIONS.includes(candidate.estado)) {
+    if (!Object.hasOwn(category, 'presupuesto_mensual')) {
+      errors.presupuesto_mensual = 'Ingresa un presupuesto mensual mayor o igual a cero.';
+    }
+    if (typeof category.es_deducible_por_defecto !== 'boolean') {
+      errors.es_deducible_por_defecto = 'Selecciona si la categoría es deducible.';
+    }
+    if (!Object.hasOwn(category, 'estado') || !CATEGORY_STATUS_OPTIONS.includes(category.estado)) {
       errors.estado = 'Selecciona un estado válido.';
+    }
+    if (Object.hasOwn(category, 'descripcion') && typeof category.descripcion !== 'string') {
+      errors.descripcion = 'Ingresa una descripción válida.';
     }
 
     return { valid: Object.keys(errors).length === 0, errors };
+  }
+
+  function validateCatalog(categories) {
+    if (!Array.isArray(categories)) return { valid: false, errors: [{ category: 'El catálogo debe ser una lista.' }] };
+    const accepted = [];
+    const errors = [];
+    categories.forEach((category, index) => {
+      const result = validateCategory(category, accepted);
+      if (!result.valid) errors[index] = result.errors;
+      else accepted.push(normalizeCategory(category));
+    });
+    return { valid: errors.length === 0, errors, items: accepted };
   }
 
   function filterCategories(categories = [], filters = {}) {
@@ -130,25 +181,87 @@
     };
   }
 
-  function normalizeStoredCatalog(storedCategories = []) {
-    if (Array.isArray(storedCategories)) return { items: storedCategories, deletedIds: [] };
+  function validateStoredCatalog(storedCategories, baseCategories = []) {
+    if (!isPlainObject(storedCategories)
+      || storedCategories.version !== CATALOG_VERSION
+      || !Array.isArray(storedCategories.items)
+      || !Array.isArray(storedCategories.deletedIds)
+      || Object.keys(storedCategories).some((field) => !['version', 'items', 'deletedIds'].includes(field))) {
+      return { valid: false };
+    }
+
+    const baseline = validateCatalog(baseCategories);
+    const overlay = validateCatalog(storedCategories.items);
+    if (!baseline.valid || !overlay.valid) return { valid: false };
+
+    const baseIds = new Set(baseline.items.map(({ id }) => id));
+    const overlayIds = new Set(overlay.items.map(({ id }) => id));
+    const deletedIds = storedCategories.deletedIds;
+    if (deletedIds.some((id) => typeof id !== 'string' || !CATEGORY_ID_PATTERN.test(id) || !baseIds.has(id) || overlayIds.has(id))
+      || new Set(deletedIds).size !== deletedIds.length) {
+      return { valid: false };
+    }
+
+    const deleted = new Set(deletedIds);
+    const merged = new Map(baseline.items.filter(({ id }) => !deleted.has(id)).map((category) => [category.id, category]));
+    overlay.items.forEach((category) => merged.set(category.id, category));
+    const effective = validateCatalog([...merged.values()]);
+    if (!effective.valid) return { valid: false };
+
     return {
-      items: Array.isArray(storedCategories.items) ? storedCategories.items : [],
-      deletedIds: Array.isArray(storedCategories.deletedIds) ? storedCategories.deletedIds.map(String) : []
+      valid: true,
+      payload: { version: CATALOG_VERSION, items: overlay.items, deletedIds: [...deletedIds] },
+      categories: effective.items
     };
   }
 
+  function normalizeStoredCatalog(storedCategories = {}, baseCategories = []) {
+    const result = validateStoredCatalog(storedCategories, baseCategories);
+    return result.valid ? result.payload : { version: CATALOG_VERSION, items: [], deletedIds: [] };
+  }
+
   function mergeCategories(baseCategories = [], storedCategories = []) {
-    const stored = normalizeStoredCatalog(storedCategories);
-    const deletedIds = new Set(stored.deletedIds);
-    const merged = new Map(baseCategories
-      .map((category) => [String(category.id), normalizeCategory(category)])
-      .filter(([id]) => !deletedIds.has(id)));
-    stored.items.forEach((category) => {
-      const normalized = normalizeCategory(category);
-      if (normalized.id && !deletedIds.has(normalized.id)) merged.set(normalized.id, normalized);
-    });
-    return [...merged.values()];
+    const baseline = validateCatalog(baseCategories);
+    if (!baseline.valid) return [];
+    const stored = validateStoredCatalog(storedCategories, baseline.items);
+    return stored.valid ? stored.categories : baseline.items;
+  }
+
+  function readEffectiveCatalog(baseCategories = [], storage, key = CATEGORY_STORAGE_KEY) {
+    const baseline = validateCatalog(baseCategories);
+    if (!baseline.valid) return { ok: false, categories: [], deletedIds: [], error: new Error('Invalid baseline catalog') };
+    try {
+      const target = storage ?? globalScope.localStorage;
+      if (!target?.getItem) throw new Error('Category storage is unavailable');
+      const raw = target.getItem(key);
+      if (!raw) return { ok: true, categories: baseline.items, deletedIds: [] };
+      const stored = validateStoredCatalog(JSON.parse(raw), baseline.items);
+      return stored.valid
+        ? { ok: true, categories: stored.categories, deletedIds: stored.payload.deletedIds }
+        : { ok: false, categories: baseline.items, deletedIds: [], error: new Error('Invalid stored catalog') };
+    } catch (error) {
+      return { ok: false, categories: baseline.items, deletedIds: [], error };
+    }
+  }
+
+  function saveEffectiveCatalog(baseCategories = [], categories = [], deletedIds = [], storage, key = CATEGORY_STORAGE_KEY) {
+    try {
+      const target = storage ?? globalScope.localStorage;
+      target?.getItem(key);
+      if (!target?.setItem) throw new Error('Category storage is unavailable');
+      const stored = validateStoredCatalog({ version: CATALOG_VERSION, items: categories, deletedIds }, baseCategories);
+      if (!stored.valid) throw new Error('Invalid category catalog candidate');
+      target.setItem(key, JSON.stringify(stored.payload));
+      return { ok: true, payload: stored.payload };
+    } catch (error) {
+      return { ok: false, error };
+    }
+  }
+
+  function getSelectableCategories(categories = [], selectedValue = '') {
+    return categories
+      .map(normalizeCategory)
+      .filter((category) => category.estado === 'activo' || category.id === selectedValue);
   }
 
   function createCategoryRecord(category, metadata = {}) {
@@ -161,16 +274,22 @@
   }
 
   const api = {
+    CATALOG_VERSION,
+    CATEGORY_STORAGE_KEY,
     CATEGORY_STATUS_OPTIONS,
     applyCategoryUsage,
     calculateCategoryMetrics,
     createCategoryRecord,
     filterCategories,
+    getSelectableCategories,
     getCategoryRemovalAction,
     mergeCategories,
     normalizeCategory,
     normalizeStoredCatalog,
     normalizeText,
+    readEffectiveCatalog,
+    saveEffectiveCatalog,
+    validateCatalog,
     validateCategory
   };
 
