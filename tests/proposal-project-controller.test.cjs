@@ -337,3 +337,36 @@ test('keeps only the owning converted proposal selected when editing', async () 
   run.controller.openCreateForm(null);
   assert.doesNotMatch(run.formProposal.innerHTML, /value="prop_1"|value="prop_2"/);
 });
+
+test('keeps valid legacy proposals readable when migration persistence fails', () => {
+  const legacyBytes = JSON.stringify([{ ...valid }]);
+  const storage = {
+    getItem: () => legacyBytes,
+    setItem() { throw new DOMException('quota', 'QuotaExceededError'); }
+  };
+
+  const result = proposal.readProposalStorage(storage);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.proposals, [proposal.normalizeProposal(valid)]);
+  assert.equal(result.migrated, false);
+  assert.equal(storage.getItem(proposal.PROPOSAL_STORAGE_KEY), legacyBytes);
+});
+
+test('does not retarget project B to project A through a partially linked proposal', async () => {
+  const lock = async (_name, _options, callback) => callback({ name: 'lock' });
+  const run = createProjectController({ lockRequest: lock });
+  const projectA = projects.createProjectRecord({ ...run.form.values, propuesta_origen: 'prop_1', nombre_proyecto: 'Proyecto A' }, { id: 'proy_a' });
+  const projectB = projects.createProjectRecord({ ...run.form.values, propuesta_origen: '', nombre_proyecto: 'Proyecto B' }, { id: 'proy_b' });
+  run.controller.state.projects = [projectA, projectB];
+  run.form.values = { ...run.form.values, id: 'proy_b', propuesta_origen: 'prop_1', nombre_proyecto: 'Proyecto B editado' };
+
+  await run.controller.handleFormSubmit({ preventDefault() {} });
+
+  assert.deepEqual(run.controller.state.projects, [projectA, projectB]);
+  assert.deepEqual([...run.values], []);
+  assert.ok(!run.events.some((event) => event.startsWith('activity:')));
+  assert.equal(run.toast.hidden, true);
+  assert.match(run.formSummary.textContent, /^Revisa los campos/);
+  assert.equal(run.formSummary.hidden, false);
+  assert.ok(run.formDrawer.classList.contains('is-open'));
+});

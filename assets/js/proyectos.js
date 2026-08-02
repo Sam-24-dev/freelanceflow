@@ -729,7 +729,7 @@
         state.projects = model.mergeProjects(state.projects, readStoredProjects());
       }
       const durableProject = draft.propuesta_origen && state.projects.find((project) => project.propuesta_origen === draft.propuesta_origen);
-      if (durableProject && String(durableProject.id) !== draft.id) {
+      if (durableProject && !draft.id) {
         draft.id = durableProject.id;
       }
       const validation = model.validateProject(draft, state.clients, { proposals: state.proposals, projects: state.projects });
