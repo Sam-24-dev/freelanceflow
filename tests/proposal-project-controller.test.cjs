@@ -376,6 +376,25 @@ test('keeps valid legacy proposals readable when migration persistence fails', (
   assert.equal(storage.getItem(proposal.PROPOSAL_STORAGE_KEY), legacyBytes);
 });
 
+test('migrates empty legacy item IDs deterministically without losing proposals', () => {
+  const legacy = storageWith([
+    { ...valid, items: [{ ...valid.items[0], id: '' }, { ...valid.items[0], id: 'item_legacy_prop_1_1' }] },
+    { ...valid, id: 'prop_2', items: [{ ...valid.items[0], id: '' }] }
+  ]);
+
+  const result = proposal.readProposalStorage(legacy);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.migrated, true);
+  assert.equal(result.proposals.length, 2);
+  assert.equal(result.proposals[0].items[0].id, 'item_legacy_prop_1_1_2');
+  assert.equal(result.proposals[1].items[0].id, 'item_legacy_prop_2_1');
+  assert.deepEqual(JSON.parse(legacy.getItem(proposal.PROPOSAL_STORAGE_KEY)), {
+    version: proposal.PROPOSAL_STORAGE_VERSION,
+    proposals: result.proposals
+  });
+});
+
 test('does not retarget project B to project A through a partially linked proposal', async () => {
   const lock = async (_name, _options, callback) => callback({ name: 'lock' });
   const run = createProjectController({ lockRequest: lock });
