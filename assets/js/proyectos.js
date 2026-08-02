@@ -730,11 +730,7 @@
       }
       const durableProject = draft.propuesta_origen && state.projects.find((project) => project.propuesta_origen === draft.propuesta_origen);
       if (durableProject && String(durableProject.id) !== draft.id) {
-        if (!completeProposalConversion(durableProject)) return false;
-        state.selectedProjectId = durableProject.id;
-        updateSelectedProjectUrl(); renderAll(); state.formDirty = false; closeForm();
-        recordActivity('Propuestas', 'Propuesta convertida', `${draft.propuesta_origen}: ${durableProject.id}.`);
-        return true;
+        draft.id = durableProject.id;
       }
       const validation = model.validateProject(draft, state.clients, { proposals: state.proposals, projects: state.projects });
       if (!validation.valid) {

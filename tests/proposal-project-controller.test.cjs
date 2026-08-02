@@ -270,7 +270,7 @@ test('keeps every mutable boundary untouched and the drawer open when Web Locks 
   assert.equal(run.submitButton.textContent, 'Guardar proyecto');
 });
 
-test('retries a durable project after a proposal write failure without duplicate persistence or premature UI', async () => {
+test('updates the durable project before converting its proposal after a failed proposal write', async () => {
   const shared = new Map();
   const lock = async (_name, _options, callback) => callback({ name: 'lock' });
   const failed = createProjectController({ values: shared, failProposal: true, lockRequest: lock });
@@ -281,19 +281,25 @@ test('retries a durable project after a proposal write failure without duplicate
   assert.ok(!failed.events.some((event) => event.startsWith('activity:')));
 
   const retry = createProjectController({ values: shared, lockRequest: lock });
+  retry.form.values = { ...retry.form.values, nombre_proyecto: 'Proyecto corregido', descripcion: 'Cambios del usuario' };
   await retry.controller.handleFormSubmit({ preventDefault() {} });
   const project = JSON.parse(shared.get('freelanceflow_projects_v1'));
   const envelope = JSON.parse(shared.get(proposal.PROPOSAL_STORAGE_KEY));
   assert.equal(project.length, 1);
+  assert.equal(project[0].nombre_proyecto, 'Proyecto corregido');
+  assert.equal(project[0].descripcion, 'Cambios del usuario');
   assert.equal(envelope.version, proposal.PROPOSAL_STORAGE_VERSION);
+  assert.equal(envelope.proposals[0].estado, 'CONVERTED');
   assert.equal(envelope.proposals[0].proyecto_convertido_id, project[0].id);
+  const projectWrite = retry.events.indexOf('storage:freelanceflow_projects_v1');
   const proposalWrite = retry.events.indexOf(`storage:${proposal.PROPOSAL_STORAGE_KEY}`);
   const sessionRemove = retry.events.indexOf('session:remove');
   const render = retry.events.indexOf('ui:render');
   const close = retry.events.indexOf('drawer:close');
   const activity = retry.events.indexOf('activity:Propuesta convertida');
+  assert.equal(retry.events.filter((event) => event === 'storage:freelanceflow_projects_v1').length, 1);
   assert.equal(retry.events.filter((event) => event === 'session:remove').length, 1);
-  assert.ok(proposalWrite < sessionRemove && sessionRemove < render && render < close && close < activity, retry.events.join(', '));
+  assert.ok(projectWrite < proposalWrite && proposalWrite < sessionRemove && sessionRemove < render && render < close && close < activity, retry.events.join(', '));
 });
 
 
