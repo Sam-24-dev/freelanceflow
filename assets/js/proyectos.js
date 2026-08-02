@@ -168,7 +168,7 @@
         Array.isArray(data.proyectos) ? data.proyectos : [],
         readStoredProjects()
       );
-      reconcileProposalConversions();
+      if (navigator.locks?.request) await navigator.locks.request('freelanceflow-proposal-conversion', { mode: 'exclusive' }, reconcileProposalConversions);
 
       populateClientControls();
       populateProposalOptions();
@@ -198,12 +198,9 @@
   }
 
   function readStoredProposals() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem('freelanceflow_proposals_v1') || '[]');
-      return Array.isArray(parsed) ? parsed : [];
-    } catch { return []; }
+    const result = window.FreelanceFlowProposalModel?.readProposalStorage(localStorage);
+    return result?.ok ? result.proposals : [];
   }
-
   function openProposalConversionIfRequested() {
     const requested = new URLSearchParams(window.location.search).get('proposal');
     let draft = null;
@@ -219,25 +216,30 @@
   }
 
   function reconcileProposalConversions() {
-    if (!window.FreelanceFlowProposalModel) return;
+    if (!window.FreelanceFlowProposalModel) return false;
+    const proposals = window.FreelanceFlowProposalModel.mergeProposals(state.proposals, readStoredProposals());
+    const projects = model.mergeProjects(state.projects, readStoredProjects());
     let changed = false;
-    state.proposals = state.proposals.map((proposal) => {
-      const project = state.projects.find((item) => item.propuesta_origen === proposal.id);
+    const next = proposals.map((proposal) => {
+      const project = projects.find((item) => item.propuesta_origen === proposal.id);
       if (!project || proposal.estado !== 'ACCEPTED' || proposal.proyecto_convertido_id) return proposal;
       changed = true;
       return window.FreelanceFlowProposalModel.completeConversion(proposal, project.id);
     });
-    if (changed) localStorage.setItem('freelanceflow_proposals_v1', JSON.stringify(state.proposals));
-  }
-
-  function saveProjects() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.projects));
-    } catch {
-      showToast('Los cambios se aplicaron en esta sesión, pero no pudieron guardarse localmente.', 'warning');
+    if (changed) {
+      try { window.FreelanceFlowProposalModel.writeProposalStorage(localStorage, next); }
+      catch { return false; }
+      sessionStorage.removeItem('freelanceflow_proposal_conversion_v1');
     }
+    state.proposals = next;
+    state.projects = projects;
+    return true;
   }
 
+  function saveProjects(projects) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(projects)); return true; }
+    catch { showToast('No se pudo guardar localmente.', 'warning'); return false; }
+  }
   function showLoadingState() {
     elements.loading.hidden = false;
     elements.content.hidden = true;
@@ -556,8 +558,9 @@
     if (!project || project.estado === 'COMPLETED') return;
     const nextStatus = event.target.value;
     if (!model.PROJECT_STATES.includes(nextStatus)) return;
-    state.projects = state.projects.map((item) => item.id === project.id ? { ...item, estado: nextStatus } : item);
-    saveProjects();
+    const nextProjects = state.projects.map((item) => item.id === project.id ? { ...item, estado: nextStatus } : item);
+    if (!saveProjects(nextProjects)) return;
+    state.projects = nextProjects;
     renderAll();
     showToast('Estado del proyecto actualizado.', 'success');
   }
@@ -640,6 +643,7 @@
     elements.form.reset();
     clearFormErrors();
     populateProjectClientOptions(clientId, false);
+    populateProposalOptions();
     setFormValue('project-id', '');
     setFormValue('project-start-date', getTodayDate());
     elements.formTitle.textContent = 'Nuevo proyecto';
@@ -659,6 +663,7 @@
     elements.form.reset();
     clearFormErrors();
     populateProjectClientOptions(project.cliente_id, true);
+    populateProposalOptions(project.id);
     setFormValue('project-id', project.id);
     setFormValue('project-name', project.nombre_proyecto);
     setFormValue('project-client', project.cliente_id);
@@ -714,46 +719,61 @@
     document.getElementById('project-hourly-rate').required = hourly;
   }
 
-  function handleFormSubmit(event) {
+  async function handleFormSubmit(event) {
     event.preventDefault();
     const draft = readForm();
-    const validation = model.validateProject(draft, state.clients);
     clearFormErrors();
-
-    if (!validation.valid) {
-      Object.entries(validation.errors).forEach(([field, message]) => setFieldError(field, message));
-      elements.formSummary.textContent = 'Revisa los campos señalados antes de guardar.';
-      elements.formSummary.hidden = false;
-      elements.form.querySelector('[aria-invalid="true"]')?.focus();
-      return;
-    }
-
+    const save = () => {
+      if (draft.propuesta_origen) {
+        state.proposals = window.FreelanceFlowProposalModel.mergeProposals(state.proposals, readStoredProposals());
+        state.projects = model.mergeProjects(state.projects, readStoredProjects());
+      }
+      const durableProject = draft.propuesta_origen && state.projects.find((project) => project.propuesta_origen === draft.propuesta_origen);
+      if (durableProject && !draft.id) {
+        draft.id = durableProject.id;
+      }
+      const validation = model.validateProject(draft, state.clients, { proposals: state.proposals, projects: state.projects });
+      if (!validation.valid) {
+        Object.entries(validation.errors).forEach(([field, message]) => setFieldError(field, message));
+        elements.formSummary.textContent = 'Revisa los campos señalados antes de guardar.';
+        elements.formSummary.hidden = false;
+        elements.form.querySelector('[aria-invalid="true"]')?.focus();
+        return false;
+      }
+      const existing = draft.id ? findProject(draft.id) : null;
+      const savedProject = existing ? model.normalizeProject({ ...existing, ...draft, estado: existing.estado }) : model.createProjectRecord(draft, { id: generateProjectId() });
+      const nextProjects = existing ? state.projects.map((project) => project.id === draft.id ? savedProject : project) : [savedProject, ...state.projects];
+      if (!saveProjects(nextProjects)) return false;
+      state.projects = nextProjects;
+      if (!completeProposalConversion(savedProject)) return false;
+      state.selectedProjectId = savedProject.id;
+      updateSelectedProjectUrl(); renderAll(); state.formDirty = false; closeForm();
+      showToast(draft.id ? 'Proyecto actualizado correctamente.' : 'Proyecto creado correctamente.', 'success');
+      recordActivity('Proyectos', draft.id ? 'Proyecto actualizado' : 'Proyecto creado', `${savedProject.nombre_proyecto}.`);
+      if (draft.propuesta_origen) recordActivity('Propuestas', 'Propuesta convertida', `${draft.propuesta_origen}: ${savedProject.id}.`);
+      return true;
+    };
     elements.submitButton.disabled = true;
     elements.submitButton.textContent = draft.id ? 'Guardando…' : 'Creando…';
-    let savedProject;
-
-    if (draft.id) {
-      const existing = findProject(draft.id);
-      savedProject = model.normalizeProject({ ...existing, ...draft, estado: existing.estado });
-      state.projects = state.projects.map((project) => project.id === draft.id ? savedProject : project);
-    } else {
-      savedProject = model.createProjectRecord(draft, { id: generateProjectId() });
-      state.projects.unshift(savedProject);
+    try {
+      if (draft.propuesta_origen) {
+        if (!navigator.locks?.request) showToast('No se pudo adquirir exclusividad segura para convertir la propuesta.', 'warning');
+        else {
+          let acquired = false;
+          await navigator.locks.request('freelanceflow-proposal-conversion', { mode: 'exclusive', ifAvailable: true }, (lock) => {
+            if (!lock) return;
+            acquired = true;
+            return save();
+          });
+          if (!acquired) showToast('No se pudo adquirir exclusividad segura para convertir la propuesta.', 'warning');
+        }
+      } else save();
+    } catch { showToast('No se pudo adquirir exclusividad segura para convertir la propuesta.', 'warning'); }
+    finally {
+      elements.submitButton.disabled = false;
+      elements.submitButton.textContent = draft.id ? 'Guardar cambios' : 'Guardar proyecto';
     }
-
-    saveProjects();
-    completeProposalConversion(savedProject);
-    state.selectedProjectId = savedProject.id;
-    updateSelectedProjectUrl();
-    renderAll();
-    state.formDirty = false;
-    closeForm();
-    recordActivity('Proyectos', draft.id ? 'Proyecto actualizado' : 'Proyecto creado', `${savedProject.nombre_proyecto}.`);
-    showToast(draft.id ? 'Proyecto actualizado correctamente.' : 'Proyecto creado correctamente.', 'success');
-    elements.submitButton.disabled = false;
-    elements.submitButton.textContent = draft.id ? 'Guardar cambios' : 'Guardar proyecto';
   }
-
   function recordActivity(module, action, description) {
     window.FreelanceFlowActivity?.record({ module, action, description });
   }
@@ -778,7 +798,7 @@
   function validateFieldOnBlur(event) {
     const field = event.target.closest('input, select, textarea');
     if (!field?.name || ['id', 'propuesta_origen', 'descripcion'].includes(field.name)) return;
-    const validation = model.validateProject(readForm(), state.clients);
+    const validation = model.validateProject(readForm(), state.clients, { proposals: state.proposals, projects: state.projects });
     setFieldError(field.name, validation.errors[field.name] ?? '');
   }
 
@@ -822,27 +842,27 @@
       + options.map((client) => `<option value="${escapeAttribute(client.id)}"${String(client.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(client.nombre_razon_social)}${client.estado === 'inactivo' ? ' — Inactivo' : ''}</option>`).join('');
   }
 
-  function populateProposalOptions() {
-    const selectedId = elements.formProposal.value;
+  function populateProposalOptions(editingProjectId = '') {
     elements.formProposal.innerHTML = '<option value="">Sin propuesta vinculada</option>'
-      + state.proposals.filter((proposal) => (proposal.estado === 'ACCEPTED' && !proposal.proyecto_convertido_id) || proposal.id === selectedId).map((proposal) => `<option value="${escapeAttribute(proposal.id)}">${escapeHtml(proposal.titulo_propuesta || proposal.id)}</option>`).join('');
+      + state.proposals.filter((proposal) => (proposal.estado === 'ACCEPTED' && !proposal.proyecto_convertido_id)
+        || (proposal.estado === 'CONVERTED' && String(proposal.proyecto_convertido_id) === String(editingProjectId))).map((proposal) => `<option value="${escapeAttribute(proposal.id)}">${escapeHtml(proposal.titulo_propuesta || proposal.id)}</option>`).join('');
   }
 
   function completeProposalConversion(project) {
     const proposalId = String(project.propuesta_origen || '');
-    if (!proposalId || !window.FreelanceFlowProposalModel) return;
+    if (!proposalId || !window.FreelanceFlowProposalModel) return true;
     const proposal = state.proposals.find((item) => item.id === proposalId);
-    if (!proposal || proposal.estado !== 'ACCEPTED' || proposal.proyecto_convertido_id) return;
+    if (!proposal || (proposal.estado !== 'ACCEPTED' && (proposal.estado !== 'CONVERTED' || String(proposal.proyecto_convertido_id) !== String(project.id)))) return false;
+    if (proposal.estado === 'CONVERTED') return true;
     try {
       const converted = window.FreelanceFlowProposalModel.completeConversion(proposal, project.id);
-      state.proposals = state.proposals.map((item) => item.id === proposalId ? converted : item);
-      localStorage.setItem('freelanceflow_proposals_v1', JSON.stringify(state.proposals));
+      const next = state.proposals.map((item) => item.id === proposalId ? converted : item);
+      window.FreelanceFlowProposalModel.writeProposalStorage(localStorage, next);
+      state.proposals = next;
       sessionStorage.removeItem('freelanceflow_proposal_conversion_v1');
-      recordActivity('Propuestas', 'Propuesta convertida', `${proposalId}: ${project.id}.`);
-      showToast('Proyecto creado desde la propuesta.', 'success');
-    } catch { /* A second save cannot convert the proposal again. */ }
+      return true;
+    } catch { showToast('El proyecto fue guardado, pero la propuesta no pudo convertirse. Reintenta para conciliarla.', 'warning'); return false; }
   }
-
   function clearFilters() {
     state.filters = { query: '', status: 'todos', billingMode: 'todas', clientId: 'todos' };
     syncFilterControls();
@@ -1083,6 +1103,11 @@
   }
 
   function showToast(message, type = 'success') {
+    if (type === 'warning' && elements.formDrawer?.classList.contains('is-open')) {
+      elements.formSummary.textContent = message;
+      elements.formSummary.hidden = false;
+      return;
+    }
     window.clearTimeout(state.toastTimer);
     elements.toast.textContent = message;
     elements.toast.dataset.type = type;
@@ -1102,6 +1127,13 @@
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#039;');
   }
+
+  if (globalThis.__FREELANCEFLOW_TEST__) globalThis.FreelanceFlowProjectsControllerTest = {
+    state,
+    setElements(next) { elements = next; },
+    completeProposalConversion,
+    handleFormSubmit
+  };
 
   function escapeAttribute(value) {
     return escapeHtml(value).replaceAll('`', '&#096;');

@@ -3,11 +3,42 @@
 
   const PROPOSAL_STATES = ['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'CONVERTED'];
   const CURRENCIES = ['USD', 'EUR', 'MXN'];
+  const PROPOSAL_STORAGE_KEY = 'freelanceflow_proposals_v1';
+  const PROPOSAL_STORAGE_VERSION = 1;
+  const PROPOSAL_KEYS = new Set(['id', 'cliente_id', 'titulo_propuesta', 'fecha_emision', 'fecha_validez', 'moneda', 'notas_condiciones', 'items', 'subtotal_general', 'descuento', 'total_propuesta', 'estado', 'historial_estado', 'proyecto_convertido_id', 'fecha_creacion', 'fecha_actualizacion']);
 
   function text(value) { return String(value ?? '').trim(); }
   function normalizeText(value) { return text(value).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
   function round(value) { return Math.round((Number(value) + Number.EPSILON) * 100) / 100; }
   function number(value, fallback = 0) { const parsed = Number(value); return Number.isFinite(parsed) ? round(parsed) : fallback; }
+  function validRawNumber(value) { return !(typeof value === 'string' && !value.trim()) && Number.isFinite(Number(value)); }
+  function validRawMoney(value) { return validRawNumber(value) && Number(value) >= 0; }
+  function isPlainObject(value) { return Boolean(value) && typeof value === 'object' && !Array.isArray(value); }
+  function isIsoUtc(value) { return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) && new Date(value).toISOString() === value; }
+  function isStoredProposal(value) {
+    if (!isPlainObject(value) || Object.keys(value).length !== PROPOSAL_KEYS.size || ![...PROPOSAL_KEYS].every((key) => Object.hasOwn(value, key))) return false;
+    if (!['id', 'cliente_id', 'titulo_propuesta', 'fecha_emision', 'fecha_validez', 'moneda', 'notas_condiciones', 'estado', 'proyecto_convertido_id', 'fecha_creacion', 'fecha_actualizacion'].every((key) => typeof value[key] === 'string') || !text(value.id) || !text(value.cliente_id) || !text(value.titulo_propuesta) || !isValidDate(value.fecha_emision) || !isValidDate(value.fecha_validez) || value.fecha_validez <= value.fecha_emision || !CURRENCIES.includes(value.moneda) || !PROPOSAL_STATES.includes(value.estado) || !isIsoUtc(value.fecha_creacion) || !isIsoUtc(value.fecha_actualizacion) || !Array.isArray(value.items) || !value.items.length || !Array.isArray(value.historial_estado) || !value.historial_estado.length || !Number.isFinite(value.descuento) || value.descuento < 0) return false;
+    if ((value.estado === 'CONVERTED') !== Boolean(text(value.proyecto_convertido_id))) return false;
+    const totals = calculateTotals(value.items, value.descuento);
+    if (!Number.isFinite(value.subtotal_general) || value.subtotal_general < 0 || !Number.isFinite(value.total_propuesta) || value.total_propuesta < 0 || value.subtotal_general !== totals.subtotal_general || value.total_propuesta !== totals.total_propuesta || totals.total_propuesta <= 0) return false;
+    const ids = new Set();
+    return value.items.every((item) => isPlainObject(item) && ['id', 'servicio_referencia_id', 'descripcion_item', 'unidad_medida'].every((key) => typeof item[key] === 'string') && ['cantidad', 'precio_unitario', 'subtotal_item'].every((key) => Number.isFinite(item[key])) && ['id', 'servicio_referencia_id', 'descripcion_item', 'unidad_medida', 'cantidad', 'precio_unitario', 'subtotal_item'].every((key) => Object.hasOwn(item, key)) && Object.keys(item).length === 7 && text(item.id) && !ids.has(item.id) && ids.add(item.id) && text(item.descripcion_item) && text(item.unidad_medida) && item.cantidad > 0 && item.precio_unitario >= 0 && item.subtotal_item >= 0 && item.subtotal_item === calculateTotals([item]).subtotal_general) && value.historial_estado.every((entry) => isPlainObject(entry) && Object.keys(entry).length === 3 && typeof entry.estado === 'string' && typeof entry.detalle === 'string' && PROPOSAL_STATES.includes(entry.estado) && isIsoUtc(entry.fecha) && text(entry.detalle)) && value.historial_estado.at(-1).estado === value.estado;
+  }
+  function readProposalStorage(storage) { try {
+    const raw = storage.getItem(PROPOSAL_STORAGE_KEY); if (raw === null) return { ok: true, proposals: [] }; const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const repaired = parsed.map((proposal) => { const used = new Set((proposal.items || []).map((item) => text(item?.id)).filter(Boolean)); return { ...proposal, items: (proposal.items || []).map((item, index) => {
+        if (!isPlainObject(item) || typeof item.id !== 'string' || text(item.id)) return item;
+        const base = `item_legacy_${text(proposal.id)}_${index + 1}`; let id = base; let suffix = 2;
+        while (used.has(id)) id = `${base}_${suffix++}`; used.add(id); return { ...item, id };
+      }) }; });
+      const proposals = repaired.map(normalizeProposal); if (!proposals.every(isStoredProposal)) return { ok: false, proposals: [] };
+      try { writeProposalStorage(storage, proposals); return { ok: true, proposals, migrated: true }; } catch { return { ok: true, proposals, migrated: false }; }
+    }
+    if (!isPlainObject(parsed) || parsed.version !== PROPOSAL_STORAGE_VERSION || !Array.isArray(parsed.proposals) || Object.keys(parsed).some((key) => key !== 'version' && key !== 'proposals') || !parsed.proposals.every(isStoredProposal)) return { ok: false, proposals: [] };
+    return { ok: true, proposals: parsed.proposals.map(normalizeProposal) };
+  } catch { return { ok: false, proposals: [] }; } }
+  function writeProposalStorage(storage, proposals) { if (!Array.isArray(proposals) || !proposals.every(isStoredProposal)) throw new Error('No se pudo guardar propuestas válidas.'); try { storage.setItem(PROPOSAL_STORAGE_KEY, JSON.stringify({ version: PROPOSAL_STORAGE_VERSION, proposals })); return true; } catch { throw new Error('No se pudo guardar propuestas localmente.'); } }
   function isValidDate(value) {
     const date = text(value);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
@@ -41,6 +72,9 @@
   }
   function validateProposal(proposal = {}, clients = []) {
     const candidate = normalizeProposal(proposal); const errors = {};
+    if (!CURRENCIES.includes(text(proposal.moneda).toUpperCase())) errors.moneda = 'Selecciona una moneda válida.';
+    if (!validRawMoney(proposal.descuento)) errors.descuento = 'Ingresa un descuento válido.';
+    if (!Array.isArray(proposal.items) || proposal.items.some((item) => !isPlainObject(item) || !validRawNumber(item.cantidad) || !validRawMoney(item.precio_unitario))) errors.items = 'Ingresa valores monetarios válidos.';
     const client = clients.find((item) => text(item.id) === candidate.cliente_id);
     if (!candidate.cliente_id || !client || (!candidate.id && text(client.estado).toLowerCase() === 'inactivo')) errors.cliente_id = 'Selecciona un cliente activo.';
     if (!candidate.titulo_propuesta) errors.titulo_propuesta = 'Ingresa un título para la propuesta.';
@@ -67,7 +101,7 @@
   function mergeProposals(base = [], overlay = []) { const merged = new Map((base || []).map((item) => { const normalized = normalizeProposal(item); return [normalized.id, normalized]; })); (Array.isArray(overlay) ? overlay : []).forEach((item) => { const normalized = normalizeProposal(item); if (normalized.id) merged.set(normalized.id, normalized); }); return [...merged.values()]; }
   function createProjectPrefill(proposal) { const item = normalizeProposal(proposal); if (getEffectiveStatus(item) !== 'ACCEPTED' || item.proyecto_convertido_id) throw new Error('Esta acción no está disponible para el estado actual.'); return { propuesta_origen: item.id, cliente_id: item.cliente_id, nombre_proyecto: item.titulo_propuesta, descripcion: item.notas_condiciones, monto_fijo: item.total_propuesta }; }
   function completeConversion(proposal, projectId, now = new Date().toISOString()) { const item = normalizeProposal(proposal); if (item.estado !== 'ACCEPTED' || item.proyecto_convertido_id || !text(projectId)) throw new Error('Esta acción no está disponible para el estado actual.'); return { ...item, estado: 'CONVERTED', proyecto_convertido_id: text(projectId), fecha_actualizacion: now, historial_estado: [...item.historial_estado, { estado: 'CONVERTED', fecha: now, detalle: 'Proyecto creado desde la propuesta.' }] }; }
-  const api = { PROPOSAL_STATES, CURRENCIES, normalizeText, round, isValidDate, normalizeItem, calculateTotals, normalizeProposal, validateProposal, getEffectiveStatus, filterProposals, transitionProposal, createItemFromService, mergeProposals, createProjectPrefill, completeConversion };
+  const api = { PROPOSAL_STATES, CURRENCIES, PROPOSAL_STORAGE_KEY, PROPOSAL_STORAGE_VERSION, normalizeText, round, isValidDate, normalizeItem, calculateTotals, normalizeProposal, validateProposal, readProposalStorage, writeProposalStorage, getEffectiveStatus, filterProposals, transitionProposal, createItemFromService, mergeProposals, createProjectPrefill, completeConversion };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   globalScope.FreelanceFlowProposalModel = api;
 }(typeof globalThis !== 'undefined' ? globalThis : window));

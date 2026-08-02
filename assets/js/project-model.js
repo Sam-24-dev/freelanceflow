@@ -48,7 +48,7 @@
     };
   }
 
-  function validateProject(project = {}, clients = []) {
+  function validateProject(project = {}, clients = [], context = {}) {
     const candidate = normalizeProject(project);
     const errors = {};
 
@@ -77,6 +77,19 @@
       && project.presupuesto_horas_estimado !== undefined
       && candidate.presupuesto_horas_estimado <= 0) {
       errors.presupuesto_horas_estimado = 'Las horas estimadas deben ser mayores a cero.';
+    }
+
+    const proposals = Array.isArray(context.proposals) ? context.proposals : [];
+    const owningProposal = candidate.id && proposals.find((item) => item.estado === 'CONVERTED' && String(item.proyecto_convertido_id) === candidate.id);
+    if (owningProposal && String(owningProposal.id) !== candidate.propuesta_origen) errors.propuesta_origen = 'La propuesta convertida debe permanecer vinculada a su proyecto.';
+
+    if (candidate.propuesta_origen) {
+      const projects = Array.isArray(context.projects) ? context.projects : [];
+      const proposal = proposals.find((item) => String(item.id) === candidate.propuesta_origen);
+      const convertedProjectId = String(proposal?.proyecto_convertido_id || '');
+      if (!proposal || (proposal.estado !== 'ACCEPTED' && (proposal.estado !== 'CONVERTED' || convertedProjectId !== candidate.id)) || (proposal.estado === 'ACCEPTED' && convertedProjectId)) errors.propuesta_origen = 'La propuesta de origen no está disponible.';
+      else if (String(proposal.cliente_id) !== candidate.cliente_id) errors.propuesta_origen = 'La propuesta debe pertenecer al mismo cliente.';
+      else if (projects.some((item) => String(item.propuesta_origen) === candidate.propuesta_origen && String(item.id) !== candidate.id)) errors.propuesta_origen = 'La propuesta ya tiene un proyecto asociado.';
     }
 
     if (candidate.cliente_id) {
