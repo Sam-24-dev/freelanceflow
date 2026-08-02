@@ -42,7 +42,7 @@ test('keeps the proposal drawer open and records no activity when send persisten
     __FREELANCEFLOW_TEST__: true,
     console,
     URLSearchParams,
-    crypto: { randomUUID: () => 'id' },
+    crypto: {},
     requestAnimationFrame: (callback) => callback(),
     FormData: class { constructor(form) { this.values = form.values; } get(key) { return this.values[key] ?? ''; } },
     document: { addEventListener() {} },
@@ -59,7 +59,7 @@ test('keeps the proposal drawer open and records no activity when send persisten
   vm.runInNewContext(fs.readFileSync('assets/js/propuestas.js', 'utf8'), context);
   const controller = context.FreelanceFlowProposalsControllerTest;
   const input = (value) => ({ value });
-  const row = { dataset: { itemId: 'item_1' }, querySelector(selector) { return input({ '[data-field="service"]': '', '[data-field="description"]': 'Servicio', '[data-field="unit"]': 'Hora', '[data-field="quantity"]': '1', '[data-field="price"]': '100' }[selector]); } };
+  const row = { dataset: {}, querySelector(selector) { return input({ '[data-field="service"]': '', '[data-field="description"]': 'Servicio', '[data-field="unit"]': 'Hora', '[data-field="quantity"]': '1', '[data-field="price"]': '100' }[selector]); } };
   const form = { values: { id: 'prop_1', cliente_id: 'cli_1', titulo_propuesta: 'Proyecto', fecha_emision: '2026-07-01', fecha_validez: '2026-08-01', moneda: 'USD', notas_condiciones: '', descuento: '0' }, querySelectorAll: () => [], querySelector: () => null, elements: {} };
   const drawer = { hidden: false, setAttribute() {} };
   controller.setElements({ form, items: { querySelectorAll: () => [row] }, drawer, backdrop: { hidden: false }, toast: { classList: { add() {}, remove() {} }, dataset: {} }, summary: {} });
@@ -67,6 +67,10 @@ test('keeps the proposal drawer open and records no activity when send persisten
   controller.state.proposals = [proposal.normalizeProposal({ ...valid, estado: 'DRAFT' })];
   controller.state.editing = 'prop_1';
   controller.send();
+  const generatedItemId = row.dataset.itemId;
+  controller.send();
+  assert.ok(generatedItemId);
+  assert.equal(row.dataset.itemId, generatedItemId);
   assert.equal(controller.state.proposals[0].estado, 'DRAFT');
   assert.equal(drawer.hidden, false);
   assert.equal(activities.length, 0);

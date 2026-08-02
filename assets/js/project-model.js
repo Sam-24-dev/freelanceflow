@@ -84,7 +84,7 @@
       const projects = Array.isArray(context.projects) ? context.projects : [];
       const proposal = proposals.find((item) => String(item.id) === candidate.propuesta_origen);
       const convertedProjectId = String(proposal?.proyecto_convertido_id || '');
-      if (!proposal || (proposal.estado !== 'ACCEPTED' && (proposal.estado !== 'CONVERTED' || convertedProjectId !== candidate.id)) || (proposal.estado === 'ACCEPTED' && convertedProjectId)) errors.propuesta_origen = 'La propuesta de origen no est? disponible.';
+      if (!proposal || (proposal.estado !== 'ACCEPTED' && (proposal.estado !== 'CONVERTED' || convertedProjectId !== candidate.id)) || (proposal.estado === 'ACCEPTED' && convertedProjectId)) errors.propuesta_origen = 'La propuesta de origen no está disponible.';
       else if (String(proposal.cliente_id) !== candidate.cliente_id) errors.propuesta_origen = 'La propuesta debe pertenecer al mismo cliente.';
       else if (projects.some((item) => String(item.propuesta_origen) === candidate.propuesta_origen && String(item.id) !== candidate.id)) errors.propuesta_origen = 'La propuesta ya tiene un proyecto asociado.';
     }

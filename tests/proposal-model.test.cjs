@@ -114,7 +114,7 @@ test('rejects malformed canonical proposal storage at the boundary', () => {
 test('rejects whitespace-only mandatory canonical strings while preserving optional empties', () => {
   const stored = {
     id: 'prop_stored', cliente_id: 'cli_001', titulo_propuesta: 'Stored', fecha_emision: '2026-07-16', fecha_validez: '2026-08-16', moneda: 'USD', notas_condiciones: '',
-    items: [{ id: 'item_1', servicio_referencia_id: '', descripcion_item: 'Diseño', unidad_medida: 'Hora', cantidad: 1, precio_unitario: 75, subtotal_item: 75 }],
+    items: [{ id: 'item_1', servicio_referencia_id: '', descripcion_item: 'DiseÃ±o', unidad_medida: 'Hora', cantidad: 1, precio_unitario: 75, subtotal_item: 75 }],
     subtotal_general: 75, descuento: 0, total_propuesta: 75, estado: 'DRAFT', historial_estado: [{ estado: 'DRAFT', fecha: '2026-07-16T00:00:00.000Z', detalle: 'Creada.' }], proyecto_convertido_id: '', fecha_creacion: '2026-07-16T00:00:00.000Z', fecha_actualizacion: '2026-07-16T00:00:00.000Z'
   };
   const mutations = [

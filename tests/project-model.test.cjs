@@ -257,6 +257,7 @@ test('enforces authoritative proposal origin integrity for project creation', ()
     { ...base, cliente_id: 'cli_002' },
     { ...base, propuesta_origen: 'missing' }
   ]) assert.equal(model.validateProject(candidate, clients, { proposals: [accepted], projects: [] }).valid, false);
+  assert.equal(model.validateProject({ ...base, propuesta_origen: 'missing' }, clients, { proposals: [accepted], projects: [] }).errors.propuesta_origen, 'La propuesta de origen no está disponible.');
   assert.equal(model.validateProject(base, clients, { proposals: [{ ...accepted, estado: 'SENT' }], projects: [] }).valid, false);
   const converted = { ...accepted, estado: 'CONVERTED', proyecto_convertido_id: 'proy_old' };
   assert.equal(model.validateProject({ ...base, id: 'proy_old' }, clients, { proposals: [converted], projects: [{ id: 'proy_old', propuesta_origen: base.propuesta_origen }] }).valid, true);
