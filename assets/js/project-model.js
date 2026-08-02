@@ -79,8 +79,11 @@
       errors.presupuesto_horas_estimado = 'Las horas estimadas deben ser mayores a cero.';
     }
 
+    const proposals = Array.isArray(context.proposals) ? context.proposals : [];
+    const owningProposal = candidate.id && proposals.find((item) => item.estado === 'CONVERTED' && String(item.proyecto_convertido_id) === candidate.id);
+    if (owningProposal && String(owningProposal.id) !== candidate.propuesta_origen) errors.propuesta_origen = 'La propuesta convertida debe permanecer vinculada a su proyecto.';
+
     if (candidate.propuesta_origen) {
-      const proposals = Array.isArray(context.proposals) ? context.proposals : [];
       const projects = Array.isArray(context.projects) ? context.projects : [];
       const proposal = proposals.find((item) => String(item.id) === candidate.propuesta_origen);
       const convertedProjectId = String(proposal?.proyecto_convertido_id || '');

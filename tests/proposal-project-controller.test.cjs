@@ -316,6 +316,30 @@ test('edits a converted project without reconverting its proposal', async () => 
   assert.equal(edited.events.filter((event) => event === `storage:${proposal.PROPOSAL_STORAGE_KEY}`).length, 0);
 });
 
+test('rejects clearing the owning proposal from a converted project edit', async () => {
+  const shared = new Map();
+  const lock = async (_name, _options, callback) => callback({ name: 'lock' });
+  const run = createProjectController({ values: shared, lockRequest: lock });
+  await run.controller.handleFormSubmit({ preventDefault() {} });
+  const project = run.controller.state.projects[0];
+  const durableBefore = new Map(shared);
+  const stateBefore = JSON.stringify({ projects: run.controller.state.projects, proposals: run.controller.state.proposals });
+  const writesBefore = run.events.filter((event) => event.startsWith('storage:')).length;
+  const activitiesBefore = run.events.filter((event) => event.startsWith('activity:')).length;
+
+  run.controller.openEditForm(project.id, null);
+  run.formProposal.value = '';
+  await run.controller.handleFormSubmit({ preventDefault() {} });
+
+  assert.deepEqual([...shared], [...durableBefore]);
+  assert.equal(JSON.stringify({ projects: run.controller.state.projects, proposals: run.controller.state.proposals }), stateBefore);
+  assert.equal(run.events.filter((event) => event.startsWith('storage:')).length, writesBefore);
+  assert.equal(run.events.filter((event) => event.startsWith('activity:')).length, activitiesBefore);
+  assert.match(run.formSummary.textContent, /^Revisa los campos/);
+  assert.equal(run.formSummary.hidden, false);
+  assert.ok(run.formDrawer.classList.contains('is-open'));
+});
+
 
 test('keeps only the owning converted proposal selected when editing', async () => {
   const shared = new Map();
