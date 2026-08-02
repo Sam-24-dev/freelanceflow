@@ -34,7 +34,7 @@ test('uses calendar dates and derives expiration only after validity date', () =
 
 test('filters and searches proposals without accents or case sensitivity', () => {
   const records = [{ ...validDraft, id: 'prop_001', cliente_id: 'cli_001', titulo_propuesta: 'Diseño ágil', estado: 'SENT' }];
-  const result = proposal.filterProposals(records, [{ id: 'cli_001', nombre_razon_social: 'Ñandú Labs' }], { query: 'nandu diseno', status: 'SENT' });
+  const result = proposal.filterProposals(records, [{ id: 'cli_001', nombre_razon_social: 'Ñandú Labs' }], { query: 'diseno', status: 'SENT', today: '2026-07-20' });
   assert.equal(result.length, 1);
 });
 
@@ -43,7 +43,7 @@ test('only permits canonical state transitions and keeps inputs immutable', () =
   const accepted = proposal.transitionProposal(sent, 'ACCEPTED', { today: '2026-07-20', now: '2026-07-20T12:00:00.000Z' });
   assert.equal(accepted.estado, 'ACCEPTED');
   assert.equal(sent.estado, 'SENT');
-  assert.throws(() => proposal.transitionProposal(accepted, 'REJECTED', { today: '2026-07-20' }), /no está disponible/);
+  assert.throws(() => proposal.transitionProposal(accepted, 'REJECTED', { today: '2026-07-20' }), /no est\u00e1 disponible/);
 });
 
 test('creates service item snapshots and merges local overlay without mutation', () => {
@@ -64,5 +64,71 @@ test('builds one project prefill payload and prevents duplicate conversion', () 
   const converted = proposal.completeConversion(accepted, 'proy_009', '2026-07-20T12:00:00.000Z');
   assert.equal(converted.estado, 'CONVERTED');
   assert.equal(converted.proyecto_convertido_id, 'proy_009');
-  assert.throws(() => proposal.completeConversion(converted, 'proy_010'), /no está disponible/);
+  assert.throws(() => proposal.completeConversion(converted, 'proy_010'), /no est\u00e1 disponible/);
+});
+
+test('rejects raw invalid money before normalization and accepts only allowed raw currencies', () => {
+  for (const invalid of [
+    { ...validDraft, moneda: 'GBP' },
+    { ...validDraft, moneda: null },
+    { ...validDraft, descuento: 'NaN' },
+    { ...validDraft, items: [{ ...validDraft.items[0], cantidad: Infinity }] },
+    { ...validDraft, items: [{ ...validDraft.items[0], precio_unitario: 'bad' }] }
+  ]) {
+    assert.equal(proposal.validateProposal(invalid, clients).valid, false);
+  }
+  assert.equal(proposal.validateProposal(validDraft, clients).valid, true);
+});
+
+test('uses a strict versioned proposal storage envelope and migrates only valid legacy arrays', () => {
+  const storage = new Map();
+  const localStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
+  storage.set(proposal.PROPOSAL_STORAGE_KEY, JSON.stringify([{ id: 'prop_legacy', cliente_id: 'cli_001', titulo_propuesta: 'Legacy', fecha_emision: '2026-07-16', fecha_validez: '2026-08-16', moneda: 'USD', notas_condiciones: '', items: [{ id: 'item_legacy', servicio_referencia_id: '', descripcion_item: 'Diseño', unidad_medida: 'Hora', cantidad: 1, precio_unitario: 75, subtotal_item: 75 }], subtotal_general: 75, descuento: 0, total_propuesta: 75, estado: 'DRAFT', historial_estado: [{ estado: 'DRAFT', fecha: '2026-07-16T00:00:00.000Z', detalle: 'Creada.' }], proyecto_convertido_id: '', fecha_creacion: '2026-07-16T00:00:00.000Z', fecha_actualizacion: '2026-07-16T00:00:00.000Z' }]));
+  assert.equal(proposal.readProposalStorage(localStorage).ok, true);
+  assert.equal(JSON.parse(storage.get(proposal.PROPOSAL_STORAGE_KEY)).version, proposal.PROPOSAL_STORAGE_VERSION);
+  storage.set(proposal.PROPOSAL_STORAGE_KEY, JSON.stringify({ version: 99, proposals: [] }));
+  assert.equal(proposal.readProposalStorage(localStorage).ok, false);
+  storage.set(proposal.PROPOSAL_STORAGE_KEY, JSON.stringify({ version: 1, proposals: [{ ...validDraft, unknown: true }] }));
+  assert.equal(proposal.readProposalStorage(localStorage).ok, false);
+  assert.throws(() => proposal.writeProposalStorage({ setItem() { throw new DOMException('quota', 'QuotaExceededError'); } }, []), /No se pudo guardar/);
+});
+
+test('rejects malformed canonical proposal storage at the boundary', () => {
+  const stored = {
+    id: 'prop_stored', cliente_id: 'cli_001', titulo_propuesta: 'Stored', fecha_emision: '2026-07-16', fecha_validez: '2026-08-16', moneda: 'USD', notas_condiciones: '',
+    items: [{ id: 'item_1', servicio_referencia_id: '', descripcion_item: 'Diseño', unidad_medida: 'Hora', cantidad: 1, precio_unitario: 75, subtotal_item: 75 }],
+    subtotal_general: 75, descuento: 0, total_propuesta: 75, estado: 'DRAFT', historial_estado: [{ estado: 'DRAFT', fecha: '2026-07-16T00:00:00.000Z', detalle: 'Creada.' }], proyecto_convertido_id: '', fecha_creacion: '2026-07-16T00:00:00.000Z', fecha_actualizacion: '2026-07-16T00:00:00.000Z'
+  };
+  for (const invalid of [
+    { ...stored, fecha_creacion: '2026-07-16T00:00:00Z' },
+    { ...stored, historial_estado: [] },
+    { ...stored, items: [{ ...stored.items[0], id: '' }] },
+    { ...stored, estado: 'CONVERTED', proyecto_convertido_id: '' },
+    { ...stored, extra: true }
+  ]) {
+    const storage = new Map([[proposal.PROPOSAL_STORAGE_KEY, JSON.stringify({ version: 1, proposals: [invalid] })]]);
+    assert.equal(proposal.readProposalStorage({ getItem: (key) => storage.get(key) ?? null, setItem() {} }).ok, false);
+  }
+});
+
+test('rejects whitespace-only mandatory canonical strings while preserving optional empties', () => {
+  const stored = {
+    id: 'prop_stored', cliente_id: 'cli_001', titulo_propuesta: 'Stored', fecha_emision: '2026-07-16', fecha_validez: '2026-08-16', moneda: 'USD', notas_condiciones: '',
+    items: [{ id: 'item_1', servicio_referencia_id: '', descripcion_item: 'Dise�o', unidad_medida: 'Hora', cantidad: 1, precio_unitario: 75, subtotal_item: 75 }],
+    subtotal_general: 75, descuento: 0, total_propuesta: 75, estado: 'DRAFT', historial_estado: [{ estado: 'DRAFT', fecha: '2026-07-16T00:00:00.000Z', detalle: 'Creada.' }], proyecto_convertido_id: '', fecha_creacion: '2026-07-16T00:00:00.000Z', fecha_actualizacion: '2026-07-16T00:00:00.000Z'
+  };
+  const mutations = [
+    { id: '   ' }, { cliente_id: '   ' }, { titulo_propuesta: '   ' },
+    { items: [{ ...stored.items[0], id: '   ' }] },
+    { items: [{ ...stored.items[0], descripcion_item: '   ' }] },
+    { items: [{ ...stored.items[0], unidad_medida: '   ' }] },
+    { historial_estado: [{ ...stored.historial_estado[0], detalle: '   ' }] },
+    { estado: 'CONVERTED', proyecto_convertido_id: '   ', historial_estado: [{ estado: 'CONVERTED', fecha: '2026-07-16T00:00:00.000Z', detalle: 'Convertida.' }] }
+  ];
+  for (const mutation of mutations) {
+    const invalid = { ...stored, ...mutation };
+    const storage = new Map([[proposal.PROPOSAL_STORAGE_KEY, JSON.stringify({ version: 1, proposals: [invalid] })]]);
+    assert.equal(proposal.readProposalStorage({ getItem: (key) => storage.get(key) ?? null, setItem() {} }).ok, false);
+  }
+  assert.equal(Object.keys(proposal.normalizeProposal(stored)).length, 16);
 });

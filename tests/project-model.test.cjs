@@ -248,3 +248,18 @@ test('fusiona cambios locales por id y crea registros nuevos activos', () => {
   assert.equal(created.id, 'proy_new');
   assert.equal(created.estado, 'ACTIVE');
 });
+
+test('enforces authoritative proposal origin integrity for project creation', () => {
+  const accepted = { id: 'prop_accepted', cliente_id: 'cli_001', estado: 'ACCEPTED', proyecto_convertido_id: '' };
+  const base = { nombre_proyecto: 'Desde propuesta', cliente_id: 'cli_001', fecha_inicio: '2026-07-20', modalidad_cobro: 'Tarifa fija', monto_fijo: 100, propuesta_origen: 'prop_accepted' };
+  assert.equal(model.validateProject(base, clients, { proposals: [accepted], projects: [] }).valid, true);
+  for (const candidate of [
+    { ...base, cliente_id: 'cli_002' },
+    { ...base, propuesta_origen: 'missing' }
+  ]) assert.equal(model.validateProject(candidate, clients, { proposals: [accepted], projects: [] }).valid, false);
+  assert.equal(model.validateProject(base, clients, { proposals: [{ ...accepted, estado: 'SENT' }], projects: [] }).valid, false);
+  const converted = { ...accepted, estado: 'CONVERTED', proyecto_convertido_id: 'proy_old' };
+  assert.equal(model.validateProject({ ...base, id: 'proy_old' }, clients, { proposals: [converted], projects: [{ id: 'proy_old', propuesta_origen: base.propuesta_origen }] }).valid, true);
+  assert.equal(model.validateProject({ ...base, id: 'proy_other' }, clients, { proposals: [converted], projects: [] }).valid, false);
+  assert.equal(model.validateProject(base, clients, { proposals: [accepted], projects: [{ id: 'proy_old', propuesta_origen: 'prop_accepted' }] }).valid, false);
+});
