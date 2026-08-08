@@ -1,6 +1,7 @@
 (function projectModelFactory(globalScope) {
   const PROJECT_STATES = ['ACTIVE', 'ON_HOLD', 'COMPLETED'];
   const BILLING_MODES = ['Tarifa fija', 'Por horas', 'Por hitos'];
+  const PROJECT_STORAGE_KEY = 'freelanceflow_projects_v1';
 
   function normalizeText(value) {
     return String(value ?? '')
@@ -33,7 +34,7 @@
     const status = PROJECT_STATES.includes(project.estado) ? project.estado : 'ACTIVE';
 
     return {
-      id: String(project.id ?? ''),
+      id: String(project.id ?? '').trim(),
       nombre_proyecto: String(project.nombre_proyecto ?? '').trim(),
       cliente_id: String(project.cliente_id ?? project.cliente ?? '').trim(),
       propuesta_origen: String(project.propuesta_origen ?? '').trim(),
@@ -46,6 +47,11 @@
       monto_fijo: toNumber(project.monto_fijo),
       presupuesto_horas_estimado: toNumber(project.presupuesto_horas_estimado)
     };
+  }
+
+  function isStoredProject(project) {
+    const normalized = normalizeProject(project);
+    return Boolean(normalized.id && normalized.nombre_proyecto && normalized.cliente_id);
   }
 
   function validateProject(project = {}, clients = [], context = {}) {
@@ -264,6 +270,29 @@
     return [...merged.values()];
   }
 
+  function getEffectiveProjects(baseProjects = [], storage) {
+    const baseline = Array.isArray(baseProjects)
+      ? baseProjects
+        .filter((project) => project && typeof project === 'object' && !Array.isArray(project))
+        .map(normalizeProject)
+        .filter((project) => project.id)
+      : [];
+    try {
+      const raw = (storage ?? globalScope.localStorage)?.getItem(PROJECT_STORAGE_KEY);
+      if (!raw) return mergeProjects(baseline, []);
+      const stored = JSON.parse(raw);
+      if (!Array.isArray(stored)) return mergeProjects(baseline, []);
+      const baselineIds = new Set(baseline.map((project) => project.id));
+      const overlay = stored.filter((project) => {
+        const normalized = normalizeProject(project);
+        return normalized.id && (!baselineIds.has(normalized.id) || isStoredProject(project));
+      });
+      return mergeProjects(baseline, overlay);
+    } catch {
+      return mergeProjects(baseline, []);
+    }
+  }
+
   function createProjectRecord(project, metadata = {}) {
     return {
       ...normalizeProject({ ...project, estado: 'ACTIVE' }),
@@ -277,6 +306,7 @@
     calculateProjectMetrics,
     createProjectRecord,
     filterProjects,
+    getEffectiveProjects,
     groupProjectsByClient,
     isValidDate,
     mergeProjects,

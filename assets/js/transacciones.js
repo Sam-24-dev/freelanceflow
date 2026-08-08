@@ -8,6 +8,7 @@
   const model = window.FreelanceFlowTransactionModel;
   const categoryModel = window.FreelanceFlowCategoryModel;
   const clientModel = window.FreelanceFlowClientModel;
+  const projectModel = window.FreelanceFlowProjectModel;
 
   const currencyFormatter = new Intl.NumberFormat('es-EC', {
     style: 'currency',
@@ -69,12 +70,14 @@
 
   async function loadData() {
     const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL);
+    const { proyectos: baselineProjects = [] } = data;
     const catalog = categoryModel.readEffectiveCatalog(data.categorias_gasto ?? []);
     state.catalogWritable = catalog.ok;
     return {
       ...data,
       categorias_gasto: catalog.categories,
-      clientes: clientModel.getEffectiveClients(data.clientes ?? [])
+      clientes: clientModel.getEffectiveClients(data.clientes ?? []),
+      projects: projectModel ? projectModel.getEffectiveProjects(data.proyectos ?? []) : baselineProjects
     };
   }
 
@@ -89,7 +92,7 @@
       }
     } catch { showDataError('El almacenamiento del navegador no esta disponible. Tus cambios no se guardaran hasta que se restablezca.'); }
     const result = model.sanitizeTransactions(source, {
-      projects: data.proyectos ?? [],
+      projects: data.projects ?? [],
       categories: data.categorias_gasto ?? []
     });
     if (result.rejected.length) showDataError('Omitimos movimientos locales inválidos para proteger tus totales. Corrige o vuelve a registrar los datos.');
@@ -214,7 +217,7 @@
     const select = document.getElementById('transaction-project');
     if (!select) return;
 
-    const projects = model.getProjectsForClient(state.data.proyectos ?? [], clientId);
+    const projects = model.getProjectsForClient(state.data.projects ?? [], clientId);
     select.innerHTML = clientId
       ? '<option value="">Sin proyecto</option>'
       : '<option value="">Selecciona primero un cliente</option>';
@@ -399,7 +402,7 @@
     if (matches.length > 1) { showFieldError('id', 'No se puede editar un movimiento con identificador ambiguo.'); return; }
     const existing = matches[0];
     const validation = model.validateTransaction(formData, {
-      projects: state.data.proyectos ?? [],
+      projects: state.data.projects ?? [],
       categories: state.data.categorias_gasto ?? [],
       selectedCategoryId: existing?.categoria_gasto_id || ''
     });
@@ -472,7 +475,7 @@
     if (matches.length !== 1) { showDataError('No se puede editar un movimiento con identificador ambiguo.'); return; }
     const transaction = matches[0];
 
-    const project = (state.data.proyectos ?? []).find((item) => item.id === transaction.proyecto_id);
+    const project = (state.data.projects ?? []).find((item) => item.id === transaction.proyecto_id);
     const clientId = transaction.cliente_id || project?.cliente_id || '';
     const categoryId = transaction.tipo === 'ingreso' ? INCOME_CATEGORY_ID : transaction.categoria_gasto_id;
 
@@ -663,7 +666,7 @@
 
   function getProjectName(projectId) {
     if (!projectId) return 'Sin proyecto';
-    return (state.data.proyectos ?? []).find((project) => project.id === projectId)?.nombre_proyecto || 'Proyecto no disponible';
+    return (state.data.projects ?? []).find((project) => project.id === projectId)?.nombre_proyecto || 'Proyecto no disponible';
   }
 
   function getAccountName(accountId) {
