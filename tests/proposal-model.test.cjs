@@ -149,3 +149,48 @@ test('rejects whitespace-only mandatory canonical strings while preserving optio
   }
   assert.equal(Object.keys(proposal.normalizeProposal(stored)).length, 16);
 });
+
+
+test('fails closed for each malformed legacy derived monetary field without rewriting storage', async (t) => {
+  const legacy = {
+    id: 'prop_legacy_money', cliente_id: 'cli_001', titulo_propuesta: 'Legacy money', fecha_emision: '2026-07-16', fecha_validez: '2026-08-16', moneda: 'USD', notas_condiciones: '',
+    items: [{ id: 'item_legacy_money', servicio_referencia_id: '', descripcion_item: 'Design', unidad_medida: 'Hora', cantidad: 1, precio_unitario: 75, subtotal_item: 75 }],
+    subtotal_general: 75, descuento: 0, total_propuesta: 75, estado: 'DRAFT', historial_estado: [{ estado: 'DRAFT', fecha: '2026-07-16T00:00:00.000Z', detalle: 'Creada.' }], proyecto_convertido_id: '', fecha_creacion: '2026-07-16T00:00:00.000Z', fecha_actualizacion: '2026-07-16T00:00:00.000Z'
+  };
+  const cases = [
+    ['subtotal_item', { items: [{ ...legacy.items[0], subtotal_item: 'bad' }] }],
+    ['subtotal_general', { subtotal_general: 'bad' }],
+    ['total_propuesta', { total_propuesta: 'bad' }]
+  ];
+
+  for (const [field, mutation] of cases) await t.test(field, () => {
+    const bytes = JSON.stringify([{ ...legacy, ...mutation }]);
+    const storage = new Map([[proposal.PROPOSAL_STORAGE_KEY, bytes]]);
+    let writes = 0;
+    const result = proposal.readProposalStorage({
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => { writes += 1; storage.set(key, value); }
+    });
+
+    assert.deepEqual(result, { ok: false, proposals: [] });
+    assert.equal(writes, 0);
+    assert.equal(storage.get(proposal.PROPOSAL_STORAGE_KEY), bytes);
+  });
+});
+
+test('migrates valid legacy monetary totals', () => {
+  const legacy = [{
+    id: 'prop_legacy_valid', cliente_id: 'cli_001', titulo_propuesta: 'Legacy valid', fecha_emision: '2026-07-16', fecha_validez: '2026-08-16', moneda: 'USD', notas_condiciones: '',
+    items: [{ id: 'item_legacy_valid', servicio_referencia_id: '', descripcion_item: 'Design', unidad_medida: 'Hora', cantidad: 1, precio_unitario: 75, subtotal_item: 75 }],
+    subtotal_general: 75, descuento: 0, total_propuesta: 75, estado: 'DRAFT', historial_estado: [{ estado: 'DRAFT', fecha: '2026-07-16T00:00:00.000Z', detalle: 'Creada.' }], proyecto_convertido_id: '', fecha_creacion: '2026-07-16T00:00:00.000Z', fecha_actualizacion: '2026-07-16T00:00:00.000Z'
+  }];
+  const storage = new Map([[proposal.PROPOSAL_STORAGE_KEY, JSON.stringify(legacy)]]);
+  const result = proposal.readProposalStorage({
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value)
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.migrated, true);
+  assert.equal(JSON.parse(storage.get(proposal.PROPOSAL_STORAGE_KEY)).version, proposal.PROPOSAL_STORAGE_VERSION);
+});
