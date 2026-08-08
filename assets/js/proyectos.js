@@ -131,6 +131,7 @@
     elements.detailBackdrop.addEventListener('click', closeDetail);
     elements.detailBody.addEventListener('click', handleDetailClick);
     elements.detailBody.addEventListener('change', handleDetailChange);
+    elements.detailBody.addEventListener('keydown', handleDetailKeydown);
 
     elements.formClose.addEventListener('click', () => closeForm({ confirmDirty: true }));
     elements.formCancel.addEventListener('click', () => closeForm({ confirmDirty: true }));
@@ -558,11 +559,27 @@
     if (!project || project.estado === 'COMPLETED') return;
     const nextStatus = event.target.value;
     if (!model.PROJECT_STATES.includes(nextStatus)) return;
+    if (project.estado === nextStatus) return;
     const nextProjects = state.projects.map((item) => item.id === project.id ? { ...item, estado: nextStatus } : item);
     if (!saveProjects(nextProjects)) return;
     state.projects = nextProjects;
     renderAll();
     showToast('Estado del proyecto actualizado.', 'success');
+    recordActivity('Proyectos', 'Estado de proyecto actualizado', 'Estado actualizado.', { deduplicate: false });
+  }
+
+  function handleDetailKeydown(event) {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+    const tab = event.target.closest('[data-project-tab]');
+    if (!tab) return;
+    const tabs = [...elements.detailBody.querySelectorAll('[data-project-tab]')];
+    const index = tabs.indexOf(tab);
+    if (index < 0) return;
+    event.preventDefault();
+    const next = tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+    state.detailTab = next.dataset.projectTab;
+    renderDetail();
+    document.getElementById(`project-tab-${state.detailTab}`)?.focus();
   }
 
   function toggleClient(clientId) {
@@ -728,6 +745,14 @@
         state.proposals = window.FreelanceFlowProposalModel.mergeProposals(state.proposals, readStoredProposals());
         state.projects = model.mergeProjects(state.projects, readStoredProjects());
       }
+      const pendingConversion = !draft.id && draft.propuesta_origen && state.projects.find((project) => {
+        const proposal = state.proposals.find((item) => item.id === project.propuesta_origen);
+        return proposal?.estado === 'ACCEPTED' && !proposal.proyecto_convertido_id;
+      });
+      if (pendingConversion) {
+        draft.id = pendingConversion.id;
+        draft.propuesta_origen = pendingConversion.propuesta_origen;
+      }
       const durableProject = draft.propuesta_origen && state.projects.find((project) => project.propuesta_origen === draft.propuesta_origen);
       if (durableProject && !draft.id) {
         draft.id = durableProject.id;
@@ -774,8 +799,8 @@
       elements.submitButton.textContent = draft.id ? 'Guardar cambios' : 'Guardar proyecto';
     }
   }
-  function recordActivity(module, action, description) {
-    window.FreelanceFlowActivity?.record({ module, action, description });
+  function recordActivity(module, action, description, options = {}) {
+    window.FreelanceFlowActivity?.record({ module, action, description, ...options });
   }
 
   function readForm() {
@@ -1132,7 +1157,10 @@
     state,
     setElements(next) { elements = next; },
     completeProposalConversion,
-    handleFormSubmit
+    handleFormSubmit,
+    handleDetailChange,
+    handleDetailClick,
+    handleDetailKeydown
   };
 
   function escapeAttribute(value) {

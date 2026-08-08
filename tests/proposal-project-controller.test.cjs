@@ -167,8 +167,9 @@ function createProjectController({ values = new Map(), lockRequest, failProject 
   context.FreelanceFlowProjectModel = projects;
   context.FreelanceFlowProposalModel = proposal;
   context.FreelanceFlowClientModel = { getEffectiveClients: (items) => items, getSelectableClients: (items) => items };
-  context.FreelanceFlowActivity = { record(event) { events.push(`activity:${event.action}`); } };
-  vm.runInNewContext(fs.readFileSync('assets/js/proyectos.js', 'utf8').replace('}());', 'if (globalThis.__FREELANCEFLOW_TEST__) Object.assign(globalThis.FreelanceFlowProjectsControllerTest, { openEditForm, openCreateForm }); }());'), context);
+  const activityEvents = [];
+  context.FreelanceFlowActivity = { record(event) { activityEvents.push(event); events.push(`activity:${event.action}`); } };
+  vm.runInNewContext(fs.readFileSync('assets/js/proyectos.js', 'utf8').replace('}());', 'if (globalThis.__FREELANCEFLOW_TEST__) Object.assign(globalThis.FreelanceFlowProjectsControllerTest, { openEditForm, openCreateForm, handleDetailChange, handleDetailClick }); }());'), context);
   const controller = context.FreelanceFlowProjectsControllerTest;
   const toast = element();
   toast.hidden = true;
@@ -179,7 +180,7 @@ function createProjectController({ values = new Map(), lockRequest, failProject 
   controller.setElements({ form, formSummary, submitButton, content: element(), toast, formDrawer, formBackdrop: element(), layout: element(), formTitle: element(), formDescription: element(), formClient, formProposal, billingMode, fixedFields: element(), hourlyFields: element(), milestoneNote: element(), totalCount: element(), activeCount: element(), receivableTotal: element(), profitTotal: element(), groups: element('groups'), emptyState: element(), noResults: element(), clearFilters: element(), resultsCount: element(), detailPanel: element(), detailBackdrop: element(), detailClose: element(), detailTitle: element(), detailClient: element(), detailBody: element(), statusTabs: [], search: element(), billingFilter: element(), clientFilter: element() });
   controller.state.clients = [{ id: 'cli_1', estado: 'activo', nombre_razon_social: 'Cliente' }];
   controller.state.proposals = [proposal.normalizeProposal(valid)];
-  return { controller, events, toast, form, formSummary, submitButton, formDrawer, formProposal, values };
+  return { controller, context, events, activityEvents, toast, form, formSummary, submitButton, formDrawer, formProposal, values };
 }
 
 test('keeps persistence warning distinct from lock acquisition when the real submit callback returns false', async () => {
@@ -412,4 +413,135 @@ test('does not retarget project B to project A through a partially linked propos
   assert.match(run.formSummary.textContent, /^Revisa los campos/);
   assert.equal(run.formSummary.hidden, false);
   assert.ok(run.formDrawer.classList.contains('is-open'));
+});
+
+test('retries the durable original proposal instead of a retargeted selector', async () => {
+  const shared = new Map();
+  const lock = async (_name, _options, callback) => callback({ name: 'lock' });
+  const first = createProjectController({ values: shared, failProposal: true, lockRequest: lock });
+  await first.controller.handleFormSubmit({ preventDefault() {} });
+  const projectA = JSON.parse(shared.get('freelanceflow_projects_v1'))[0];
+  const proposalA = proposal.normalizeProposal(valid);
+  const proposalB = proposal.normalizeProposal({ ...valid, id: 'prop_2', titulo_propuesta: 'Proyecto B' });
+
+  const retry = createProjectController({ values: shared, lockRequest: lock });
+  retry.controller.state.proposals = [proposalA, proposalB];
+  retry.controller.openCreateForm(null);
+  retry.form.values = { ...retry.form.values, cliente_id: 'cli_1', modalidad_cobro: 'Tarifa fija', monto_fijo: '100' };
+  retry.formProposal.value = 'prop_2';
+  assert.equal(retry.formProposal.value, 'prop_2');
+  await retry.controller.handleFormSubmit({ preventDefault() {} });
+
+  const storedProjects = JSON.parse(shared.get('freelanceflow_projects_v1'));
+  const envelope = JSON.parse(shared.get(proposal.PROPOSAL_STORAGE_KEY));
+  assert.equal(storedProjects.length, 1);
+  assert.equal(storedProjects[0].id, projectA.id);
+  assert.equal(envelope.proposals.find((item) => item.id === 'prop_1').estado, 'CONVERTED');
+  assert.equal(envelope.proposals.find((item) => item.id === 'prop_1').proyecto_convertido_id, projectA.id);
+  assert.equal(envelope.proposals.find((item) => item.id === 'prop_2').estado, 'ACCEPTED');
+  assert.ok(retry.events.includes('activity:Propuesta convertida'));
+});
+
+test('creates a manual project without overwriting a pending proposal conversion', async () => {
+  const run = createProjectController({ lockRequest: async (_name, _options, callback) => callback({ name: 'lock' }) });
+  const pending = projects.createProjectRecord({ ...run.form.values, propuesta_origen: 'prop_1' }, { id: 'proy_pending' });
+  run.controller.state.projects = [pending];
+  run.controller.state.proposals = [proposal.normalizeProposal(valid)];
+  run.controller.openCreateForm(null);
+  run.form.values = { ...run.form.values, id: '', nombre_proyecto: 'Proyecto manual', cliente_id: 'cli_1', propuesta_origen: '', fecha_inicio: '2026-07-01', modalidad_cobro: 'Tarifa fija', monto_fijo: '100' };
+
+  await run.controller.handleFormSubmit({ preventDefault() {} });
+
+  const stored = JSON.parse(run.values.get('freelanceflow_projects_v1'));
+  assert.equal(stored.length, 2);
+  assert.equal(stored.find((project) => project.id === 'proy_pending').nombre_proyecto, 'Proyecto causal');
+  assert.equal(stored.find((project) => project.nombre_proyecto === 'Proyecto manual').propuesta_origen, '');
+  assert.equal(run.controller.state.proposals[0].proyecto_convertido_id, '');
+});
+
+test('records one redacted project-status event only after durable persistence', () => {
+  const run = createProjectController();
+  const project = projects.createProjectRecord({ ...run.form.values, propuesta_origen: '' }, { id: 'proy_status' });
+  run.controller.state.projects = [project];
+  run.controller.state.selectedProjectId = project.id;
+
+  run.controller.handleDetailChange({ target: { id: 'project-detail-status', value: 'ON_HOLD' } });
+
+  assert.equal(run.controller.state.projects[0].estado, 'ON_HOLD');
+  assert.equal(JSON.parse(run.values.get('freelanceflow_projects_v1'))[0].estado, 'ON_HOLD');
+  assert.deepEqual(JSON.parse(JSON.stringify(run.activityEvents)), [{
+    module: 'Proyectos',
+    action: 'Estado de proyecto actualizado',
+    description: 'Estado actualizado.',
+    deduplicate: false
+  }]);
+  assert.equal(run.events.filter((event) => event === 'activity:Estado de proyecto actualizado').length, 1);
+  assert.ok(run.events.indexOf('storage:freelanceflow_projects_v1') < run.events.indexOf('activity:Estado de proyecto actualizado'));
+  assert.doesNotMatch(JSON.stringify(run.activityEvents[0]), /Proyecto causal|cli_1|proy_status|ON_HOLD/);
+
+  run.controller.handleDetailChange({ target: { id: 'project-detail-status', value: 'ON_HOLD' } });
+  assert.equal(run.events.filter((event) => event === 'storage:freelanceflow_projects_v1').length, 1);
+  assert.equal(run.activityEvents.length, 1);
+});
+
+test('does not record project-status activity or show a false success when storage rejects the change', () => {
+  const run = createProjectController({ failProject: true });
+  const project = projects.createProjectRecord({ ...run.form.values, propuesta_origen: '' }, { id: 'proy_status' });
+  run.controller.state.projects = [project];
+  run.controller.state.selectedProjectId = project.id;
+
+  run.controller.handleDetailChange({ target: { id: 'project-detail-status', value: 'ON_HOLD' } });
+
+  assert.equal(run.controller.state.projects[0].estado, 'ACTIVE');
+  assert.equal(run.values.has('freelanceflow_projects_v1'), false);
+  assert.deepEqual(run.activityEvents, []);
+  assert.equal(run.formSummary.textContent, 'No se pudo guardar localmente.');
+  assert.equal(run.formSummary.hidden, false);
+  assert.equal(run.toast.hidden, true);
+});
+
+test('cycles detail tabs with arrows while preserving click selection, tab semantics, and focus', () => {
+  const run = createProjectController();
+  const project = projects.createProjectRecord({ ...run.form.values, propuesta_origen: '' }, { id: 'proy_tabs' });
+  const tabs = ['invoices', 'expenses', 'time', 'details'].map((name) => ({
+    id: `project-tab-${name}`,
+    dataset: { projectTab: name },
+    focused: 0,
+    focus() { this.focused += 1; },
+    closest(selector) { return selector === '[data-project-tab]' ? this : null; }
+  }));
+  const detailBody = run.controller.state.detailBody || run.context.document.getElementById('project-detail-body');
+  const elements = {
+    detailBody,
+    detailTitle: { textContent: '' }, detailClient: { textContent: '' },
+    detailPanel: { classList: { contains() { return false; }, toggle() {} }, setAttribute() {}, removeAttribute() {}, toggleAttribute() {} },
+    detailBackdrop: { classList: { toggle() {}, remove() {} } },
+    content: { classList: { toggle() {} } }
+  };
+  elements.detailBody.querySelectorAll = (selector) => selector === '[data-project-tab]' ? tabs : [];
+  run.controller.setElements({ ...run.controller.state.elements, ...elements });
+  run.context.document.getElementById = (id) => tabs.find((tab) => tab.id === id) || null;
+  run.controller.state.projects = [project];
+  run.controller.state.selectedProjectId = project.id;
+  run.controller.state.detailTab = 'invoices';
+  run.controller.handleDetailClick({ target: tabs[1] });
+  assert.equal(run.controller.state.detailTab, 'expenses');
+  assert.equal(tabs[1].focused, 1);
+
+  let prevented = false;
+  run.controller.handleDetailKeydown({ key: 'ArrowRight', target: tabs[1], preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(run.controller.state.detailTab, 'time');
+  assert.equal(tabs[2].focused, 1);
+  assert.match(elements.detailBody.innerHTML, /role="tablist"/);
+  assert.match(elements.detailBody.innerHTML, /role="tab"/);
+  assert.match(elements.detailBody.innerHTML, /aria-selected="true"/);
+  assert.match(elements.detailBody.innerHTML, /role="tabpanel"/);
+  assert.match(elements.detailBody.innerHTML, /aria-labelledby="project-tab-time"/);
+
+  run.controller.handleDetailKeydown({ key: 'ArrowLeft', target: tabs[2], preventDefault() {} });
+  assert.equal(run.controller.state.detailTab, 'expenses');
+  run.controller.handleDetailKeydown({ key: 'ArrowLeft', target: tabs[0], preventDefault() {} });
+  assert.equal(run.controller.state.detailTab, 'details');
+  assert.equal(tabs[3].focused, 1);
 });

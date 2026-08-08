@@ -3,6 +3,7 @@
 
   const model = window.FreelanceFlowInvoiceModel;
   const clientModel = window.FreelanceFlowClientModel;
+  const projectModel = window.FreelanceFlowProjectModel;
   if (!model || !clientModel) return;
 
   const STORAGE_KEYS = {
@@ -747,8 +748,9 @@
     selectors.empty.hidden = true;
     try {
       const data = await window.FreelanceFlowDataLoader.loadJson('../assets/data/mock-data.json');
+      const { proyectos: baselineProjects = [] } = data;
       state.clients = clientModel.getEffectiveClients(data.clientes ?? []);
-      state.projects = data.proyectos ?? [];
+      state.projects = projectModel ? projectModel.getEffectiveProjects(data.proyectos ?? []) : baselineProjects;
       state.invoices = model.mergeById(data.facturas ?? [], readStorage(STORAGE_KEYS.invoices));
       state.payments = model.mergeById(data.pagos_factura ?? [], readStorage(STORAGE_KEYS.payments));
       renderClientAndProjectOptions();

@@ -93,6 +93,23 @@ test('uses a strict versioned proposal storage envelope and migrates only valid 
   assert.throws(() => proposal.writeProposalStorage({ setItem() { throw new DOMException('quota', 'QuotaExceededError'); } }, []), /No se pudo guardar/);
 });
 
+test('fails closed and preserves legacy bytes when any raw monetary value is invalid', () => {
+  const legacy = [{
+    id: 'prop_legacy', cliente_id: 'cli_001', titulo_propuesta: 'Legacy', fecha_emision: '2026-07-16', fecha_validez: '2026-08-16', moneda: 'USD', notas_condiciones: '',
+    items: [
+      { id: 'item_valid', servicio_referencia_id: '', descripcion_item: 'Diseño', unidad_medida: 'Hora', cantidad: '1', precio_unitario: '75', subtotal_item: 75 },
+      { id: 'item_invalid', servicio_referencia_id: '', descripcion_item: 'Soporte', unidad_medida: 'Hora', cantidad: '1', precio_unitario: 'bad', subtotal_item: 0 }
+    ],
+    subtotal_general: 75, descuento: 0, total_propuesta: 75, estado: 'DRAFT', historial_estado: [{ estado: 'DRAFT', fecha: '2026-07-16T00:00:00.000Z', detalle: 'Creada.' }], proyecto_convertido_id: '', fecha_creacion: '2026-07-16T00:00:00.000Z', fecha_actualizacion: '2026-07-16T00:00:00.000Z'
+  }];
+  const legacyBytes = JSON.stringify(legacy);
+  const storage = new Map([[proposal.PROPOSAL_STORAGE_KEY, legacyBytes]]);
+  const localStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
+
+  assert.deepEqual(proposal.readProposalStorage(localStorage), { ok: false, proposals: [] });
+  assert.equal(storage.get(proposal.PROPOSAL_STORAGE_KEY), legacyBytes);
+});
+
 test('rejects malformed canonical proposal storage at the boundary', () => {
   const stored = {
     id: 'prop_stored', cliente_id: 'cli_001', titulo_propuesta: 'Stored', fecha_emision: '2026-07-16', fecha_validez: '2026-08-16', moneda: 'USD', notas_condiciones: '',

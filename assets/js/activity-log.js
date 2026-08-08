@@ -34,6 +34,7 @@
     catalogEntry('clients.updated', 'Clientes', 'Cliente actualizado', 'Se actualizó un cliente.'),
     catalogEntry('projects.created', 'Proyectos', 'Proyecto creado', 'Se creó un proyecto.'),
     catalogEntry('projects.updated', 'Proyectos', 'Proyecto actualizado', 'Se actualizó un proyecto.'),
+    catalogEntry('projects.status-updated', 'Proyectos', 'Estado de proyecto actualizado', 'Se actualizó el estado del proyecto.'),
     catalogEntry('proposals.created', 'Propuestas', 'Propuesta creada', 'Se creó una propuesta.'),
     catalogEntry('proposals.updated', 'Propuestas', 'Propuesta actualizada', 'Se actualizó una propuesta.'),
     catalogEntry('proposals.sent', 'Propuestas', 'Propuesta marcada como enviada', 'Se marcó una propuesta como enviada.'),

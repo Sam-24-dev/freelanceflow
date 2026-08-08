@@ -264,3 +264,77 @@ test('enforces authoritative proposal origin integrity for project creation', ()
   assert.equal(model.validateProject({ ...base, id: 'proy_other' }, clients, { proposals: [converted], projects: [] }).valid, false);
   assert.equal(model.validateProject(base, clients, { proposals: [accepted], projects: [{ id: 'proy_old', propuesta_origen: 'prop_accepted' }] }).valid, false);
 });
+
+test('reads the effective project catalog with local overrides and valid local additions', () => {
+  const baseline = [
+    { id: 'proy_base', nombre_proyecto: 'Baseline', cliente_id: 'cli_001' }
+  ];
+  const storage = {
+    getItem(key) {
+      assert.equal(key, 'freelanceflow_projects_v1');
+      return JSON.stringify([
+        { id: 'proy_base', nombre_proyecto: 'Edited locally', cliente_id: 'cli_001' },
+        { id: 'proy_new', nombre_proyecto: 'Created locally', cliente_id: 'cli_001' }
+      ]);
+    }
+  };
+
+  const result = model.getEffectiveProjects(baseline, storage);
+
+  assert.deepEqual(result.map(({ id, nombre_proyecto }) => ({ id, nombre_proyecto })), [
+    { id: 'proy_base', nombre_proyecto: 'Edited locally' },
+    { id: 'proy_new', nombre_proyecto: 'Created locally' }
+  ]);
+});
+
+test('keeps the baseline when project storage is unavailable or corrupt without mutating it', () => {
+  const baseline = [{ id: 'proy_base', nombre_proyecto: 'Baseline', cliente_id: 'cli_001' }];
+  const before = JSON.stringify(baseline);
+  const storages = [
+    { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('must not write'); }, removeItem() { throw new Error('must not remove'); } },
+    { getItem() { return '{not json'; }, setItem() { throw new Error('must not write'); }, removeItem() { throw new Error('must not remove'); } }
+  ];
+
+  storages.forEach((storage) => {
+    assert.deepEqual(model.getEffectiveProjects(baseline, storage).map((project) => project.id), ['proy_base']);
+  });
+  assert.equal(JSON.stringify(baseline), before);
+});
+
+test('keeps a valid baseline project when a parseable local overlay is structurally incomplete', () => {
+  const baseline = [{ id: 'proy_base', nombre_proyecto: 'Proyecto oficial', cliente_id: 'cli_001', fecha_inicio: '2026-01-01', modalidad_cobro: 'Tarifa fija', monto_fijo: 400 }];
+  const storage = { getItem() { return JSON.stringify([{ id: 'proy_base', nombre_proyecto: 'Sobrescrito' }]); } };
+
+  const result = model.getEffectiveProjects(baseline, storage);
+
+  assert.deepEqual(result.map(({ id, nombre_proyecto, cliente_id, monto_fijo }) => ({ id, nombre_proyecto, cliente_id, monto_fijo })), [
+    { id: 'proy_base', nombre_proyecto: 'Proyecto oficial', cliente_id: 'cli_001', monto_fijo: 400 }
+  ]);
+});
+
+test('keeps the baseline without writes when the localStorage getter is blocked', () => {
+  const baseline = [{ id: 'proy_base', nombre_proyecto: 'Baseline', cliente_id: 'cli_001' }];
+  const before = JSON.stringify(baseline);
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('blocked getter'); } });
+
+  try {
+    assert.deepEqual(model.getEffectiveProjects(baseline).map((project) => project.id), ['proy_base']);
+    assert.equal(JSON.stringify(baseline), before);
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor);
+    else delete globalThis.localStorage;
+  }
+});
+
+test('excludes unusable project ids from baseline and local storage', () => {
+  const storage = { getItem() { return JSON.stringify([{ id: '', nombre_proyecto: 'Ignored' }, { id: '  ', nombre_proyecto: 'Ignored too' }, { id: 'proy_local', nombre_proyecto: 'Kept' }]); } };
+
+  const result = model.getEffectiveProjects([
+    { id: '', nombre_proyecto: 'Ignored baseline' },
+    { id: '  ', nombre_proyecto: 'Ignored whitespace baseline' },
+    { id: 'proy_base', nombre_proyecto: 'Kept baseline' }
+  ], storage);
+
+  assert.deepEqual(result.map((project) => project.id), ['proy_base', 'proy_local']);
+});

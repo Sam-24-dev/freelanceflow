@@ -136,6 +136,38 @@ test('activity log records generic searches and ignores producer-supplied names,
   assert.doesNotMatch(display, /ACME|0999999999001|PROP-123|Atlas|FAC-001|\$|Consultoría|Comisiones|token secreto|Cobro cliente/);
 });
 
+test('activity log records the redacted project-status event through its closed catalog', () => {
+  const session = storage();
+  const api = activity.createActivityLog({
+    storage: session,
+    now: () => '2026-08-08T12:00:00.000Z',
+    getContext: operational
+  });
+
+  const entry = api.record({
+    module: 'Proyectos',
+    action: 'Estado de proyecto actualizado',
+    description: 'Proyecto ACME proy_123 cambió a ON_HOLD.'
+  });
+
+  assert.deepEqual(JSON.parse(session.getItem(activity.STORAGE_KEY)), [{
+    version: 1,
+    type: 'projects.status-updated',
+    timestamp: '2026-08-08T12:00:00.000Z',
+    membershipId: 'ff-operational-v1'
+  }]);
+  assert.deepEqual(entry, {
+    timestamp: '2026-08-08T12:00:00.000Z',
+    actor: 'Equipo operativo',
+    role: 'operational',
+    membershipId: 'ff-operational-v1',
+    module: 'Proyectos',
+    action: 'Estado de proyecto actualizado',
+    description: 'Se actualizó el estado del proyecto.'
+  });
+  assert.doesNotMatch(JSON.stringify(api.read()), /ACME|proy_123|ON_HOLD/);
+});
+
 test('activity log keeps valid events newest first, limits to 80, and deduplicates consecutive types', () => {
   let tick = 0;
   const api = activity.createActivityLog({

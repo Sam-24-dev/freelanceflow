@@ -9,6 +9,7 @@
   const model = window.FreelanceFlowReportModel;
   const categoryModel = window.FreelanceFlowCategoryModel;
   const clientModel = window.FreelanceFlowClientModel;
+  const projectModel = window.FreelanceFlowProjectModel;
 
   const money = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
   const number = new Intl.NumberFormat('es-EC', { maximumFractionDigits: 2 });
@@ -59,22 +60,26 @@
 
   async function loadData() {
     const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL);
+    const { proyectos: baselineProjects = [] } = data;
     const categories = categoryModel.readEffectiveCatalog(data.categorias_gasto ?? []).categories;
+    const projects = projectModel ? projectModel.getEffectiveProjects(data.proyectos ?? []) : baselineProjects;
     return {
       ...data,
       clientes: clientModel.getEffectiveClients(data.clientes ?? []),
       categorias_gasto: categories,
-      gastos: getMovementExpenses(data, categories)
+      proyectos: projects,
+      projects,
+      gastos: getMovementExpenses(data, categories, projects)
     };
   }
 
-  function getMovementExpenses(data, categories) {
+  function getMovementExpenses(data, categories, projects) {
     try {
       const stored = localStorage.getItem('freelanceflow_transactions_mock');
       const movements = stored ? JSON.parse(stored) : (data.movimientos_financieros_mock_auxiliar ?? []);
       return window.FreelanceFlowTransactionModel?.toExpenseRecords
         ? window.FreelanceFlowTransactionModel.toExpenseRecords(movements, {
-          projects: data.proyectos ?? [],
+          projects,
           categories
         })
         : data.gastos ?? [];
@@ -128,7 +133,7 @@
   }
 
   function updateProjectSelectors() {
-    const projects = (state.data.proyectos ?? []).filter((project) => !state.filters.clientId || project.cliente_id === state.filters.clientId);
+    const projects = (state.data.projects ?? []).filter((project) => !state.filters.clientId || project.cliente_id === state.filters.clientId);
     if (state.filters.projectId && !projects.some((project) => project.id === state.filters.projectId)) state.filters.projectId = '';
     populateProjectSelect('reports-project', state.filters.clientId, state.filters.projectId);
     populateProjectSelect('report-drawer-project', state.filters.clientId, state.filters.projectId);
@@ -137,7 +142,7 @@
   function populateProjectSelect(id, clientId, selectedValue = '') {
     const select = document.getElementById(id);
     if (!select) return;
-    const projects = (state.data.proyectos ?? []).filter((project) => !clientId || project.cliente_id === clientId);
+    const projects = (state.data.projects ?? []).filter((project) => !clientId || project.cliente_id === clientId);
     select.innerHTML = '<option value="">Todos los proyectos</option>';
     populateSelect(id, projects, 'id', 'nombre_proyecto');
     select.value = projects.some((project) => project.id === selectedValue) ? selectedValue : '';
@@ -605,7 +610,7 @@
       ? `${formatDate(state.filters.dateFrom)} – ${formatDate(state.filters.dateTo)}`
       : periodLabel(state.filters.period);
     const client = (state.data.clientes ?? []).find((item) => item.id === state.filters.clientId)?.nombre_razon_social || 'Todos los clientes';
-    const project = (state.data.proyectos ?? []).find((item) => item.id === state.filters.projectId)?.nombre_proyecto || 'Todos los proyectos';
+    const project = (state.data.projects ?? []).find((item) => item.id === state.filters.projectId)?.nombre_proyecto || 'Todos los proyectos';
     return `${period} · ${client} · ${project}`;
   }
 
