@@ -230,13 +230,11 @@
       const from = valueOf('report-date-from');
       const to = valueOf('report-date-to');
       const validation = model.validateDateRange(from, to);
-      const error = document.getElementById('report-date-error');
       if (!validation.valid) {
-        error.textContent = validation.message;
-        document.getElementById('report-date-from')?.focus();
+        showDateRangeError(validation.message);
         return;
       }
-      error.textContent = '';
+      clearDateRangeError();
       state.filters.dateFrom = from;
       state.filters.dateTo = to;
       state.filters.clientId = valueOf('report-drawer-client');
@@ -256,8 +254,13 @@
       setValue('report-date-to', range.to);
       setValue('report-drawer-client', '');
       populateProjectSelect('report-drawer-project', '', '');
-      document.getElementById('report-date-error').textContent = '';
+      clearDateRangeError();
     });
+    document.querySelectorAll('#report-date-from, #report-date-to').forEach((input) => ['input', 'change'].forEach((eventName) => {
+      input.addEventListener(eventName, () => {
+        if (model.validateDateRange(valueOf('report-date-from'), valueOf('report-date-to')).valid) clearDateRangeError();
+      });
+    }));
   }
 
   function selectBudget() {
@@ -525,8 +528,15 @@
       return;
     }
     const saved = { ...validation.value, id: draft.id || `budget_${validation.value.periodo_clave.replace('-', '_')}`, fecha_actualizacion: localDate() };
-    state.budgets = model.mergeBudgets(state.budgets, [saved]);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.budgets));
+    const nextBudgets = model.mergeBudgets(state.budgets, [saved]);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextBudgets));
+    } catch (error) {
+      console.warn('No se pudo guardar el presupuesto local.', error);
+      showBudgetStorageError();
+      return;
+    }
+    state.budgets = nextBudgets;
     state.filters.period = saved.periodo_clave;
     setValue('reports-period', state.filters.period);
     selectBudget();
@@ -563,11 +573,44 @@
     summary.focus();
   }
 
+  function showBudgetStorageError() {
+    const summary = document.getElementById('budget-form-summary');
+    if (!summary) return;
+    summary.textContent = 'No se pudo guardar el presupuesto. Revisa el almacenamiento del navegador e inténtalo nuevamente.';
+    summary.hidden = false;
+    summary.focus();
+  }
+
   function clearBudgetErrors() {
     document.querySelectorAll('#budget-form [aria-invalid]').forEach((input) => input.removeAttribute('aria-invalid'));
     document.querySelectorAll('#budget-form .reports-field-error').forEach((error) => { error.textContent = ''; });
     const summary = document.getElementById('budget-form-summary');
-    if (summary) summary.hidden = true;
+    if (summary) {
+      summary.textContent = 'Revisa los campos señalados antes de guardar.';
+      summary.hidden = true;
+    }
+  }
+
+  function showDateRangeError(message) {
+    const error = document.getElementById('report-date-error');
+    const from = document.getElementById('report-date-from');
+    const to = document.getElementById('report-date-to');
+    if (error) error.textContent = message;
+    [from, to].forEach((input) => {
+      input?.setAttribute('aria-invalid', 'true');
+      input?.setAttribute('aria-describedby', 'report-date-error');
+    });
+    to?.focus();
+  }
+
+  function clearDateRangeError() {
+    const error = document.getElementById('report-date-error');
+    if (error) error.textContent = '';
+    ['report-date-from', 'report-date-to'].forEach((id) => {
+      const input = document.getElementById(id);
+      input?.removeAttribute('aria-invalid');
+      input?.removeAttribute('aria-describedby');
+    });
   }
 
   function clearScopeFilters() {
