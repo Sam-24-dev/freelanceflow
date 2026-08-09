@@ -47,3 +47,28 @@ test('deduplicates repeated source IDs and does not shift YYYY-MM-DD dates', () 
   assert.equal(alerts.filter((item) => item.id === 'payment-received:pay-1').length, 1);
   assert.equal(model.parseDate('2026-07-17').getDate(), 17);
 });
+
+test('omits missing IDs and invalid calendar dates before derivation and deduplication', () => {
+  const alerts = model.deriveNotifications({
+    facturas: [
+      { id: '', fecha_vencimiento: '2026-07-16', saldo_pendiente: 10, estado: 'SENT' },
+      { id: 'rolled-over', fecha_vencimiento: '2026-02-31', saldo_pendiente: 10, estado: 'SENT' },
+      { id: 'valid-invoice', fecha_vencimiento: '2026-07-16', saldo_pendiente: 10, estado: 'SENT' }
+    ],
+    propuestas: [
+      { id: 'bad-proposal', fecha_validez: '2026-02-31', estado: 'SENT' },
+      { id: 'valid-proposal', fecha_validez: '2026-08-01', estado: 'SENT' }
+    ],
+    pagos_factura: [
+      { id: '', factura_id: 'valid-invoice', fecha_pago: '2026-07-17' },
+      { id: 'bad-payment', factura_id: 'valid-invoice', fecha_pago: '2026-02-31' },
+      { id: 'valid-payment', factura_id: 'valid-invoice', fecha_pago: '2026-07-17' }
+    ]
+  }, '2026-07-17');
+
+  assert.deepEqual(alerts.map((item) => item.id), [
+    'proposal-expiring:valid-proposal',
+    'payment-received:valid-payment',
+    'invoice-overdue:valid-invoice'
+  ]);
+});
