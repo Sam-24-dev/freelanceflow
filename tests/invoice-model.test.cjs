@@ -325,34 +325,320 @@ test('recovers only the last committed invoice snapshot when the second staged w
   };
   const transitionKey = 'invoice-transition';
   const committed = {
-    invoices: [{ id: 'fac_before', estado: 'SENT' }],
-    payments: [{ id: 'pay_before', factura_id: 'fac_before', monto_pagado: 10 }]
+    invoices: [validPaidInvoice({ id: 'fac_before' })],
+    payments: [validStoredPayment({ id: 'pay_before', factura_id: 'fac_before' })]
   };
   const candidate = {
-    invoices: [{ id: 'fac_after', estado: 'PAID' }],
-    payments: [{ id: 'pay_after', factura_id: 'fac_after', monto_pagado: 20 }]
+    invoices: [validPaidInvoice({ id: 'fac_after' })],
+    payments: [validStoredPayment({ id: 'pay_after', factura_id: 'fac_after' })]
   };
 
-  assert.equal(model.persistInvoiceTransition(storage, transitionKey, committed.invoices, committed.payments, 'committed'), true);
+  assert.equal(model.persistInvoiceTransition(storage, transitionKey, committed.invoices, committed.payments, 'committed', invoiceReferences), true);
   failKey = `${transitionKey}:failed:payments`;
 
-  assert.equal(model.persistInvoiceTransition(storage, transitionKey, candidate.invoices, candidate.payments, 'failed'), false);
+  assert.equal(model.persistInvoiceTransition(storage, transitionKey, candidate.invoices, candidate.payments, 'failed', invoiceReferences), false);
   assert.deepEqual(writes.slice(-2), [`${transitionKey}:failed:invoices`, `${transitionKey}:failed:payments`]);
-  assert.deepEqual(model.readInvoiceTransition(storage, transitionKey), committed);
+  assert.deepEqual(model.readInvoiceTransition(storage, transitionKey, invoiceReferences), committed);
 });
 
 test('recovers both legacy invoice keys when no transition marker exists', () => {
+  const invoices = [validPaidInvoice({ id: 'fac_legacy' })];
+  const payments = [validStoredPayment({ id: 'pay_legacy', factura_id: 'fac_legacy' })];
   const entries = new Map([
-    ['freelanceflow_invoices_v1', JSON.stringify([{ id: 'fac_legacy', estado: 'SENT' }])],
-    ['freelanceflow_invoice_payments_v1', JSON.stringify([{ id: 'pay_legacy', factura_id: 'fac_legacy', monto_pagado: 25 }])]
+    ['freelanceflow_invoices_v1', JSON.stringify(invoices)],
+    ['freelanceflow_invoice_payments_v1', JSON.stringify(payments)]
   ]);
   const storage = { getItem(key) { return entries.has(key) ? entries.get(key) : null; } };
 
   assert.deepEqual(
-    model.readInvoiceStorage(storage, 'freelanceflow_invoice_transition_v1', 'freelanceflow_invoices_v1', 'freelanceflow_invoice_payments_v1'),
-    {
-      invoices: [{ id: 'fac_legacy', estado: 'SENT' }],
-      payments: [{ id: 'pay_legacy', factura_id: 'fac_legacy', monto_pagado: 25 }]
-    }
+    model.readInvoiceStorage(storage, 'freelanceflow_invoice_transition_v1', 'freelanceflow_invoices_v1', 'freelanceflow_invoice_payments_v1', invoiceReferences),
+    { invoices, payments }
   );
+});
+
+const invoiceReferences = {
+  clients: [{ id: 'cli_001' }, { id: 'cli_002' }],
+  projects: [{ id: 'proy_001', cliente_id: 'cli_001' }]
+};
+
+function validStoredInvoice(overrides = {}) {
+  return {
+    id: 'fac_schema',
+    numero_factura: 'FAC-0200',
+    cliente_id: 'cli_001',
+    proyecto_relacionado_id: 'proy_001',
+    fecha_emision: '2026-06-01',
+    fecha_vencimiento: '2026-06-30',
+    moneda: 'USD',
+    estado: 'SENT',
+    items: [{ id: 'item_schema', descripcion_item: 'Servicio', cantidad: 1, precio_unitario: 100 }],
+    descuento: 0,
+    impuestos: 0,
+    total_factura: 100,
+    monto_pagado_acumulado: 0,
+    saldo_pendiente: 100,
+    ...overrides
+  };
+}
+
+function validStoredPayment(overrides = {}) {
+  return {
+    id: 'pay_schema',
+    factura_id: 'fac_schema',
+    monto_pagado: 100,
+    fecha_pago: '2026-06-02',
+    metodo_pago: 'Transferencia bancaria',
+    ...overrides
+  };
+}
+
+function validPaidInvoice(overrides = {}) {
+  return validStoredInvoice({
+    estado: 'PAID',
+    monto_pagado_acumulado: 100,
+    saldo_pendiente: 0,
+    ...overrides
+  });
+}
+
+test('FF-INV-002 rejects malformed, unknown-version, and invalid persisted invoice snapshots', () => {
+  const valid = { invoices: [validPaidInvoice()], payments: [validStoredPayment()] };
+  assert.equal(model.validateInvoiceStorage(valid.invoices, valid.payments, invoiceReferences).valid, true);
+
+  for (const invalid of [
+    { invoices: {}, payments: [] },
+    { invoices: [{ ...valid.invoices[0], id: '' }], payments: [] },
+    { invoices: [valid.invoices[0], { ...valid.invoices[0] }], payments: [] },
+    { invoices: [{ ...valid.invoices[0], fecha_emision: '2026-02-30' }], payments: [] },
+    { invoices: [{ ...valid.invoices[0], estado: 'UNKNOWN' }], payments: [] },
+    { invoices: [{ ...valid.invoices[0], moneda: 'EUR' }], payments: [] },
+    { invoices: [{ ...valid.invoices[0], impuestos: Infinity }], payments: [] },
+    { invoices: [{ ...valid.invoices[0], descuento: -1 }], payments: [] },
+    { invoices: [{ ...valid.invoices[0], cliente_id: 'cli_missing' }], payments: [] },
+    { invoices: [{ ...valid.invoices[0], proyecto_relacionado_id: 'proy_missing' }], payments: [] },
+    { invoices: [{ ...valid.invoices[0], cliente_id: 'cli_002' }], payments: [] },
+    { invoices: [valid.invoices[0]], payments: [{ ...valid.payments[0], factura_id: 'fac_missing' }] },
+    { invoices: [valid.invoices[0]], payments: [{ ...valid.payments[0], monto_pagado: -1 }] },
+    { invoices: [valid.invoices[0]], payments: [valid.payments[0], { ...valid.payments[0] }] }
+  ]) assert.equal(model.validateInvoiceStorage(invalid.invoices, invalid.payments, invoiceReferences).valid, false);
+});
+
+test('FF-INV-002 requires persisted invoice totals while accepting established optional aggregates', () => {
+  const canonical = validStoredInvoice();
+  for (const field of ['total_factura', 'monto_pagado_acumulado', 'saldo_pendiente']) {
+    const invoice = { ...canonical };
+    delete invoice[field];
+    assert.equal(model.validateInvoiceStorage([invoice], [], invoiceReferences).valid, false, `${field} is required`);
+  }
+
+  for (const field of ['subtotal_general', 'saldo_a_favor']) {
+    const invoice = { ...canonical };
+    delete invoice[field];
+    assert.equal(model.validateInvoiceStorage([invoice], [], invoiceReferences).valid, true, `${field} remains backward-compatible`);
+  }
+});
+
+test('FF-INV-002 keeps durable transition and activity unchanged when a candidate fails storage validation', () => {
+  const existingInvoices = [validStoredInvoice({ estado: 'DRAFT' })];
+  const existingPayments = [];
+  const activity = [];
+  const writes = [];
+  const storage = {
+    getItem() { return null; },
+    setItem(key) { writes.push(key); }
+  };
+  const persist = (invoices, payments) => model.persistInvoiceTransition(
+    storage,
+    'invoice-transition',
+    invoices,
+    payments,
+    'invalid-candidate',
+    invoiceReferences
+  );
+  const result = model.commitInvoiceTransition(
+    existingInvoices,
+    existingPayments,
+    [{ ...existingInvoices[0], cliente_id: 'cli_missing', estado: 'SENT' }],
+    existingPayments,
+    persist,
+    () => activity.push('activity')
+  );
+
+  assert.equal(result.committed, false);
+  assert.strictEqual(result.invoices, existingInvoices);
+  assert.strictEqual(result.payments, existingPayments);
+  assert.deepEqual(activity, []);
+  assert.deepEqual(writes, []);
+});
+
+test('FF-INV-002 reads only a valid versioned marker snapshot and retains the valid legacy fallback', () => {
+  const entries = new Map([
+    ['transition', JSON.stringify({ version: 999, transactionId: 'unknown' })],
+    ['invoices', JSON.stringify([validPaidInvoice()])],
+    ['payments', JSON.stringify([validStoredPayment()])]
+  ]);
+  const storage = { getItem(key) { return entries.has(key) ? entries.get(key) : null; } };
+  assert.deepEqual(
+    model.readInvoiceStorage(storage, 'transition', 'invoices', 'payments', invoiceReferences),
+    { invoices: [validPaidInvoice()], payments: [validStoredPayment()] }
+  );
+
+  entries.set('transition', JSON.stringify({ transactionId: 'legacy-marker' }));
+  entries.set('transition:legacy-marker:invoices', JSON.stringify([validPaidInvoice()]));
+  entries.set('transition:legacy-marker:payments', JSON.stringify([validStoredPayment()]));
+  assert.deepEqual(
+    model.readInvoiceStorage(storage, 'transition', 'invoices', 'payments', invoiceReferences),
+    { invoices: [validPaidInvoice()], payments: [validStoredPayment()] }
+  );
+
+  entries.set('transition', JSON.stringify({ version: model.INVOICE_STORAGE_VERSION, transactionId: 'valid' }));
+  entries.set('transition:valid:invoices', JSON.stringify({ version: model.INVOICE_STORAGE_VERSION, invoices: [validPaidInvoice()] }));
+  entries.set('transition:valid:payments', JSON.stringify({ version: model.INVOICE_STORAGE_VERSION, payments: [validStoredPayment()] }));
+  assert.deepEqual(
+    model.readInvoiceStorage(storage, 'transition', 'invoices', 'payments', invoiceReferences),
+    { invoices: [validPaidInvoice()], payments: [validStoredPayment()] }
+  );
+});
+
+test('FF-INV-002 rejects unknown fields while retaining established invoice, item, and payment compatibility fields', () => {
+  const compatibleInvoice = validStoredInvoice({
+    subtotal_general: 100,
+    saldo_a_favor: 0,
+    fecha_anulacion: undefined,
+    motivo_anulacion: undefined,
+    items: [{ id: 'item_schema', origen_item: 'Manual', descripcion_item: 'Servicio', cantidad: 1, precio_unitario: 100 }]
+  });
+  const compatiblePayment = validStoredPayment({ referencia_comprobante: 'TRX-1', notas: 'Confirmed' });
+  const paidInvoice = validPaidInvoice({
+    items: compatibleInvoice.items,
+    subtotal_general: 100,
+    saldo_a_favor: 0
+  });
+
+  assert.equal(model.validateInvoiceStorage([compatibleInvoice], [], invoiceReferences).valid, true);
+  assert.equal(model.validateInvoiceStorage([paidInvoice], [compatiblePayment], invoiceReferences).valid, true);
+  assert.equal(model.validateInvoiceStorage([{ ...compatibleInvoice, forged: true }], [], invoiceReferences).valid, false);
+  assert.equal(model.validateInvoiceStorage([{ ...compatibleInvoice, items: [{ ...compatibleInvoice.items[0], forged: true }] }], [], invoiceReferences).valid, false);
+  assert.equal(model.validateInvoiceStorage([paidInvoice], [{ ...compatiblePayment, forged: true }], invoiceReferences).valid, false);
+});
+
+test('FF-INV-002 rejects persisted invoice totals that do not match the current rounding semantics', () => {
+  const invoice = validStoredInvoice({
+    items: [{ id: 'item_rounding', origen_item: 'Manual', descripcion_item: 'Fractional service', cantidad: 3, precio_unitario: 0.1 }],
+    descuento: 0.1,
+    impuestos: 0.2,
+    total_factura: 0.4,
+    saldo_pendiente: 0.4
+  });
+
+  assert.equal(model.validateInvoiceStorage([invoice], [], invoiceReferences).valid, true);
+  assert.equal(model.validateInvoiceStorage([{ ...invoice, total_factura: 0.39 }], [], invoiceReferences).valid, false);
+});
+
+test('FF-INV-002 rejects persisted payment aggregates that disagree with linked payments and total', () => {
+  const invoice = validPaidInvoice({ monto_pagado_acumulado: 120, saldo_pendiente: 0, saldo_a_favor: 20 });
+  const payment = validStoredPayment({ monto_pagado: 120 });
+
+  assert.equal(model.validateInvoiceStorage([invoice], [payment], invoiceReferences).valid, true);
+  assert.equal(model.validateInvoiceStorage([{ ...invoice, monto_pagado_acumulado: 119 }], [payment], invoiceReferences).valid, false);
+  assert.equal(model.validateInvoiceStorage([{ ...invoice, saldo_pendiente: 1 }], [payment], invoiceReferences).valid, false);
+  assert.equal(model.validateInvoiceStorage([{ ...invoice, saldo_a_favor: 0 }], [payment], invoiceReferences).valid, false);
+});
+
+test('FF-INV-002 rejects invoice states that are incompatible with their financial position', () => {
+  const partialPayment = validStoredPayment({ monto_pagado: 25 });
+  const partialInvoice = validStoredInvoice({ estado: 'PARTIAL', monto_pagado_acumulado: 25, saldo_pendiente: 75 });
+  const paidInvoice = validPaidInvoice();
+  const voidInvoice = validStoredInvoice({ estado: 'VOID', saldo_pendiente: 0, motivo_anulacion: 'Duplicate issue', fecha_anulacion: '2026-06-02' });
+
+  assert.equal(model.validateInvoiceStorage([validStoredInvoice()], [], invoiceReferences).valid, true);
+  assert.equal(model.validateInvoiceStorage([partialInvoice], [partialPayment], invoiceReferences).valid, true);
+  assert.equal(model.validateInvoiceStorage([paidInvoice], [validStoredPayment()], invoiceReferences).valid, true);
+  assert.equal(model.validateInvoiceStorage([voidInvoice], [], invoiceReferences).valid, true);
+  assert.equal(model.validateInvoiceStorage([validStoredInvoice()], [validStoredPayment()], invoiceReferences).valid, false);
+  assert.equal(model.validateInvoiceStorage([validStoredInvoice({ estado: 'PARTIAL', monto_pagado_acumulado: 0, saldo_pendiente: 100 })], [], invoiceReferences).valid, false);
+  assert.equal(model.validateInvoiceStorage([validStoredInvoice({ estado: 'PAID', monto_pagado_acumulado: 0, saldo_pendiente: 100 })], [], invoiceReferences).valid, false);
+  assert.equal(model.validateInvoiceStorage([voidInvoice], [validStoredPayment()], invoiceReferences).valid, false);
+  assert.equal(model.validateInvoiceStorage([validStoredInvoice({ estado: 'DRAFT' })], [validStoredPayment()], invoiceReferences).valid, false);
+});
+
+test('FF-INV-002 hydrates a valid persisted VOID invoice without restoring a receivable balance', () => {
+  const persisted = validStoredInvoice({
+    id: 'fac_void_hydration',
+    estado: 'VOID',
+    saldo_pendiente: 0,
+    saldo_a_favor: 0,
+    fecha_anulacion: '2026-06-02',
+    motivo_anulacion: 'Duplicate issue'
+  });
+
+  assert.equal(model.validateInvoiceStorage([persisted], [], invoiceReferences).valid, true);
+
+  const hydrated = model.hydrateInvoice(persisted, [], '2026-07-01');
+  assert.equal(hydrated.estado, 'VOID');
+  assert.equal(hydrated.monto_pagado_acumulado, 0);
+  assert.equal(hydrated.saldo_pendiente, 0);
+  assert.equal(hydrated.saldo_a_favor, 0);
+});
+
+test('FF-INV-002 hydrates a persisted past-due SENT invoice as OVERDUE', () => {
+  const persisted = validStoredInvoice({
+    id: 'fac_sent_overdue_hydration',
+    fecha_vencimiento: '2026-06-30'
+  });
+
+  assert.equal(model.validateInvoiceStorage([persisted], [], invoiceReferences).valid, true);
+
+  const hydrated = model.hydrateInvoice(persisted, [], '2026-07-01');
+  assert.equal(hydrated.estado, 'OVERDUE');
+  assert.equal(hydrated.saldo_pendiente, 100);
+  assert.equal(hydrated.saldo_a_favor, 0);
+});
+
+test('FF-INV-002 accepts only matching versioned marker staging and direct legacy keys without a valid marker', () => {
+  const direct = { invoices: [validStoredInvoice({ id: 'fac_direct' })], payments: [] };
+  const staged = { invoices: [validStoredInvoice({ id: 'fac_staged' })], payments: [] };
+  const entries = new Map([
+    ['invoices', JSON.stringify(direct.invoices)],
+    ['payments', JSON.stringify(direct.payments)]
+  ]);
+  const storage = { getItem(key) { return entries.has(key) ? entries.get(key) : null; } };
+
+  assert.deepEqual(model.readInvoiceStorage(storage, 'transition', 'invoices', 'payments', invoiceReferences), direct);
+
+  entries.set('transition', JSON.stringify({ transactionId: 'legacy' }));
+  entries.set('transition:legacy:invoices', JSON.stringify(staged.invoices));
+  entries.set('transition:legacy:payments', JSON.stringify(staged.payments));
+  assert.deepEqual(model.readInvoiceStorage(storage, 'transition', 'invoices', 'payments', invoiceReferences), direct);
+
+  entries.set('transition', JSON.stringify({ version: model.INVOICE_STORAGE_VERSION, transactionId: 'versioned' }));
+  entries.set('transition:versioned:invoices', JSON.stringify({ version: model.INVOICE_STORAGE_VERSION + 1, invoices: staged.invoices }));
+  entries.set('transition:versioned:payments', JSON.stringify({ version: model.INVOICE_STORAGE_VERSION, payments: staged.payments }));
+  assert.deepEqual(model.readInvoiceStorage(storage, 'transition', 'invoices', 'payments', invoiceReferences), { invoices: [], payments: [] });
+
+  entries.set('transition:versioned:invoices', JSON.stringify({ version: model.INVOICE_STORAGE_VERSION, invoices: staged.invoices }));
+  assert.deepEqual(model.readInvoiceStorage(storage, 'transition', 'invoices', 'payments', invoiceReferences), staged);
+});
+
+test('FF-INV-002 fails closed before persistence or success activity for financial boundary violations', () => {
+  const existingInvoices = [validStoredInvoice()];
+  const writes = [];
+  const activity = [];
+  const storage = {
+    getItem() { return null; },
+    setItem(key) { writes.push(key); }
+  };
+  const result = model.commitInvoiceTransition(
+    existingInvoices,
+    [],
+    [{ ...existingInvoices[0], total_factura: 99 }],
+    [],
+    (nextInvoices, nextPayments) => model.persistInvoiceTransition(storage, 'transition', nextInvoices, nextPayments, 'invalid-total', invoiceReferences),
+    () => activity.push('activity')
+  );
+
+  assert.equal(result.committed, false);
+  assert.strictEqual(result.invoices, existingInvoices);
+  assert.deepEqual(writes, []);
+  assert.deepEqual(activity, []);
 });

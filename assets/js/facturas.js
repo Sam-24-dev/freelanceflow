@@ -133,7 +133,8 @@
       localStorage,
       STORAGE_KEYS.transition,
       STORAGE_KEYS.invoices,
-      STORAGE_KEYS.payments
+      STORAGE_KEYS.payments,
+      { clients: state.clients, projects: state.projects }
     );
   }
 
@@ -143,7 +144,7 @@
 
   function persistTransition(invoices, payments) {
     const transactionId = `tx-${Date.now()}-${++transitionSequence}`;
-    if (!model.persistInvoiceTransition(localStorage, STORAGE_KEYS.transition, invoices, payments, transactionId)) {
+    if (!model.persistInvoiceTransition(localStorage, STORAGE_KEYS.transition, invoices, payments, transactionId, { clients: state.clients, projects: state.projects })) {
       showToast('No pudimos guardar los cambios. Inténtalo nuevamente.', 'error');
       return false;
     }
@@ -517,7 +518,7 @@
       ...(taxValue === '' ? {} : { impuestos: Number(taxValue) })
     };
     if (!state.editingId) candidate.impuestos = model.resolveEstimatedTaxForNewInvoice(candidate, readFiscalConfiguration() || {});
-    const validation = model.validateInvoice(candidate);
+    const validation = model.validateInvoice(candidate, { clients: state.clients, projects: state.projects });
     if (!validation.valid) {
       displayErrors(selectors.invoiceForm, validation.errors);
       showToast('Revisa los campos marcados antes de guardar la factura.', 'error');
