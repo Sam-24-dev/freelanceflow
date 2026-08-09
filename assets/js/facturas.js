@@ -10,6 +10,7 @@
   const STORAGE_KEYS = {
     invoices: 'freelanceflow_invoices_v1',
     payments: 'freelanceflow_invoice_payments_v1',
+    transition: 'freelanceflow_invoice_transition_v1',
     fiscal: 'freelanceflow_fiscal_config_v1'
   };
   const STATUS_COPY = {
@@ -55,6 +56,7 @@
     lastFocus: null,
     toastTimer: 0
   };
+  let transitionSequence = 0;
 
   const selectors = {
     loading: document.querySelector('[data-invoice-loading]'),
@@ -122,36 +124,45 @@
     }).format(new Date(`${value}T00:00:00Z`));
   }
 
-  function readStorage(key) {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(key) || '[]');
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-
   function readFiscalConfiguration() {
     try { return fiscalModel?.parseStoredFiscalConfiguration(localStorage.getItem(STORAGE_KEYS.fiscal)); } catch { return null; }
   }
 
-  function persistInvoices(invoices) {
-    try {
-      localStorage.setItem(STORAGE_KEYS.invoices, JSON.stringify(invoices));
-      return true;
-    } catch {
-      showToast('No pudimos guardar la factura. Inténtalo nuevamente.', 'error');
-      return false;
-    }
+  function readStoredInvoiceTransition() {
+    return model.readInvoiceStorage(
+      localStorage,
+      STORAGE_KEYS.transition,
+      STORAGE_KEYS.invoices,
+      STORAGE_KEYS.payments
+    );
   }
 
-  function persist() {
-    try {
-      localStorage.setItem(STORAGE_KEYS.invoices, JSON.stringify(state.invoices));
-      localStorage.setItem(STORAGE_KEYS.payments, JSON.stringify(state.payments));
-    } catch {
-      showToast('Los cambios se mantienen durante esta sesión, pero el navegador bloqueó el almacenamiento local.', 'warning');
+  function persistInvoices(invoices) {
+    return persistTransition(invoices, state.payments);
+  }
+
+  function persistTransition(invoices, payments) {
+    const transactionId = `tx-${Date.now()}-${++transitionSequence}`;
+    if (!model.persistInvoiceTransition(localStorage, STORAGE_KEYS.transition, invoices, payments, transactionId)) {
+      showToast('No pudimos guardar los cambios. Inténtalo nuevamente.', 'error');
+      return false;
     }
+    return true;
+  }
+
+  function commitDurableTransition(nextInvoices, nextPayments, recordActivityAfterCommit) {
+    const committed = model.commitInvoiceTransition(
+      state.invoices,
+      state.payments,
+      nextInvoices,
+      nextPayments,
+      persistTransition,
+      recordActivityAfterCommit
+    );
+    if (!committed.committed) return false;
+    state.invoices = committed.invoices;
+    state.payments = committed.payments;
+    return true;
   }
 
   function showToast(message, tone = 'success') {
@@ -586,15 +597,18 @@
     };
     const validation = model.validatePayment(payment, invoice.saldo_pendiente);
     if (!validation.valid) return displayErrors(selectors.paymentForm, validation.errors);
-    state.payments.push(payment);
+    const nextPayments = [...state.payments, payment];
     const baseIndex = state.invoices.findIndex((item) => item.id === invoice.id);
-    const hydrated = model.hydrateInvoice(state.invoices[baseIndex], state.payments);
-    state.invoices[baseIndex] = hydrated;
-    persist();
+    const hydrated = model.hydrateInvoice(state.invoices[baseIndex], nextPayments);
+    const nextInvoices = state.invoices.map((item, index) => index === baseIndex ? hydrated : item);
+    if (!commitDurableTransition(
+      nextInvoices,
+      nextPayments,
+      () => recordActivity('Facturas', 'Pago registrado', `${invoice.numero_factura} por ${formatCurrency(payment.monto_pagado, invoice.moneda)}.`)
+    )) return;
     closeDialog(selectors.paymentDialog);
     renderList();
     renderDetail();
-    recordActivity('Facturas', 'Pago registrado', `${invoice.numero_factura} por ${formatCurrency(payment.monto_pagado, invoice.moneda)}.`);
     showToast(validation.excess > 0
       ? `Pago registrado. ${formatCurrency(validation.excess, invoice.moneda)} quedaron como saldo a favor.`
       : 'Pago registrado correctamente. Saldo actualizado.');
@@ -624,15 +638,18 @@
     if (Object.keys(errors).length) return displayErrors(selectors.voidForm, errors);
     const index = state.invoices.findIndex((invoice) => invoice.id === state.selectedId);
     if (index < 0) return;
-    state.invoices[index] = {
-      ...state.invoices[index], estado: 'VOID', saldo_pendiente: 0,
+    const nextInvoices = state.invoices.map((invoice, position) => position === index ? {
+      ...invoice, estado: 'VOID', saldo_pendiente: 0,
       motivo_anulacion: reason, fecha_anulacion: new Date().toISOString().slice(0, 10)
-    };
-    persist();
+    } : invoice);
+    if (!commitDurableTransition(
+      nextInvoices,
+      state.payments,
+      () => recordActivity('Facturas', 'Factura anulada', `${nextInvoices[index].numero_factura}.`)
+    )) return;
     closeDialog(selectors.voidDialog);
     renderList();
     renderDetail();
-    recordActivity('Facturas', 'Factura anulada', `${state.invoices[index].numero_factura}.`);
     showToast('Factura anulada. Este cambio queda registrado en el historial.');
   }
 
@@ -677,8 +694,15 @@
     if (action === 'edit') return openInvoiceForm(invoice);
     if (action === 'send') {
       const index = state.invoices.findIndex((item) => item.id === invoice.id);
-      state.invoices[index] = { ...state.invoices[index], estado: 'SENT' };
-      persist(); renderList(); renderDetail(); recordActivity('Facturas', 'Factura enviada', `${invoice.numero_factura}.`); showToast('Factura enviada. Estado actualizado a Enviada.');
+      const nextInvoices = state.invoices.map((item, position) => position === index ? { ...item, estado: 'SENT' } : item);
+      if (!commitDurableTransition(
+        nextInvoices,
+        state.payments,
+        () => recordActivity('Facturas', 'Factura enviada', `${invoice.numero_factura}.`)
+      )) return;
+      renderList();
+      renderDetail();
+      showToast('Factura enviada. Estado actualizado a Enviada.');
     }
   }
 
@@ -772,8 +796,9 @@
       const { proyectos: baselineProjects = [] } = data;
       state.clients = clientModel.getEffectiveClients(data.clientes ?? []);
       state.projects = projectModel ? projectModel.getEffectiveProjects(data.proyectos ?? []) : baselineProjects;
-      state.invoices = model.mergeById(data.facturas ?? [], readStorage(STORAGE_KEYS.invoices));
-      state.payments = model.mergeById(data.pagos_factura ?? [], readStorage(STORAGE_KEYS.payments));
+      const storedTransition = readStoredInvoiceTransition();
+      state.invoices = model.mergeById(data.facturas ?? [], storedTransition.invoices);
+      state.payments = model.mergeById(data.pagos_factura ?? [], storedTransition.payments);
       renderClientAndProjectOptions();
       selectors.filters.elements.period.value = state.filters.period;
       renderList();

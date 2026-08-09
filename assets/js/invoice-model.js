@@ -72,6 +72,54 @@
     return { committed: true, invoices: nextInvoices };
   }
 
+  function commitInvoiceTransition(invoices = [], payments = [], nextInvoices = [], nextPayments = [], persistTransition = () => false, recordActivity = () => {}) {
+    if (persistTransition(nextInvoices, nextPayments) !== true) {
+      return { committed: false, invoices, payments };
+    }
+    recordActivity();
+    return { committed: true, invoices: nextInvoices, payments: nextPayments };
+  }
+
+  function persistInvoiceTransition(storage, transitionKey, invoices = [], payments = [], transactionId = String(Date.now())) {
+    const stageKey = `${transitionKey}:${transactionId}`;
+    try {
+      storage.setItem(`${stageKey}:invoices`, JSON.stringify(invoices));
+      storage.setItem(`${stageKey}:payments`, JSON.stringify(payments));
+      storage.setItem(transitionKey, JSON.stringify({ transactionId }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function readInvoiceTransition(storage, transitionKey) {
+    try {
+      const marker = JSON.parse(storage.getItem(transitionKey) || 'null');
+      if (!marker?.transactionId) return null;
+      const stageKey = `${transitionKey}:${marker.transactionId}`;
+      const invoices = JSON.parse(storage.getItem(`${stageKey}:invoices`) || 'null');
+      const payments = JSON.parse(storage.getItem(`${stageKey}:payments`) || 'null');
+      return Array.isArray(invoices) && Array.isArray(payments) ? { invoices, payments } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function readInvoiceStorage(storage, transitionKey, invoiceKey, paymentKey) {
+    const transition = readInvoiceTransition(storage, transitionKey);
+    if (transition) return transition;
+    try {
+      const invoices = JSON.parse(storage.getItem(invoiceKey) || '[]');
+      const payments = JSON.parse(storage.getItem(paymentKey) || '[]');
+      return {
+        invoices: Array.isArray(invoices) ? invoices : [],
+        payments: Array.isArray(payments) ? payments : []
+      };
+    } catch {
+      return { invoices: [], payments: [] };
+    }
+  }
+
   function getInvoicePayments(invoiceId, payments = []) {
     return payments.filter((payment) => String(payment.factura_id) === String(invoiceId));
   }
@@ -218,6 +266,7 @@
     INVOICE_STATES,
     calculateInvoiceMetrics,
     commitInvoiceRecord,
+    commitInvoiceTransition,
     calculateInvoiceTotals,
     calculatePaymentSummary,
     deriveInvoiceState,
@@ -228,6 +277,9 @@
     isValidDate,
     mergeById,
     normalizeText,
+    persistInvoiceTransition,
+    readInvoiceTransition,
+    readInvoiceStorage,
     round,
     resolveEstimatedTaxForNewInvoice,
     validateInvoice,

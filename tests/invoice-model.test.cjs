@@ -235,3 +235,124 @@ test('records invoice activity only after successful durable persistence', () =>
   assert.equal(result.committed, true);
   assert.deepEqual(events, ['persist', 'activity']);
 });
+
+test('does not send an invoice or record activity when durable persistence fails', () => {
+  const existingInvoices = [{ id: 'fac_send', estado: 'DRAFT' }];
+  const existingPayments = [];
+  const activity = [];
+  const result = model.commitInvoiceTransition(
+    existingInvoices,
+    existingPayments,
+    [{ ...existingInvoices[0], estado: 'SENT' }],
+    existingPayments,
+    () => false,
+    () => activity.push('activity')
+  );
+
+  assert.equal(result.committed, false);
+  assert.strictEqual(result.invoices, existingInvoices);
+  assert.strictEqual(result.payments, existingPayments);
+  assert.deepEqual(activity, []);
+});
+
+test('does not void an invoice or record activity when durable persistence fails', () => {
+  const existingInvoices = [{ id: 'fac_void_failure', estado: 'SENT', saldo_pendiente: 100 }];
+  const existingPayments = [];
+  const activity = [];
+  const result = model.commitInvoiceTransition(
+    existingInvoices,
+    existingPayments,
+    [{ ...existingInvoices[0], estado: 'VOID', saldo_pendiente: 0 }],
+    existingPayments,
+    () => false,
+    () => activity.push('activity')
+  );
+
+  assert.equal(result.committed, false);
+  assert.strictEqual(result.invoices, existingInvoices);
+  assert.strictEqual(result.payments, existingPayments);
+  assert.deepEqual(activity, []);
+});
+
+test('does not register a payment or record activity when durable persistence fails', () => {
+  const existingInvoices = [{ id: 'fac_pay', estado: 'SENT', saldo_pendiente: 100 }];
+  const existingPayments = [];
+  const activity = [];
+  const nextPayment = { id: 'pay_failure', factura_id: 'fac_pay', monto_pagado: 100 };
+  const result = model.commitInvoiceTransition(
+    existingInvoices,
+    existingPayments,
+    [{ ...existingInvoices[0], estado: 'PAID', saldo_pendiente: 0 }],
+    [...existingPayments, nextPayment],
+    () => false,
+    () => activity.push('activity')
+  );
+
+  assert.equal(result.committed, false);
+  assert.strictEqual(result.invoices, existingInvoices);
+  assert.strictEqual(result.payments, existingPayments);
+  assert.deepEqual(activity, []);
+});
+
+test('records transition activity only after its invoice and payment snapshot persists', () => {
+  const events = [];
+  const result = model.commitInvoiceTransition(
+    [{ id: 'fac_order', estado: 'SENT' }],
+    [],
+    [{ id: 'fac_order', estado: 'PAID' }],
+    [{ id: 'pay_order', factura_id: 'fac_order', monto_pagado: 100 }],
+    () => { events.push('persist'); return true; },
+    () => events.push('activity')
+  );
+
+  assert.equal(result.committed, true);
+  assert.deepEqual(events, ['persist', 'activity']);
+  assert.equal(result.invoices[0].estado, 'PAID');
+  assert.equal(result.payments.length, 1);
+});
+
+test('recovers only the last committed invoice snapshot when the second staged write fails', () => {
+  const entries = new Map();
+  const writes = [];
+  let failKey = null;
+  const storage = {
+    getItem(key) { return entries.has(key) ? entries.get(key) : null; },
+    setItem(key, value) {
+      writes.push(key);
+      if (key === failKey) throw new Error('Storage blocked');
+      entries.set(key, value);
+    }
+  };
+  const transitionKey = 'invoice-transition';
+  const committed = {
+    invoices: [{ id: 'fac_before', estado: 'SENT' }],
+    payments: [{ id: 'pay_before', factura_id: 'fac_before', monto_pagado: 10 }]
+  };
+  const candidate = {
+    invoices: [{ id: 'fac_after', estado: 'PAID' }],
+    payments: [{ id: 'pay_after', factura_id: 'fac_after', monto_pagado: 20 }]
+  };
+
+  assert.equal(model.persistInvoiceTransition(storage, transitionKey, committed.invoices, committed.payments, 'committed'), true);
+  failKey = `${transitionKey}:failed:payments`;
+
+  assert.equal(model.persistInvoiceTransition(storage, transitionKey, candidate.invoices, candidate.payments, 'failed'), false);
+  assert.deepEqual(writes.slice(-2), [`${transitionKey}:failed:invoices`, `${transitionKey}:failed:payments`]);
+  assert.deepEqual(model.readInvoiceTransition(storage, transitionKey), committed);
+});
+
+test('recovers both legacy invoice keys when no transition marker exists', () => {
+  const entries = new Map([
+    ['freelanceflow_invoices_v1', JSON.stringify([{ id: 'fac_legacy', estado: 'SENT' }])],
+    ['freelanceflow_invoice_payments_v1', JSON.stringify([{ id: 'pay_legacy', factura_id: 'fac_legacy', monto_pagado: 25 }])]
+  ]);
+  const storage = { getItem(key) { return entries.has(key) ? entries.get(key) : null; } };
+
+  assert.deepEqual(
+    model.readInvoiceStorage(storage, 'freelanceflow_invoice_transition_v1', 'freelanceflow_invoices_v1', 'freelanceflow_invoice_payments_v1'),
+    {
+      invoices: [{ id: 'fac_legacy', estado: 'SENT' }],
+      payments: [{ id: 'pay_legacy', factura_id: 'fac_legacy', monto_pagado: 25 }]
+    }
+  );
+});
