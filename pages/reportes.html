@@ -44,7 +44,7 @@
       <section class="reports-filter-bar" aria-label="Filtros activos">
         <label>
           <span>Período</span>
-          <input id="reports-period" name="period" type="month" value="2026-06" min="2025-01" max="2027-12" autocomplete="off">
+          <select id="reports-period" name="period" autocomplete="off"></select>
         </label>
         <label>
           <span>Cliente</span>
@@ -176,7 +176,7 @@
       <fieldset><legend><span>1</span> Meta del período</legend>
         <div class="reports-form-grid">
           <label>Periodicidad <strong aria-hidden="true">*</strong><select id="budget-period-type" name="periodo" autocomplete="off" required><option value="Mensual">Mensual</option><option value="Trimestral">Trimestral</option><option value="Anual">Anual</option></select><small class="reports-field-error" data-budget-error="periodo"></small></label>
-          <label>Período <strong aria-hidden="true">*</strong><input id="budget-period-key" name="periodo_clave" type="month" autocomplete="off" required><small class="reports-field-error" data-budget-error="periodo_clave"></small></label>
+          <label>Período <strong aria-hidden="true">*</strong><select id="budget-period-key" name="periodo_clave" autocomplete="off" required></select><small class="reports-field-error" data-budget-error="periodo_clave"></small></label>
           <label>Meta de ingresos <strong aria-hidden="true">*</strong><span class="reports-money-input"><span>$</span><input id="budget-income-goal" name="meta_ingresos" type="number" min="0.01" step="0.01" inputmode="decimal" autocomplete="off" required></span><small class="reports-field-error" data-budget-error="meta_ingresos"></small></label>
           <label>Meta de horas <small>(opcional)</small><input id="budget-hours-goal" name="meta_horas_facturables" type="number" min="0.25" step="0.25" inputmode="decimal" autocomplete="off"><small class="reports-field-error" data-budget-error="meta_horas_facturables"></small></label>
         </div>

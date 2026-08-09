@@ -290,3 +290,61 @@ test('FF-RPT-004 neutraliza fórmulas CSV precedidas por espacio o controles C0',
   assert.equal(exported.mimeType, 'text/csv;charset=utf-8');
   assert.match(exported.content, /^Cliente;Ingresos;% del total\r\n/);
 });
+
+test('FF-RPT-002 validates canonical budget keys, inclusive calendar windows, and period totals', () => {
+  const model = require(modelPath);
+  const validBudget = (periodo, periodo_clave) => model.validateBudget({
+    periodo,
+    periodo_clave,
+    meta_ingresos: 1200,
+    limites_gasto_por_categoria: [{ categoria_id: 'cat_001', limite: 300 }]
+  }, data.categorias_gasto);
+
+  assert.equal(validBudget('Mensual', '2026-06').valid, true);
+  assert.equal(validBudget('Trimestral', '2026-Q2').valid, true);
+  assert.equal(validBudget('Anual', '2026').valid, true);
+  assert.deepEqual(model.getDateRange({ period: '2026-06' }), { from: '2026-06-01', to: '2026-06-30' });
+  assert.deepEqual(model.getDateRange({ period: '2026-Q1' }), { from: '2026-01-01', to: '2026-03-31' });
+  assert.deepEqual(model.getDateRange({ period: '2026' }), { from: '2026-01-01', to: '2026-12-31' });
+
+  [
+    ['Mensual', '2026-Q2'], ['Trimestral', '2026-04'], ['Anual', '2026-Q1'],
+    ['Trimestral', '2026-Q5'], ['Anual', '2026-01'], [['Mensual'], '2026-06'], ['Mensual', 202606]
+  ].forEach(([periodo, periodo_clave]) => assert.equal(validBudget(periodo, periodo_clave).valid, false));
+
+  const calendarData = {
+    ...data,
+    pagos_factura: [
+      { id: 'pay_q_start', factura_id: 'fac_001', monto_pagado: 100, fecha_pago: '2026-01-01' },
+      { id: 'pay_q_end', factura_id: 'fac_001', monto_pagado: 200, fecha_pago: '2026-03-31' },
+      { id: 'pay_outside', factura_id: 'fac_001', monto_pagado: 999, fecha_pago: '2026-04-01' }
+    ],
+    gastos: [
+      { id: 'expense_q_start', categoria_gasto_id: 'cat_001', monto: 50, fecha_gasto: '2026-01-01' },
+      { id: 'expense_q_end', categoria_gasto_id: 'cat_001', monto: 50, fecha_gasto: '2026-03-31' },
+      { id: 'expense_outside', categoria_gasto_id: 'cat_001', monto: 999, fecha_gasto: '2026-04-01' }
+    ]
+  };
+  const quarterlyBudget = validBudget('Trimestral', '2026-Q1').value;
+  const summary = model.calculateFinancialSummary(calendarData, quarterlyBudget, { period: '2026-Q1' });
+
+  assert.equal(summary.realIncome, 300);
+  assert.equal(summary.realExpenses, 100);
+  assert.equal(summary.incomeGoal, 1200);
+  assert.equal(summary.budgetedExpenses, 300);
+});
+
+test('FF-RPT-002 normalizes legacy monthly budgets at the merge boundary', () => {
+  const model = require(modelPath);
+  const merged = model.mergeBudgets([{ id: 'budget_legacy_2026_06', periodo_clave: '2026-06' }]);
+
+  assert.deepEqual(merged, [{
+    id: 'budget_legacy_2026_06',
+    periodo: 'Mensual',
+    periodo_clave: '2026-06',
+    meta_ingresos: 0,
+    meta_horas_facturables: null,
+    limites_gasto_por_categoria: [],
+    fecha_actualizacion: ''
+  }]);
+});

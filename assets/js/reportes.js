@@ -6,6 +6,7 @@
   const DATA_URL = '../assets/data/mock-data.json';
   const STORAGE_KEY = 'freelanceflow_budgets_v1';
   const DEFAULT_PERIOD = '2026-06';
+  const PERIOD_YEARS = [2025, 2026, 2027];
   const model = window.FreelanceFlowReportModel;
   const categoryModel = window.FreelanceFlowCategoryModel;
   const clientModel = window.FreelanceFlowClientModel;
@@ -99,7 +100,8 @@
 
   function readInitialFilters() {
     const params = new URLSearchParams(window.location.search);
-    state.filters.period = /^\d{4}-\d{2}$/.test(params.get('period') || '') ? params.get('period') : DEFAULT_PERIOD;
+    const requestedPeriod = params.get('period') || '';
+    state.filters.period = reportPeriodOptions().some((option) => option.value === requestedPeriod) ? requestedPeriod : DEFAULT_PERIOD;
     state.filters.clientId = params.get('client') || '';
     state.filters.projectId = params.get('project') || '';
     const requestedFrom = params.get('from') || '';
@@ -113,6 +115,8 @@
   }
 
   function populateSelectors() {
+    populateReportPeriodOptions();
+    setValue('reports-period', state.filters.period);
     ['reports-client', 'report-drawer-client'].forEach((id) => populateSelect(id, state.data.clientes ?? [], 'id', 'nombre_razon_social'));
     setValue('reports-client', state.filters.clientId);
     setValue('report-drawer-client', state.filters.clientId);
@@ -130,6 +134,33 @@
       option.textContent = item[labelKey];
       select.appendChild(option);
     });
+  }
+
+
+  function reportPeriodOptions() {
+    return PERIOD_YEARS.flatMap((year) => [
+      ...Array.from({ length: 12 }, (_, index) => ({ value: `${year}-${String(index + 1).padStart(2, '0')}`, label: periodLabel(`${year}-${String(index + 1).padStart(2, '0')}`), periodo: 'Mensual' })),
+      ...[1, 2, 3, 4].map((quarter) => ({ value: `${year}-Q${quarter}`, label: `Trimestre ${quarter} de ${year}`, periodo: 'Trimestral' })),
+      { value: String(year), label: `Anual ${year}`, periodo: 'Anual' }
+    ]);
+  }
+
+  function budgetPeriodOptions(periodo) {
+    return reportPeriodOptions().filter((option) => option.periodo === periodo);
+  }
+
+  function populateReportPeriodOptions() {
+    const select = document.getElementById('reports-period');
+    if (!select) return;
+    select.innerHTML = reportPeriodOptions().map((option) => `<option value="${option.value}">${option.label}</option>`).join('');
+  }
+
+  function populateBudgetPeriodKeyOptions(periodo, selectedPeriod) {
+    const select = document.getElementById('budget-period-key');
+    const options = budgetPeriodOptions(periodo);
+    if (!select) return;
+    select.innerHTML = options.map((option) => `<option value="${option.value}">${option.label}</option>`).join('');
+    select.value = options.some((option) => option.value === selectedPeriod) ? selectedPeriod : (options[0]?.value || '');
   }
 
   function updateProjectSelectors() {
@@ -216,6 +247,7 @@
       button.closest('.budget-limit-row')?.remove();
       state.formDirty = true;
     });
+    document.getElementById('budget-period-type')?.addEventListener('change', (event) => { populateBudgetPeriodKeyOptions(event.target.value, ''); state.formDirty = true; clearBudgetErrors(); });
     document.getElementById('budget-form')?.addEventListener('input', () => { state.formDirty = true; clearBudgetErrors(); });
     document.getElementById('budget-form')?.addEventListener('change', () => { state.formDirty = true; clearBudgetErrors(); });
     document.getElementById('budget-form')?.addEventListener('submit', handleBudgetSubmit);
@@ -264,7 +296,7 @@
   }
 
   function selectBudget() {
-    state.budget = state.budgets.find((budget) => budget.periodo === 'Mensual' && budget.periodo_clave === state.filters.period) ?? null;
+    state.budget = state.budgets.find((budget) => budget.periodo_clave === state.filters.period) ?? null;
   }
 
   function renderAll() {
@@ -484,7 +516,7 @@
     const budget = state.budget ?? { id: '', periodo: 'Mensual', periodo_clave: state.filters.period, meta_ingresos: '', meta_horas_facturables: '', limites_gasto_por_categoria: [] };
     setValue('budget-id', budget.id);
     setValue('budget-period-type', budget.periodo);
-    setValue('budget-period-key', budget.periodo_clave || state.filters.period);
+    populateBudgetPeriodKeyOptions(budget.periodo, budget.periodo_clave || state.filters.period);
     setValue('budget-income-goal', budget.meta_ingresos || '');
     setValue('budget-hours-goal', budget.meta_horas_facturables ?? '');
     const container = document.getElementById('budget-limit-rows');
@@ -713,7 +745,9 @@
   }
 
   function periodLabel(period) {
-    if (!/^\d{4}-\d{2}$/.test(period || '')) return 'Período no definido';
+    if (/^[1-9]\d{3}-Q[1-4]$/.test(period || '')) return `Trimestre ${period.at(-1)} de ${period.slice(0, 4)}`;
+    if (/^[1-9]\d{3}$/.test(period || '')) return `Anual ${period}`;
+    if (!/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(period || '')) return 'Periodo no definido';
     const date = new Date(`${period}-01T00:00:00`);
     const label = monthFormatter.format(date);
     return label.charAt(0).toUpperCase() + label.slice(1);
