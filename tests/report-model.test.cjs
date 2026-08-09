@@ -237,3 +237,56 @@ test('FF-CAT-007 reports USD 67.49 once and keeps the deductible share at 100 pe
   assert.equal(Number(report.rows.reduce((sum, row) => sum + row.amount, 0).toFixed(2)), 67.49);
   assert.deepEqual(report.rows.map(({ deductibleShare }) => deductibleShare), [100, 100]);
 });
+
+test('FF-RPT-001 descarta pagos y gastos corruptos antes de calcular y exportar', () => {
+  const model = require(modelPath);
+  const corrupted = {
+    ...data,
+    pagos_factura: [
+      ...data.pagos_factura,
+      { id: 'pay_001', factura_id: 'fac_001', monto_pagado: 999, fecha_pago: '2026-06-11' },
+      { id: '', factura_id: 'fac_001', monto_pagado: 999, fecha_pago: '2026-06-11' },
+      { id: 'pay_bad_date', factura_id: 'fac_001', monto_pagado: 999, fecha_pago: '2026-06-31' },
+      { id: 'pay_boolean_amount', factura_id: 'fac_001', monto_pagado: true, fecha_pago: '2026-06-11' },
+      { id: 'pay_string_amount', factura_id: 'fac_001', monto_pagado: '999', fecha_pago: '2026-06-11' },
+      { id: 'pay_negative', factura_id: 'fac_001', monto_pagado: -1, fecha_pago: '2026-06-11' }
+    ],
+    gastos: [
+      ...data.gastos,
+      { id: 'gasto_001', categoria_gasto_id: 'cat_001', monto: 999, fecha_gasto: '2026-06-11' },
+      { id: 'gasto_empty', categoria_gasto_id: 'cat_001', monto: 999, fecha_gasto: '' },
+      { id: 'gasto_boolean_amount', categoria_gasto_id: 'cat_001', monto: false, fecha_gasto: '2026-06-11' },
+      { id: 'gasto_string_amount', categoria_gasto_id: 'cat_001', monto: '999', fecha_gasto: '2026-06-11' },
+      { id: 'gasto_negative', categoria_gasto_id: 'cat_001', monto: -1, fecha_gasto: '2026-06-11' }
+    ]
+  };
+
+  const summary = model.calculateFinancialSummary(corrupted, juneBudget, { period: '2026-06' });
+  const report = model.buildReport('cashflow', corrupted, { period: '2026-06' });
+  const exported = model.buildReportCsvExport(report, { period: '2026-06' });
+
+  assert.deepEqual(
+    { income: summary.realIncome, expenses: summary.realExpenses, payments: summary.paymentCount, expensesCount: summary.expenseCount },
+    { income: 1350, expenses: 67.49, payments: 2, expensesCount: 2 }
+  );
+  assert.match(exported.content, /1350,00;67,49;1282,51/);
+  assert.doesNotMatch(exported.content, /999,00/);
+});
+
+test('FF-RPT-004 neutraliza fórmulas CSV precedidas por espacio o controles C0', () => {
+  const model = require(modelPath);
+  const exported = model.buildReportCsvExport({
+    type: 'income',
+    rows: [
+      { clientName: ' =SUM(1,1)', amount: 50, share: 100 },
+      { clientName: '\u0000+CMD()', amount: 25, share: 50 },
+      { clientName: '\t@HYPERLINK()', amount: 25, share: 50 }
+    ]
+  }, { period: '2026-06' });
+
+  assert.match(exported.content, /' =SUM\(1,1\)/);
+  assert.match(exported.content, /'\u0000\+CMD\(\)/);
+  assert.match(exported.content, /'\t@HYPERLINK\(\)/);
+  assert.equal(exported.mimeType, 'text/csv;charset=utf-8');
+  assert.match(exported.content, /^Cliente;Ingresos;% del total\r\n/);
+});

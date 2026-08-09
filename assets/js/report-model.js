@@ -112,9 +112,21 @@
     return true;
   }
 
+  function sanitizeRecords(records, { amountField, dateField }) {
+    const ids = new Set();
+    return (Array.isArray(records) ? records : []).filter((record) => {
+      if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
+      if (typeof record.id !== 'string' || !record.id.trim() || ids.has(record.id)) return false;
+      if (typeof record[dateField] !== 'string' || !isValidDate(record[dateField])) return false;
+      if (typeof record[amountField] !== 'number' || !Number.isFinite(record[amountField]) || record[amountField] < 0) return false;
+      ids.add(record.id);
+      return true;
+    });
+  }
+
   function getFilteredPayments(data = {}, filters = {}, relations = createRelations(data)) {
     const range = getDateRange(filters);
-    return (data.pagos_factura ?? []).filter((payment) => {
+    return sanitizeRecords(data.pagos_factura, { amountField: 'monto_pagado', dateField: 'fecha_pago' }).filter((payment) => {
       const invoice = relations.invoices.get(String(payment.factura_id));
       if (!invoice || invoice.estado === 'VOID') return false;
       return inDateRange(payment.fecha_pago, range) && matchesScope({
@@ -126,7 +138,7 @@
 
   function getFilteredExpenses(data = {}, filters = {}, relations = createRelations(data)) {
     const range = getDateRange(filters);
-    return (data.gastos ?? []).filter((expense) => inDateRange(expense.fecha_gasto, range)
+    return sanitizeRecords(data.gastos, { amountField: 'monto', dateField: 'fecha_gasto' }).filter((expense) => inDateRange(expense.fecha_gasto, range)
       && matchesScope({
         clientId: expense.cliente_id,
         projectId: expense.proyecto_relacionado_id ?? expense.proyecto_id
@@ -393,7 +405,7 @@
   function serializeCsvCell(value) {
     if (typeof value === 'number' && Number.isFinite(value)) return value.toFixed(2).replace('.', ',');
     let text = String(value ?? '');
-    if (/^[=+\-@]/.test(text)) text = `'${text}`;
+    if (/^[\x00-\x20]*[=+\-@]/.test(text)) text = `'${text}`;
     return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   }
 
