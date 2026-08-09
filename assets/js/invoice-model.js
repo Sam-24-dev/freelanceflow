@@ -35,6 +35,15 @@
     return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
   }
 
+  function resolveEstimatedTaxForNewInvoice(invoice = {}, fiscalConfiguration = {}) {
+    if (Object.prototype.hasOwnProperty.call(invoice, 'impuestos')) return toNumber(invoice.impuestos);
+    if (fiscalConfiguration.aplica_impuesto_valor_agregado !== true) return 0;
+    const rate = Number(fiscalConfiguration.porcentaje_impuesto);
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) return 0;
+    const subtotal = calculateInvoiceTotals({ ...invoice, impuestos: 0 }).subtotal;
+    return round(subtotal * rate / 100);
+  }
+
   function calculateInvoiceTotals(invoice = {}) {
     const items = Array.isArray(invoice.items) ? invoice.items : [];
     const calculatedSubtotal = items.reduce((sum, item) => (
@@ -51,6 +60,16 @@
       impuestos,
       total: round(Math.max(0, subtotal - descuento + impuestos))
     };
+  }
+
+  function commitInvoiceRecord(invoices = [], record = {}, persistInvoice = () => false, recordActivity = () => {}) {
+    const index = invoices.findIndex((invoice) => invoice.id === record.id);
+    const nextInvoices = index >= 0
+      ? invoices.map((invoice, position) => position === index ? record : invoice)
+      : [record, ...invoices];
+    if (persistInvoice(nextInvoices) !== true) return { committed: false, invoices };
+    recordActivity(record);
+    return { committed: true, invoices: nextInvoices };
   }
 
   function getInvoicePayments(invoiceId, payments = []) {
@@ -198,6 +217,7 @@
   const api = {
     INVOICE_STATES,
     calculateInvoiceMetrics,
+    commitInvoiceRecord,
     calculateInvoiceTotals,
     calculatePaymentSummary,
     deriveInvoiceState,
@@ -209,6 +229,7 @@
     mergeById,
     normalizeText,
     round,
+    resolveEstimatedTaxForNewInvoice,
     validateInvoice,
     validatePayment
   };

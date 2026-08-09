@@ -65,3 +65,15 @@ test('ignores corrupt or non-object saved fiscal configuration', () => {
     identificacion_fiscal: 'ID', regimen_tributario: 'General', porcentaje_retencion_estimado: 0, aplica_impuesto_valor_agregado: false, porcentaje_impuesto: 0
   });
 });
+
+test('fails closed unless the stored tax flag is a primitive boolean', () => {
+  const base = { identificacion_fiscal: 'ID', regimen_tributario: 'General', porcentaje_retencion_estimado: 10, porcentaje_impuesto: 16 };
+  for (const value of [true, false]) {
+    const stored = model.parseStoredFiscalConfiguration(JSON.stringify({ ...base, aplica_impuesto_valor_agregado: value }));
+    assert.equal(stored.aplica_impuesto_valor_agregado, value);
+  }
+  for (const value of ['true', 'false', 1, 0, null, [], {}, undefined]) {
+    const raw = JSON.stringify({ ...base, aplica_impuesto_valor_agregado: value });
+    assert.equal(model.parseStoredFiscalConfiguration(raw), null, `must reject ${String(value)}`);
+  }
+});

@@ -1250,6 +1250,7 @@ body {
 }
 
 .invoice-table-wrap {
+  contain: layout;
   margin-top: 1rem;
   overflow-x: auto;
   border: 1px solid var(--invoice-line);

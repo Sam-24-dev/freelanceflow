@@ -48,6 +48,7 @@
     try {
       const parsed = JSON.parse(raw);
       if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') return null;
+      if (typeof parsed.aplica_impuesto_valor_agregado !== 'boolean') return null;
       const validation = validateFiscalConfiguration(parsed);
       return validation.valid ? validation.value : null;
     } catch {
