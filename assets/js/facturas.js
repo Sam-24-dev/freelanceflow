@@ -2,13 +2,15 @@
   'use strict';
 
   const model = window.FreelanceFlowInvoiceModel;
+  const fiscalModel = window.FreelanceFlowFiscalConfigModel;
   const clientModel = window.FreelanceFlowClientModel;
   const projectModel = window.FreelanceFlowProjectModel;
   if (!model || !clientModel) return;
 
   const STORAGE_KEYS = {
     invoices: 'freelanceflow_invoices_v1',
-    payments: 'freelanceflow_invoice_payments_v1'
+    payments: 'freelanceflow_invoice_payments_v1',
+    fiscal: 'freelanceflow_fiscal_config_v1'
   };
   const STATUS_COPY = {
     DRAFT: 'Borrador',
@@ -126,6 +128,20 @@
       return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
+    }
+  }
+
+  function readFiscalConfiguration() {
+    try { return fiscalModel?.parseStoredFiscalConfiguration(localStorage.getItem(STORAGE_KEYS.fiscal)); } catch { return null; }
+  }
+
+  function persistInvoices(invoices) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.invoices, JSON.stringify(invoices));
+      return true;
+    } catch {
+      showToast('No pudimos guardar la factura. Inténtalo nuevamente.', 'error');
+      return false;
     }
   }
 
@@ -345,10 +361,10 @@
 
   function closePanel(panel) {
     panel.classList.remove('is-open');
+    state.lastFocus?.focus?.();
     panel.setAttribute('aria-hidden', 'true');
     panel.setAttribute('inert', '');
     syncOverlay();
-    state.lastFocus?.focus?.();
   }
 
   function openDetail(id, trigger) {
@@ -445,7 +461,7 @@
     selectors.invoiceForm.elements.proyecto_relacionado_id.value = invoice?.proyecto_relacionado_id ?? '';
     selectors.invoiceForm.elements.moneda.value = invoice?.moneda ?? 'USD';
     selectors.invoiceForm.elements.descuento.value = invoice?.descuento ?? 0;
-    selectors.invoiceForm.elements.impuestos.value = invoice?.impuestos ?? 0;
+    selectors.invoiceForm.elements.impuestos.value = invoice?.impuestos ?? '';
     (invoice?.items?.length ? invoice.items : [{}]).forEach(addInvoiceItem);
     updateProjectOptions(selectors.invoiceForm.elements.cliente_id.value, selectors.invoiceForm.elements.proyecto_relacionado_id.value);
   }
@@ -475,6 +491,7 @@
     event.preventDefault();
     const submitter = event.submitter;
     const intent = submitter?.value || 'draft';
+    const taxValue = selectors.invoiceForm.elements.impuestos.value;
     const candidate = {
       id: state.editingId || `fac_${Date.now()}`,
       cliente_id: selectors.invoiceForm.elements.cliente_id.value,
@@ -486,8 +503,9 @@
       estado: intent === 'send' ? 'SENT' : 'DRAFT',
       items: collectInvoiceItems(),
       descuento: Number(selectors.invoiceForm.elements.descuento.value),
-      impuestos: Number(selectors.invoiceForm.elements.impuestos.value)
+      ...(taxValue === '' ? {} : { impuestos: Number(taxValue) })
     };
+    if (!state.editingId) candidate.impuestos = model.resolveEstimatedTaxForNewInvoice(candidate, readFiscalConfiguration() || {});
     const validation = model.validateInvoice(candidate);
     if (!validation.valid) {
       displayErrors(selectors.invoiceForm, validation.errors);
@@ -502,13 +520,16 @@
       monto_pagado_acumulado: 0,
       saldo_pendiente: intent === 'send' ? totals.total : totals.total
     };
-    const index = state.invoices.findIndex((invoice) => invoice.id === record.id);
-    if (index >= 0) state.invoices[index] = record;
-    else state.invoices.unshift(record);
-    persist();
+    const committed = model.commitInvoiceRecord(
+      state.invoices,
+      record,
+      persistInvoices,
+      () => recordActivity('Facturas', intent === 'send' ? 'Factura enviada' : 'Factura guardada', `${record.numero_factura}.`)
+    );
+    if (!committed.committed) return;
+    state.invoices = committed.invoices;
     closeInvoiceForm();
     renderList();
-    recordActivity('Facturas', intent === 'send' ? 'Factura enviada' : 'Factura guardada', `${record.numero_factura}.`);
     showToast(intent === 'send' ? 'Factura enviada. Estado actualizado a Enviada.' : 'Factura guardada como borrador.');
   }
 

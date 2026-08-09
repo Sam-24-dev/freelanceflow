@@ -173,3 +173,65 @@ test('valida pagos y advierte un excedente sin bloquearlo', () => {
   assert.equal(overpayment.valid, true);
   assert.equal(overpayment.excess, 50);
 });
+
+test('snapshots the current enabled fiscal default for new invoices without changing historical records', () => {
+  const draft = { items: [{ descripcion_item: 'Service', cantidad: 2, precio_unitario: 100 }], descuento: 0 };
+  const first = model.resolveEstimatedTaxForNewInvoice(draft, { aplica_impuesto_valor_agregado: true, porcentaje_impuesto: 12 });
+  const second = model.resolveEstimatedTaxForNewInvoice(draft, { aplica_impuesto_valor_agregado: true, porcentaje_impuesto: 15 });
+  const manualTwelve = model.resolveEstimatedTaxForNewInvoice({ ...draft, impuestos: 12 }, { aplica_impuesto_valor_agregado: true, porcentaje_impuesto: 15 });
+  const manualZero = model.resolveEstimatedTaxForNewInvoice({ ...draft, impuestos: 0 }, { aplica_impuesto_valor_agregado: true, porcentaje_impuesto: 15 });
+
+  assert.equal(first, 24);
+  assert.equal(second, 30);
+  assert.equal(manualTwelve, 12);
+  assert.equal(manualZero, 0);
+  assert.equal(model.calculateInvoiceTotals({ ...draft, impuestos: first }).impuestos, 24);
+  assert.equal(model.resolveEstimatedTaxForNewInvoice(draft, { aplica_impuesto_valor_agregado: 'true', porcentaje_impuesto: 12 }), 0);
+});
+
+test('keeps an editable stored tax amount durable through hydrate and totals', () => {
+  const saved = { ...invoices[0], impuestos: 35.5 };
+  const reloaded = model.hydrateInvoice(saved);
+  assert.equal(reloaded.impuestos, 35.5);
+  assert.equal(reloaded.total_factura, 985.5);
+});
+
+test('keeps the persisted historical tax snapshot unchanged after the fiscal default changes', () => {
+  const invoice = {
+    id: 'fac_snapshot',
+    items: [{ descripcion_item: 'Service', cantidad: 1, precio_unitario: 200 }],
+    impuestos: model.resolveEstimatedTaxForNewInvoice({ items: [{ cantidad: 1, precio_unitario: 200 }] }, { aplica_impuesto_valor_agregado: true, porcentaje_impuesto: 12 })
+  };
+  const laterDefault = model.resolveEstimatedTaxForNewInvoice(invoice, { aplica_impuesto_valor_agregado: true, porcentaje_impuesto: 15 });
+
+  assert.equal(invoice.impuestos, 24);
+  assert.equal(laterDefault, 24);
+  assert.equal(model.hydrateInvoice(invoice).impuestos, 24);
+});
+
+test('commits an edited applied value that remains durable when the saved invoice is re-read', () => {
+  const existing = [{ id: 'fac_edit', items: [{ cantidad: 1, precio_unitario: 100 }], impuestos: 12 }];
+  let durable = [];
+  const result = model.commitInvoiceRecord(existing, { ...existing[0], impuestos: 35.5 }, (next) => { durable = next; return true; });
+
+  assert.equal(result.committed, true);
+  assert.equal(model.hydrateInvoice(durable[0]).impuestos, 35.5);
+});
+
+test('does not commit state or record success activity when durable invoice storage fails', () => {
+  const existing = [{ id: 'fac_failure', impuestos: 12 }];
+  const activity = [];
+  const result = model.commitInvoiceRecord(existing, { id: 'fac_failure', impuestos: 35.5 }, () => false, () => activity.push('activity'));
+
+  assert.equal(result.committed, false);
+  assert.strictEqual(result.invoices, existing);
+  assert.deepEqual(activity, []);
+});
+
+test('records invoice activity only after successful durable persistence', () => {
+  const events = [];
+  const result = model.commitInvoiceRecord([], { id: 'fac_order', impuestos: 12 }, () => { events.push('persist'); return true; }, () => events.push('activity'));
+
+  assert.equal(result.committed, true);
+  assert.deepEqual(events, ['persist', 'activity']);
+});
