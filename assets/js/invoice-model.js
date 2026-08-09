@@ -3,6 +3,7 @@
 
   const INVOICE_STATES = ['DRAFT', 'SENT', 'PARTIAL', 'PAID', 'OVERDUE', 'VOID'];
   const INVOICE_STORAGE_VERSION = 1;
+  const INVOICE_WEB_LOCK_NAME = 'freelanceflow-invoice-mutations-v1';
   const SUPPORTED_CURRENCIES = ['USD'];
   const INVOICE_FIELDS = new Set([
     'id', 'numero_factura', 'cliente_id', 'proyecto_relacionado_id', 'fecha_emision', 'fecha_vencimiento',
@@ -62,6 +63,15 @@
 
   function isFinitePositive(value) {
     return typeof value === 'number' && Number.isFinite(value) && value > 0;
+  }
+
+  function hasUniqueInvoiceNumbers(invoices = []) {
+    const numbers = new Set();
+    return invoices.every((invoice) => {
+      if (!isNonEmptyString(invoice?.numero_factura) || numbers.has(invoice.numero_factura)) return false;
+      numbers.add(invoice.numero_factura);
+      return true;
+    });
   }
 
   function hasUniqueIds(records = []) {
@@ -154,7 +164,7 @@
   }
 
   function validateInvoiceStorage(invoices = [], payments = [], context = {}) {
-    if (!Array.isArray(invoices) || !Array.isArray(payments) || !hasUniqueIds(invoices) || !hasUniqueIds(payments)) {
+    if (!Array.isArray(invoices) || !Array.isArray(payments) || !hasUniqueIds(invoices) || !hasUniqueIds(payments) || !hasUniqueInvoiceNumbers(invoices)) {
       return { valid: false };
     }
     if (!invoices.every((invoice) => validateStoredInvoice(invoice, context))) return { valid: false };
@@ -269,6 +279,47 @@
         : { invoices: [], payments: [] };
     } catch {
       return { invoices: [], payments: [] };
+    }
+  }
+
+  function nextInvoiceNumber(invoices = []) {
+    const maximum = invoices.reduce((max, invoice) => {
+      const match = String(invoice?.numero_factura ?? '').match(/^FAC-(\d+)$/);
+      return Math.max(max, Number(match?.[1] ?? 0));
+    }, 0);
+    return `FAC-${String(maximum + 1).padStart(4, '0')}`;
+  }
+
+  function stableSerialize(value) {
+    if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`;
+    if (!isPlainRecord(value)) return JSON.stringify(value);
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`).join(',')}}`;
+  }
+
+  function matchesInvoiceSnapshot(current, baseline) {
+    return isPlainRecord(current) && isPlainRecord(baseline) && stableSerialize(current) === stableSerialize(baseline);
+  }
+
+  async function runSerializedInvoiceMutation(lockManager, readSnapshot, mutateSnapshot) {
+    if (!lockManager || typeof lockManager.request !== 'function') return { committed: false, reason: 'lock-unavailable' };
+    try {
+      return await lockManager.request(INVOICE_WEB_LOCK_NAME, { mode: 'exclusive' }, async () => {
+        let snapshot;
+        try {
+          snapshot = await readSnapshot();
+        } catch {
+          return { committed: false, reason: 'snapshot-failed' };
+        }
+        if (!isPlainRecord(snapshot) || !Array.isArray(snapshot.invoices) || !Array.isArray(snapshot.payments)) {
+          return { committed: false, reason: 'snapshot-failed' };
+        }
+        const result = await mutateSnapshot(snapshot);
+        return isPlainRecord(result) && typeof result.committed === 'boolean'
+          ? result
+          : { committed: false, reason: 'mutation-failed' };
+      });
+    } catch {
+      return { committed: false, reason: 'lock-failed' };
     }
   }
 
@@ -425,6 +476,7 @@
   const api = {
     INVOICE_STATES,
     INVOICE_STORAGE_VERSION,
+    INVOICE_WEB_LOCK_NAME,
     calculateInvoiceMetrics,
     commitInvoiceRecord,
     commitInvoiceTransition,
@@ -436,12 +488,15 @@
     getInvoicePayments,
     hydrateInvoice,
     isValidDate,
+    matchesInvoiceSnapshot,
     mergeById,
+    nextInvoiceNumber,
     normalizeText,
     persistInvoiceTransition,
     readInvoiceTransition,
     readInvoiceStorage,
     round,
+    runSerializedInvoiceMutation,
     resolveEstimatedTaxForNewInvoice,
     validateInvoice,
     validateInvoiceStorage,

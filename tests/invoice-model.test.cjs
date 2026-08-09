@@ -642,3 +642,79 @@ test('FF-INV-002 fails closed before persistence or success activity for financi
   assert.deepEqual(writes, []);
   assert.deepEqual(activity, []);
 });
+
+test('FF-INV-003 serializes two independent creates, preserves both records, and assigns never-reused FAC numbers', async () => {
+  const shared = { invoices: [{ id: 'fac_historical', numero_factura: 'FAC-0042' }], payments: [] };
+  const events = [];
+  const locks = createExclusiveWebLocks();
+  const create = (id) => model.runSerializedInvoiceMutation(locks, () => ({
+    invoices: shared.invoices.map((invoice) => ({ ...invoice })),
+    payments: [...shared.payments]
+  }), async (snapshot) => {
+    const invoice = { id, numero_factura: model.nextInvoiceNumber(snapshot.invoices) };
+    await Promise.resolve();
+    shared.invoices = [...snapshot.invoices, invoice];
+    events.push(`persist:${invoice.numero_factura}`, `activity:${invoice.numero_factura}`);
+    return { committed: true, invoice };
+  });
+
+  const [first, second] = await Promise.all([create('fac_context_a'), create('fac_context_b')]);
+
+  assert.equal(first.committed, true);
+  assert.equal(second.committed, true);
+  assert.deepEqual(shared.invoices.map((invoice) => invoice.numero_factura), ['FAC-0042', 'FAC-0043', 'FAC-0044']);
+  assert.equal(new Set(shared.invoices.map((invoice) => invoice.numero_factura)).size, 3);
+  assert.deepEqual(events, ['persist:FAC-0043', 'activity:FAC-0043', 'persist:FAC-0044', 'activity:FAC-0044']);
+});
+
+test('FF-INV-003 rejects a stale mutation after reloading the locked durable snapshot without persistence or activity', async () => {
+  const locks = createExclusiveWebLocks();
+  const original = validStoredInvoice({ id: 'fac_stale', numero_factura: 'FAC-0100' });
+  const shared = { invoices: [original], payments: [] };
+  const events = [];
+  const mutate = (baseline, update) => model.runSerializedInvoiceMutation(locks, () => ({
+    invoices: shared.invoices.map((invoice) => ({ ...invoice })), payments: [...shared.payments]
+  }), (snapshot) => {
+    const current = snapshot.invoices.find((invoice) => invoice.id === 'fac_stale');
+    if (!model.matchesInvoiceSnapshot(current, baseline)) return { committed: false, reason: 'stale' };
+    shared.invoices = snapshot.invoices.map((invoice) => invoice.id === 'fac_stale' ? update(invoice) : invoice);
+    events.push('persist', 'activity');
+    return { committed: true };
+  });
+
+  const first = await mutate(original, (invoice) => ({ ...invoice, estado: 'VOID', saldo_pendiente: 0, fecha_anulacion: '2026-06-02', motivo_anulacion: 'Duplicate issue' }));
+  const stale = await mutate(original, (invoice) => ({ ...invoice, estado: 'SENT' }));
+
+  assert.equal(first.committed, true);
+  assert.equal(stale.committed, false);
+  assert.equal(stale.reason, 'stale');
+  assert.equal(shared.invoices[0].estado, 'VOID');
+  assert.deepEqual(events, ['persist', 'activity']);
+});
+
+test('FF-INV-003 fails closed when the native Web Lock is unavailable or rejects', async () => {
+  let attempts = 0;
+  const unavailable = await model.runSerializedInvoiceMutation(null, () => ({ invoices: [], payments: [] }), () => {
+    attempts += 1;
+    return { committed: true };
+  });
+  const rejected = await model.runSerializedInvoiceMutation({ request: async () => { throw new Error('denied'); } }, () => ({ invoices: [], payments: [] }), () => {
+    attempts += 1;
+    return { committed: true };
+  });
+
+  assert.deepEqual(unavailable, { committed: false, reason: 'lock-unavailable' });
+  assert.deepEqual(rejected, { committed: false, reason: 'lock-failed' });
+  assert.equal(attempts, 0);
+});
+
+function createExclusiveWebLocks() {
+  let tail = Promise.resolve();
+  return {
+    request(_name, _options, callback) {
+      const run = tail.then(callback);
+      tail = run.catch(() => {});
+      return run;
+    }
+  };
+}
