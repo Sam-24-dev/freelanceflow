@@ -2,6 +2,15 @@
   'use strict';
 
   const INVOICE_STATES = ['DRAFT', 'SENT', 'PARTIAL', 'PAID', 'OVERDUE', 'VOID'];
+  const INVOICE_STORAGE_VERSION = 1;
+  const SUPPORTED_CURRENCIES = ['USD'];
+  const INVOICE_FIELDS = new Set([
+    'id', 'numero_factura', 'cliente_id', 'proyecto_relacionado_id', 'fecha_emision', 'fecha_vencimiento',
+    'moneda', 'estado', 'items', 'descuento', 'impuestos', 'total_factura', 'monto_pagado_acumulado',
+    'saldo_pendiente', 'subtotal_general', 'saldo_a_favor', 'fecha_anulacion', 'motivo_anulacion'
+  ]);
+  const INVOICE_ITEM_FIELDS = new Set(['id', 'origen_item', 'descripcion_item', 'cantidad', 'precio_unitario']);
+  const PAYMENT_FIELDS = new Set(['id', 'factura_id', 'monto_pagado', 'fecha_pago', 'metodo_pago', 'referencia_comprobante', 'notas']);
   const ACTIONS_BY_STATE = {
     DRAFT: ['view', 'edit', 'send', 'void', 'download'],
     SENT: ['view', 'pay', 'void', 'download', 'copyLink'],
@@ -33,6 +42,146 @@
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ''))) return false;
     const date = new Date(`${value}T00:00:00`);
     return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  }
+
+  function isPlainRecord(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function hasOnlyAllowedFields(record, allowedFields) {
+    return isPlainRecord(record) && Object.keys(record).every((field) => allowedFields.has(field));
+  }
+
+  function isNonEmptyString(value) {
+    return typeof value === 'string' && value.trim() === value && value.length > 0;
+  }
+
+  function isFiniteNonNegative(value) {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+  }
+
+  function isFinitePositive(value) {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0;
+  }
+
+  function hasUniqueIds(records = []) {
+    const ids = new Set();
+    return records.every((record) => {
+      if (!isNonEmptyString(record?.id) || ids.has(record.id)) return false;
+      ids.add(record.id);
+      return true;
+    });
+  }
+
+  function validateStoredInvoice(invoice = {}, context = {}) {
+    if (!hasOnlyAllowedFields(invoice, INVOICE_FIELDS)
+      || !isNonEmptyString(invoice.id)
+      || !isNonEmptyString(invoice.numero_factura)
+      || !isNonEmptyString(invoice.cliente_id)
+      || !isValidDate(invoice.fecha_emision)
+      || !isValidDate(invoice.fecha_vencimiento)
+      || invoice.fecha_vencimiento < invoice.fecha_emision
+      || !SUPPORTED_CURRENCIES.includes(invoice.moneda)
+      || !INVOICE_STATES.includes(invoice.estado)
+      || !Array.isArray(invoice.items)
+      || invoice.items.length === 0
+      || !isFiniteNonNegative(invoice.descuento)
+      || !isFiniteNonNegative(invoice.impuestos)) return false;
+
+    if (invoice.proyecto_relacionado_id !== '' && !isNonEmptyString(invoice.proyecto_relacionado_id)) return false;
+    if (invoice.fecha_anulacion !== undefined && !isValidDate(invoice.fecha_anulacion)) return false;
+    if (invoice.motivo_anulacion !== undefined && typeof invoice.motivo_anulacion !== 'string') return false;
+    if (['total_factura', 'monto_pagado_acumulado', 'saldo_pendiente'].some((field) => !isFiniteNonNegative(invoice[field]))) return false;
+    if (invoice.subtotal_general !== undefined && (!isFiniteNonNegative(invoice.subtotal_general) || invoice.subtotal_general !== calculateInvoiceTotals(invoice).subtotal)) return false;
+    if (invoice.saldo_a_favor !== undefined && !isFiniteNonNegative(invoice.saldo_a_favor)) return false;
+    if (invoice.items.some((item) => !hasOnlyAllowedFields(item, INVOICE_ITEM_FIELDS)
+      || !isNonEmptyString(item.descripcion_item)
+      || !isFinitePositive(item.cantidad)
+      || !isFiniteNonNegative(item.precio_unitario)
+      || (item.id !== undefined && !isNonEmptyString(item.id))
+      || (item.origen_item !== undefined && typeof item.origen_item !== 'string'))) return false;
+
+    const clients = Array.isArray(context.clients) ? context.clients : null;
+    const projects = Array.isArray(context.projects) ? context.projects : null;
+    if (!clients || !projects) return false;
+    if (!clients.some((client) => String(client?.id) === invoice.cliente_id)) return false;
+    if (invoice.proyecto_relacionado_id) {
+      const project = projects.find((candidate) => String(candidate?.id) === invoice.proyecto_relacionado_id);
+      if (!project || String(project.cliente_id) !== invoice.cliente_id) return false;
+    }
+    return true;
+  }
+
+  function validateStoredPayment(payment = {}, invoices = []) {
+    return hasOnlyAllowedFields(payment, PAYMENT_FIELDS)
+      && isNonEmptyString(payment.id)
+      && isNonEmptyString(payment.factura_id)
+      && isFinitePositive(payment.monto_pagado)
+      && isValidDate(payment.fecha_pago)
+      && isNonEmptyString(payment.metodo_pago)
+      && (payment.referencia_comprobante === undefined || typeof payment.referencia_comprobante === 'string')
+      && (payment.notas === undefined || typeof payment.notas === 'string')
+      && invoices.some((invoice) => invoice.id === payment.factura_id && invoice.estado !== 'DRAFT' && invoice.estado !== 'VOID');
+  }
+
+  function calculateStoredPaymentSummary(invoice = {}, payments = []) {
+    const total = calculateInvoiceTotals(invoice).total;
+    const paid = round(getInvoicePayments(invoice.id, payments)
+      .reduce((sum, payment) => sum + payment.monto_pagado, 0));
+    return {
+      paid,
+      pending: round(Math.max(0, total - paid)),
+      credit: round(Math.max(0, paid - total))
+    };
+  }
+
+  function hasFinanciallyCompatibleState(invoice, summary) {
+    const total = calculateInvoiceTotals(invoice).total;
+    if (invoice.estado === 'VOID') return summary.paid === 0 && invoice.saldo_pendiente === 0 && (invoice.saldo_a_favor === undefined || invoice.saldo_a_favor === 0);
+    if (invoice.estado === 'DRAFT' || invoice.estado === 'SENT' || invoice.estado === 'OVERDUE') return summary.paid === 0;
+    if (invoice.estado === 'PARTIAL') return summary.paid > 0 && summary.paid < total;
+    return invoice.estado === 'PAID' && total > 0 && summary.paid >= total;
+  }
+
+  function validateStoredFinancials(invoice = {}, payments = []) {
+    const totals = calculateInvoiceTotals(invoice);
+    const summary = calculateStoredPaymentSummary(invoice, payments);
+    return invoice.total_factura === totals.total
+      && invoice.monto_pagado_acumulado === summary.paid
+      && invoice.saldo_pendiente === (invoice.estado === 'VOID' ? 0 : summary.pending)
+      && (invoice.saldo_a_favor === undefined || invoice.saldo_a_favor === summary.credit)
+      && hasFinanciallyCompatibleState(invoice, summary);
+  }
+
+  function validateInvoiceStorage(invoices = [], payments = [], context = {}) {
+    if (!Array.isArray(invoices) || !Array.isArray(payments) || !hasUniqueIds(invoices) || !hasUniqueIds(payments)) {
+      return { valid: false };
+    }
+    if (!invoices.every((invoice) => validateStoredInvoice(invoice, context))) return { valid: false };
+    if (!payments.every((payment) => validateStoredPayment(payment, invoices))) return { valid: false };
+    if (!invoices.every((invoice) => validateStoredFinancials(invoice, payments))) return { valid: false };
+    return { valid: true };
+  }
+
+  function parseJson(value) {
+    if (typeof value !== 'string') return null;
+    return JSON.parse(value);
+  }
+
+  function parseTransitionMarker(value) {
+    const marker = parseJson(value);
+    if (!isPlainRecord(marker)
+      || marker.version !== INVOICE_STORAGE_VERSION
+      || !isNonEmptyString(marker.transactionId)) return null;
+    const keys = Object.keys(marker).sort();
+    return keys.length === 2 && keys[0] === 'transactionId' && keys[1] === 'version' ? marker : null;
+  }
+
+  function parseTransitionCollection(value, field, version) {
+    const parsed = parseJson(value);
+    if (!isPlainRecord(parsed) || parsed.version !== version || !Array.isArray(parsed[field])) return null;
+    const keys = Object.keys(parsed).sort();
+    return keys.length === 2 && keys[0] === field && keys[1] === 'version' ? parsed[field] : null;
   }
 
   function resolveEstimatedTaxForNewInvoice(invoice = {}, fiscalConfiguration = {}) {
@@ -80,41 +229,44 @@
     return { committed: true, invoices: nextInvoices, payments: nextPayments };
   }
 
-  function persistInvoiceTransition(storage, transitionKey, invoices = [], payments = [], transactionId = String(Date.now())) {
+  function persistInvoiceTransition(storage, transitionKey, invoices = [], payments = [], transactionId = String(Date.now()), context = {}) {
+    if (!isNonEmptyString(transactionId) || !validateInvoiceStorage(invoices, payments, context).valid) return false;
     const stageKey = `${transitionKey}:${transactionId}`;
     try {
-      storage.setItem(`${stageKey}:invoices`, JSON.stringify(invoices));
-      storage.setItem(`${stageKey}:payments`, JSON.stringify(payments));
-      storage.setItem(transitionKey, JSON.stringify({ transactionId }));
+      storage.setItem(`${stageKey}:invoices`, JSON.stringify({ version: INVOICE_STORAGE_VERSION, invoices }));
+      storage.setItem(`${stageKey}:payments`, JSON.stringify({ version: INVOICE_STORAGE_VERSION, payments }));
+      storage.setItem(transitionKey, JSON.stringify({ version: INVOICE_STORAGE_VERSION, transactionId }));
       return true;
     } catch {
       return false;
     }
   }
 
-  function readInvoiceTransition(storage, transitionKey) {
+  function readInvoiceTransition(storage, transitionKey, context = {}) {
     try {
-      const marker = JSON.parse(storage.getItem(transitionKey) || 'null');
-      if (!marker?.transactionId) return null;
+      const marker = parseTransitionMarker(storage.getItem(transitionKey));
+      if (!marker) return null;
       const stageKey = `${transitionKey}:${marker.transactionId}`;
-      const invoices = JSON.parse(storage.getItem(`${stageKey}:invoices`) || 'null');
-      const payments = JSON.parse(storage.getItem(`${stageKey}:payments`) || 'null');
-      return Array.isArray(invoices) && Array.isArray(payments) ? { invoices, payments } : null;
+      const invoices = parseTransitionCollection(storage.getItem(`${stageKey}:invoices`), 'invoices', marker.version);
+      const payments = parseTransitionCollection(storage.getItem(`${stageKey}:payments`), 'payments', marker.version);
+      return validateInvoiceStorage(invoices, payments, context).valid ? { invoices, payments } : null;
     } catch {
       return null;
     }
   }
 
-  function readInvoiceStorage(storage, transitionKey, invoiceKey, paymentKey) {
-    const transition = readInvoiceTransition(storage, transitionKey);
-    if (transition) return transition;
+  function readInvoiceStorage(storage, transitionKey, invoiceKey, paymentKey, context = {}) {
     try {
-      const invoices = JSON.parse(storage.getItem(invoiceKey) || '[]');
-      const payments = JSON.parse(storage.getItem(paymentKey) || '[]');
-      return {
-        invoices: Array.isArray(invoices) ? invoices : [],
-        payments: Array.isArray(payments) ? payments : []
-      };
+      const marker = parseTransitionMarker(storage.getItem(transitionKey));
+      if (marker) {
+        const transition = readInvoiceTransition(storage, transitionKey, context);
+        return transition || { invoices: [], payments: [] };
+      }
+      const invoices = parseJson(storage.getItem(invoiceKey) || '[]');
+      const payments = parseJson(storage.getItem(paymentKey) || '[]');
+      return validateInvoiceStorage(invoices, payments, context).valid
+        ? { invoices, payments }
+        : { invoices: [], payments: [] };
     } catch {
       return { invoices: [], payments: [] };
     }
@@ -149,10 +301,13 @@
 
   function hydrateInvoice(invoice = {}, payments = [], today) {
     const totals = calculateInvoiceTotals(invoice);
-    const paymentSummary = calculatePaymentSummary(invoice, payments);
+    const estado = deriveInvoiceState(invoice, payments, today);
+    const paymentSummary = estado === 'VOID'
+      ? { paid: 0, pending: 0, credit: 0 }
+      : calculatePaymentSummary(invoice, payments);
     return {
       ...invoice,
-      estado: deriveInvoiceState(invoice, payments, today),
+      estado,
       subtotal_general: totals.subtotal,
       descuento: totals.descuento,
       impuestos: totals.impuestos,
@@ -216,16 +371,21 @@
     return [...(ACTIONS_BY_STATE[state] ?? ACTIONS_BY_STATE.DRAFT)];
   }
 
-  function validateInvoice(invoice = {}) {
+  function validateInvoice(invoice = {}, context = {}) {
     const errors = {};
     if (!String(invoice.cliente_id ?? '').trim()) errors.cliente_id = 'Selecciona un cliente.';
+    else if (Array.isArray(context.clients) && !context.clients.some((client) => String(client?.id) === String(invoice.cliente_id))) errors.cliente_id = 'Selecciona un cliente v?lido.';
+    if (Array.isArray(context.projects) && invoice.proyecto_relacionado_id) {
+      const project = context.projects.find((candidate) => String(candidate?.id) === String(invoice.proyecto_relacionado_id));
+      if (!project || String(project.cliente_id) !== String(invoice.cliente_id)) errors.proyecto_relacionado_id = 'El proyecto debe pertenecer al cliente seleccionado.';
+    }
     if (!isValidDate(invoice.fecha_emision)) errors.fecha_emision = 'Ingresa una fecha de emisión válida.';
     if (!isValidDate(invoice.fecha_vencimiento)) {
       errors.fecha_vencimiento = 'Ingresa una fecha de vencimiento válida.';
     } else if (isValidDate(invoice.fecha_emision) && invoice.fecha_vencimiento < invoice.fecha_emision) {
       errors.fecha_vencimiento = 'La fecha de vencimiento no puede ser anterior a la fecha de emisión.';
     }
-    if (!String(invoice.moneda ?? '').trim()) errors.moneda = 'Selecciona una moneda.';
+    if (!SUPPORTED_CURRENCIES.includes(invoice.moneda)) errors.moneda = 'Selecciona una moneda.';
 
     const items = Array.isArray(invoice.items) ? invoice.items : [];
     if (!items.length || items.some((item) => (
@@ -264,6 +424,7 @@
 
   const api = {
     INVOICE_STATES,
+    INVOICE_STORAGE_VERSION,
     calculateInvoiceMetrics,
     commitInvoiceRecord,
     commitInvoiceTransition,
@@ -283,6 +444,7 @@
     round,
     resolveEstimatedTaxForNewInvoice,
     validateInvoice,
+    validateInvoiceStorage,
     validatePayment
   };
 
