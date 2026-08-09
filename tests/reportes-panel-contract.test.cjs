@@ -78,3 +78,57 @@ test('FF-RPT-003 runtime keeps the budget panel, draft, state, and activity unto
   assert.equal(fields['report-date-from'].getAttribute('aria-invalid'), null);
   assert.equal(fields['report-date-to'].getAttribute('aria-describedby'), null);
 });
+
+test('FF-RPT-002 persists, reloads, and selects a quarterly total without multiplying it', () => {
+  const vm = require('node:vm');
+  const model = require('../assets/js/report-model.js');
+  const field = (value = '') => ({ value, textContent: '', hidden: false, innerHTML: '', focus() {}, setAttribute() {}, removeAttribute() {} });
+  const fields = {
+    'budget-id': field(''), 'budget-period-type': field('Trimestral'), 'budget-period-key': field('2026-Q2'),
+    'budget-income-goal': field('1200'), 'budget-hours-goal': field(''), 'reports-period': field('2026-06'),
+    'budget-form-summary': field(), 'budget-limit-rows': field()
+  };
+  const limit = { querySelector(selector) { return selector === '[name="categoria_id"]' ? field('cat_001') : field('300'); } };
+  const doc = {
+    addEventListener() {},
+    getElementById(id) { return fields[id] ?? field(); },
+    querySelectorAll(selector) { return selector === '.budget-limit-row' ? [limit] : []; },
+    querySelector() { return null; },
+    body: { classList: { add() {}, remove() {} } }
+  };
+  let storedBudgets = [];
+  const context = {
+    __FREELANCEFLOW_TEST__: true, console: { warn() {} }, document: doc,
+    localStorage: { setItem(key, value) { assert.equal(key, 'freelanceflow_budgets_v1'); storedBudgets = JSON.parse(value); } },
+    window: null, URL, URLSearchParams, requestAnimationFrame: (fn) => fn(), clearTimeout() {}, setTimeout() { return 1; },
+    matchMedia() { return { matches: false }; }, history: { replaceState() {} }, FreelanceFlowReportModel: model,
+    FreelanceFlowActivity: { record() {} }
+  };
+  context.window = context;
+  const instrumented = fs.readFileSync(reportsPath, 'utf8').replace('}());', 'if (globalThis.__FREELANCEFLOW_TEST__) { renderAll = () => {}; closePanel = () => {}; updateUrl = () => {}; showToast = () => {}; globalThis.FreelanceFlowReportsControllerTest = { state, handleBudgetSubmit, selectBudget }; } }());');
+  vm.runInNewContext(instrumented, context);
+  const controller = context.FreelanceFlowReportsControllerTest;
+  controller.state.data = { categorias_gasto: [{ id: 'cat_001' }] };
+
+  controller.handleBudgetSubmit({ preventDefault() {} });
+
+  assert.equal(storedBudgets.length, 1);
+  assert.equal(storedBudgets[0].periodo_clave, '2026-Q2');
+  assert.equal(controller.state.filters.period, '2026-Q2');
+  assert.equal(controller.state.budget.periodo, 'Trimestral');
+  assert.equal(controller.state.budget.meta_ingresos, 1200);
+  assert.equal(controller.state.budget.limites_gasto_por_categoria[0].limite, 300);
+  assert.deepEqual(model.getDateRange({ period: controller.state.filters.period }), { from: '2026-04-01', to: '2026-06-30' });
+});
+test('FF-RPT-002 maps monthly, quarterly, and annual canonical keys in the Reports UI', () => {
+  const script = fs.readFileSync(reportsPath, 'utf8');
+  const page = fs.readFileSync(pagePath, 'utf8');
+
+  assert.match(page, /<select id="reports-period" name="period"/);
+  assert.match(page, /<select id="budget-period-key" name="periodo_clave"/);
+  assert.match(script, /function populateReportPeriodOptions\(\)/);
+  assert.match(script, /function populateBudgetPeriodKeyOptions\(periodo, selectedPeriod\)/);
+  assert.match(script, /value: `\$\{year\}-Q\$\{quarter\}`/);
+  assert.match(script, /\[1, 2, 3, 4\]/);
+  assert.match(script, /Anual/);
+});

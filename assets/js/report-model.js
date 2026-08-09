@@ -34,11 +34,18 @@
     return { valid: true };
   }
 
+  function isCanonicalBudgetPeriod(periodo, periodoClave) {
+    if (typeof periodo !== 'string' || typeof periodoClave !== 'string') return false;
+    if (periodo === 'Mensual') return /^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(periodoClave);
+    if (periodo === 'Trimestral') return /^[1-9]\d{3}-Q[1-4]$/.test(periodoClave);
+    return periodo === 'Anual' && /^[1-9]\d{3}$/.test(periodoClave);
+  }
+
   function normalizeBudget(budget = {}) {
     return {
       id: String(budget.id ?? ''),
-      periodo: PERIOD_TYPES.includes(budget.periodo) ? budget.periodo : 'Mensual',
-      periodo_clave: String(budget.periodo_clave ?? ''),
+      periodo: typeof budget.periodo === 'string' && PERIOD_TYPES.includes(budget.periodo) ? budget.periodo : '',
+      periodo_clave: typeof budget.periodo_clave === 'string' ? budget.periodo_clave : '',
       meta_ingresos: toNumber(budget.meta_ingresos),
       meta_horas_facturables: budget.meta_horas_facturables === '' || budget.meta_horas_facturables == null
         ? null
@@ -58,8 +65,8 @@
     const validCategoryIds = new Set(categories.map((category) => String(category.id)));
     const usedCategories = new Set();
 
-    if (!PERIOD_TYPES.includes(budget.periodo)) errors.periodo = 'Selecciona un período.';
-    if (!candidate.periodo_clave) errors.periodo_clave = 'Selecciona el período que deseas planificar.';
+    if (typeof budget.periodo !== 'string' || !PERIOD_TYPES.includes(budget.periodo)) errors.periodo = 'Selecciona un periodo.';
+    if (!isCanonicalBudgetPeriod(budget.periodo, budget.periodo_clave)) errors.periodo_clave = 'Selecciona una clave de periodo valida para la periodicidad elegida.';
     if (candidate.meta_ingresos <= 0) errors.meta_ingresos = 'La meta de ingresos debe ser mayor a 0.';
     if (candidate.meta_horas_facturables !== null && candidate.meta_horas_facturables <= 0) {
       errors.meta_horas_facturables = 'Las horas facturables deben ser mayores a 0.';
@@ -83,11 +90,22 @@
     if (isValidDate(filters.dateFrom) && isValidDate(filters.dateTo)) {
       return { from: filters.dateFrom, to: filters.dateTo };
     }
-    const period = /^\d{4}-\d{2}$/.test(filters.period ?? '') ? filters.period : '';
-    if (!period) return { from: '', to: '' };
-    const [year, month] = period.split('-').map(Number);
-    const lastDay = new Date(year, month, 0).getDate();
-    return { from: `${period}-01`, to: `${period}-${String(lastDay).padStart(2, '0')}` };
+    const period = typeof filters.period === 'string' ? filters.period : '';
+    if (/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(period)) {
+      const [year, month] = period.split('-').map(Number);
+      const lastDay = new Date(year, month, 0).getDate();
+      return { from: `${period}-01`, to: `${period}-${String(lastDay).padStart(2, '0')}` };
+    }
+    const quarter = /^([1-9]\d{3})-Q([1-4])$/.exec(period);
+    if (quarter) {
+      const year = quarter[1];
+      const firstMonth = (Number(quarter[2]) - 1) * 3 + 1;
+      const lastMonth = firstMonth + 2;
+      const lastDay = new Date(Number(year), lastMonth, 0).getDate();
+      return { from: `${year}-${String(firstMonth).padStart(2, '0')}-01`, to: `${year}-${String(lastMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}` };
+    }
+    if (/^[1-9]\d{3}$/.test(period)) return { from: `${period}-01-01`, to: `${period}-12-31` };
+    return { from: '', to: '' };
   }
 
   function inDateRange(value, range) {
@@ -430,10 +448,23 @@
     };
   }
 
+  function normalizeLegacyMonthlyBudget(budget) {
+    if (budget
+      && typeof budget === 'object'
+      && !Array.isArray(budget)
+      && !Object.prototype.hasOwnProperty.call(budget, 'periodo')
+      && /^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(budget.periodo_clave)) {
+      return { ...budget, periodo: 'Mensual' };
+    }
+    return budget;
+  }
+
   function mergeBudgets(baseBudgets = [], storedBudgets = []) {
     const merged = new Map();
     [...baseBudgets, ...storedBudgets].forEach((budget) => {
-      const normalized = normalizeBudget(budget);
+      const candidate = normalizeLegacyMonthlyBudget(budget);
+      if (!isCanonicalBudgetPeriod(candidate?.periodo, candidate?.periodo_clave)) return;
+      const normalized = normalizeBudget(candidate);
       const key = `${normalized.periodo}:${normalized.periodo_clave}`;
       merged.set(key, normalized);
     });
@@ -450,6 +481,7 @@
     calculateFinancialSummary,
     getBudgetStatus,
     getDateRange,
+    isCanonicalBudgetPeriod,
     isValidDate,
     mergeBudgets,
     normalizeBudget,

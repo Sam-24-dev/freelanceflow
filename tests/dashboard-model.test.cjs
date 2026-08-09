@@ -93,7 +93,7 @@ test('composes owner overlays and safely falls back for blocked storage', () => 
   const result = composeDashboardData({ clientes: [{ id: 'c1', nombre_razon_social: 'Base' }] }, { invoices: [{ id: 'i1' }], payments: [{ id: 'p1' }], clients: [{ id: 'c1', nombre_razon_social: 'Local' }], projects: [{ id: 'p1', cliente_id: 'c1' }], budgets: [{ id: 'b1', periodo_clave: '2026-06' }], settings: { invoice_prefix: 'FF-', next_invoice_number: 2, default_due_days: 15, default_currency: 'USD' } }, models);
   assert.equal(result.facturas[0].id, 'i1'); assert.equal(result.clientes[0].nombre_razon_social, 'Local'); assert.equal(result.presupuestos[0].id, 'b1'); assert.equal(result.settings.default_currency, 'USD');
   assert.deepEqual(composeDashboardData({ clientes: [{ id: 'base' }] }, { clients: null }, models).clientes.map((item) => item.id), ['base']);
-  assert.equal(composeDashboardData({ presupuestos: { id: 'base-budget' } }, {}, models).presupuestos[0].id, 'base-budget');
+  assert.equal(composeDashboardData({ presupuestos: { id: 'base-budget', periodo: 'Mensual', periodo_clave: '2026-06' } }, {}, models).presupuestos[0].id, 'base-budget');
 });
 
 test('dashboard controller falls back to raw categories when the category catalog reader is unavailable', async () => {
