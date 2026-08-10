@@ -4,12 +4,28 @@ from unittest.mock import patch
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
-from django.test import TestCase
+from django.test import RequestFactory, TestCase
 from django.contrib.admin.sites import AdminSite
 
 from accounts.models import User
 from workspaces.admin import MembershipAdmin
+from workspaces.context import (
+    ACTIVE_WORKSPACE_SESSION_KEY,
+    ActiveWorkspaceMembershipRequired,
+    InactiveWorkspaceUser,
+    NoActiveWorkspaceContext,
+    WorkspaceContextSelectionDenied,
+    resolve_active_workspace_context,
+    select_active_workspace,
+)
 from workspaces.models import Membership, MembershipWriteBoundaryViolation, Workspace
+from workspaces.permissions import (
+    WorkspacePermissionDenied,
+    can_manage_workspace_memberships,
+    can_perform_operational_work,
+    can_resolve_workspace_context,
+    require_workspace_permission,
+)
 from workspaces.services import (
     LastOwnerViolation,
     change_membership_role,
@@ -255,3 +271,195 @@ class WorkspaceMembershipServiceTests(TestCase):
 
         self.assertFalse(Workspace.objects.filter(pk=workspace.pk).exists())
         self.assertFalse(Membership.objects.filter(pk=membership.pk).exists())
+
+
+class ActiveWorkspaceContextTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("context-user@example.com", "password")
+        self.request_factory = RequestFactory()
+
+    def request_for(self, user):
+        request = self.request_factory.get("/")
+        request.user = user
+        request.session = {}
+        return request
+
+    def create_workspace(self, *, owner, slug):
+        return create_workspace_with_owner(
+            name=f"{slug.title()} Studio",
+            slug=slug,
+            owner=owner,
+        )
+
+    def test_user_with_multiple_workspaces_requires_explicit_active_context(self):
+        first_workspace = self.create_workspace(owner=self.user, slug="first-context")
+        second_workspace = self.create_workspace(
+            owner=User.objects.create_user("other-owner@example.com", "password"),
+            slug="second-context",
+        )
+        Membership.objects.create(
+            workspace=second_workspace,
+            user=self.user,
+            role=Membership.Role.OPERATIONAL,
+        )
+        request = self.request_for(self.user)
+
+        with self.assertRaises(NoActiveWorkspaceContext):
+            resolve_active_workspace_context(request)
+
+        self.assertNotIn(ACTIVE_WORKSPACE_SESSION_KEY, request.session)
+        self.assertTrue(
+            Membership.objects.filter(
+                workspace=first_workspace,
+                user=self.user,
+            ).exists()
+        )
+
+    def test_selects_an_explicit_owned_workspace_by_public_id(self):
+        workspace = self.create_workspace(owner=self.user, slug="selected-context")
+        request = self.request_for(self.user)
+
+        context = select_active_workspace(request, workspace.public_id)
+
+        self.assertEqual(context.workspace, workspace)
+        self.assertEqual(context.membership.user, self.user)
+        self.assertEqual(
+            request.session[ACTIVE_WORKSPACE_SESSION_KEY],
+            str(workspace.public_id),
+        )
+
+    def test_rejects_foreign_and_nonexistent_workspace_selection(self):
+        foreign_workspace = self.create_workspace(
+            owner=User.objects.create_user("foreign-owner@example.com", "password"),
+            slug="foreign-context",
+        )
+        request = self.request_for(self.user)
+
+        for public_id in (foreign_workspace.public_id, uuid.uuid4()):
+            with self.subTest(public_id=public_id):
+                with self.assertRaises(WorkspaceContextSelectionDenied):
+                    select_active_workspace(request, public_id)
+
+        self.assertNotIn(ACTIVE_WORKSPACE_SESSION_KEY, request.session)
+
+    def test_foreign_and_unknown_selection_have_indistinguishable_errors(self):
+        foreign_workspace = self.create_workspace(
+            owner=User.objects.create_user("foreign-owner@example.com", "password"),
+            slug="indistinguishable-context",
+        )
+        request = self.request_for(self.user)
+        errors = []
+
+        for public_id in (uuid.uuid4(), foreign_workspace.public_id):
+            with self.subTest(public_id=public_id):
+                with self.assertRaises(WorkspaceContextSelectionDenied) as raised:
+                    select_active_workspace(request, public_id)
+                errors.append(raised.exception)
+
+        self.assertIs(type(errors[0]), type(errors[1]))
+        self.assertEqual(str(errors[0]), str(errors[1]))
+        self.assertNotIn(ACTIVE_WORKSPACE_SESSION_KEY, request.session)
+    def test_malformed_selection_matches_other_controlled_denials(self):
+        foreign_workspace = self.create_workspace(
+            owner=User.objects.create_user("foreign-owner@example.com", "password"),
+            slug="malformed-selection-context",
+        )
+        request = self.request_for(self.user)
+        errors = []
+
+        for public_id in (uuid.uuid4(), foreign_workspace.public_id, "not-a-uuid"):
+            with self.subTest(public_id=public_id):
+                with self.assertRaises(WorkspaceContextSelectionDenied) as raised:
+                    select_active_workspace(request, public_id)
+                errors.append(raised.exception)
+
+        for error in errors[1:]:
+            self.assertIs(type(error), type(errors[0]))
+            self.assertEqual(str(error), str(errors[0]))
+        self.assertNotIn(ACTIVE_WORKSPACE_SESSION_KEY, request.session)
+    def test_revoked_membership_invalidates_the_selected_context(self):
+        workspace = self.create_workspace(
+            owner=User.objects.create_user("workspace-owner@example.com", "password"),
+            slug="revoked-context",
+        )
+        membership = Membership.objects.create(
+            workspace=workspace,
+            user=self.user,
+            role=Membership.Role.OPERATIONAL,
+        )
+        request = self.request_for(self.user)
+        select_active_workspace(request, workspace.public_id)
+        remove_membership(workspace_id=workspace.id, membership_id=membership.id)
+
+        with self.assertRaises(ActiveWorkspaceMembershipRequired):
+            resolve_active_workspace_context(request)
+
+        self.assertNotIn(ACTIVE_WORKSPACE_SESSION_KEY, request.session)
+
+    def test_inactive_user_invalidates_the_selected_context(self):
+        workspace = self.create_workspace(owner=self.user, slug="inactive-context")
+        request = self.request_for(self.user)
+        select_active_workspace(request, workspace.public_id)
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active"])
+
+        with self.assertRaises(InactiveWorkspaceUser):
+            resolve_active_workspace_context(request)
+
+        self.assertNotIn(ACTIVE_WORKSPACE_SESSION_KEY, request.session)
+
+    def test_stale_session_public_id_clears_context_without_workspace_fallback(self):
+        workspace = self.create_workspace(owner=self.user, slug="stale-context")
+        request = self.request_for(self.user)
+        request.session[ACTIVE_WORKSPACE_SESSION_KEY] = str(uuid.uuid4())
+
+        with self.assertRaises(NoActiveWorkspaceContext):
+            resolve_active_workspace_context(request)
+
+        self.assertNotIn(ACTIVE_WORKSPACE_SESSION_KEY, request.session)
+        self.assertTrue(
+            Membership.objects.filter(workspace=workspace, user=self.user).exists()
+        )
+
+    def test_superuser_without_membership_cannot_select_or_resolve_context(self):
+        superuser = User.objects.create_superuser("superuser@example.com", "password")
+        workspace = self.create_workspace(
+            owner=User.objects.create_user("workspace-owner@example.com", "password"),
+            slug="superuser-context",
+        )
+        request = self.request_for(superuser)
+
+        with self.assertRaises(WorkspaceContextSelectionDenied):
+            select_active_workspace(request, workspace.public_id)
+
+        self.assertNotIn(ACTIVE_WORKSPACE_SESSION_KEY, request.session)
+        request.session[ACTIVE_WORKSPACE_SESSION_KEY] = str(workspace.public_id)
+
+        with self.assertRaises(ActiveWorkspaceMembershipRequired):
+            resolve_active_workspace_context(request)
+
+        self.assertNotIn(ACTIVE_WORKSPACE_SESSION_KEY, request.session)
+    def test_role_capability_matrix(self):
+        expected_capabilities = {
+            Membership.Role.OWNER: (True, True, True),
+            Membership.Role.OPERATIONAL: (True, False, True),
+            Membership.Role.ADMINISTRATIVE: (True, False, False),
+        }
+
+        for role, expected in expected_capabilities.items():
+            membership = Membership(role=role)
+            with self.subTest(role=role):
+                self.assertEqual(
+                    (
+                        can_resolve_workspace_context(membership),
+                        can_manage_workspace_memberships(membership),
+                        can_perform_operational_work(membership),
+                    ),
+                    expected,
+                )
+
+        with self.assertRaises(WorkspacePermissionDenied):
+            require_workspace_permission(
+                Membership(role=Membership.Role.ADMINISTRATIVE),
+                can_manage_workspace_memberships,
+            )
