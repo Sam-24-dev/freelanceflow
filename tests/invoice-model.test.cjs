@@ -218,6 +218,17 @@ test('commits an edited applied value that remains durable when the saved invoic
   assert.equal(model.hydrateInvoice(durable[0]).impuestos, 35.5);
 });
 
+test('stages a settings envelope with the invoice transition and exposes only the committed envelope', () => {
+  const storage = new Map();
+  const adapter = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
+  const context = { clients: [{ id: 'cli_001' }], projects: [{ id: 'proy_001', cliente_id: 'cli_001' }] };
+  const invoice = validStoredInvoice({ id: 'fac_settings', numero_factura: 'FAC-0025' });
+  const settings = JSON.stringify({ version: 1, revision: 1, settings: { invoice_prefix: 'FAC-', next_invoice_number: 26, default_due_days: 15, default_currency: 'USD' } });
+
+  assert.equal(model.persistInvoiceTransition(adapter, 'invoice-settings-transition', [invoice], [], 'settings-tx', context, settings), true);
+  assert.equal(model.readInvoiceTransitionSettings(adapter, 'invoice-settings-transition'), settings);
+});
+
 test('does not commit state or record success activity when durable invoice storage fails', () => {
   const existing = [{ id: 'fac_failure', impuestos: 12 }];
   const activity = [];

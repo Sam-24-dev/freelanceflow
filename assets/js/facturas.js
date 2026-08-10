@@ -2,10 +2,11 @@
   'use strict';
 
   const model = window.FreelanceFlowInvoiceModel;
+  const settingsModel = window.FreelanceFlowSettingsModel;
   const fiscalModel = window.FreelanceFlowFiscalConfigModel;
   const clientModel = window.FreelanceFlowClientModel;
   const projectModel = window.FreelanceFlowProjectModel;
-  if (!model || !clientModel) return;
+  if (!model || !settingsModel || !clientModel) return;
 
   const invoiceWebLocks = window.navigator?.locks;
 
@@ -13,7 +14,8 @@
     invoices: 'freelanceflow_invoices_v1',
     payments: 'freelanceflow_invoice_payments_v1',
     transition: 'freelanceflow_invoice_transition_v1',
-    fiscal: 'freelanceflow_fiscal_config_v1'
+    fiscal: 'freelanceflow_fiscal_config_v1',
+    settings: 'freelanceflow_settings_v1'
   };
   const STATUS_COPY = {
     DRAFT: 'Borrador',
@@ -133,6 +135,15 @@
     try { return fiscalModel?.parseStoredFiscalConfiguration(localStorage.getItem(STORAGE_KEYS.fiscal)); } catch { return null; }
   }
 
+  function readSettingsEnvelope() {
+    try {
+      return settingsModel.resolveStoredSettingsEnvelope(
+        localStorage.getItem(STORAGE_KEYS.settings),
+        model.readInvoiceTransitionSettings(localStorage, STORAGE_KEYS.transition)
+      );
+    } catch { return null; }
+  }
+
   function readStoredInvoiceTransition() {
     const stored = model.readInvoiceStorage(
       localStorage,
@@ -147,11 +158,11 @@
     };
   }
 
-  function persistTransition(invoices, payments) {
+  function persistTransition(invoices, payments, settingsEnvelope = null) {
     const transactionId = `tx-${Date.now()}-${++transitionSequence}`;
     return model.persistInvoiceTransition(localStorage, STORAGE_KEYS.transition, invoices, payments, transactionId, {
       clients: state.clients, projects: state.projects
-    });
+    }, settingsEnvelope);
   }
 
   function showInvoiceMutationFailure(reason, focusTarget) {
@@ -176,13 +187,13 @@
     return result || { committed: false, reason: 'lock-failed' };
   }
 
-  function commitLockedTransition(nextInvoices, nextPayments, recordActivityAfterCommit) {
+  function commitLockedTransition(nextInvoices, nextPayments, recordActivityAfterCommit, settingsEnvelope = null) {
     const committed = model.commitInvoiceTransition(
       state.invoices,
       state.payments,
       nextInvoices,
       nextPayments,
-      persistTransition,
+      (invoices, payments) => persistTransition(invoices, payments, settingsEnvelope),
       recordActivityAfterCommit
     );
     if (committed.committed) {
@@ -443,7 +454,8 @@
   }
 
   function nextInvoiceNumber() {
-    return model.nextInvoiceNumber(state.invoices);
+    const envelope = readSettingsEnvelope();
+    return envelope ? settingsModel.formatInvoiceNumber(envelope.settings.invoice_prefix, envelope.settings.next_invoice_number) : '—';
   }
 
   function addInvoiceItem(item = {}) {
@@ -510,14 +522,15 @@
     state.editingSnapshot = invoice ? JSON.parse(JSON.stringify(invoice)) : null;
     populateInvoiceClientOptions(invoice?.cliente_id ?? '');
     document.querySelector('#invoice-form-title').textContent = invoice ? `Editar ${invoice.numero_factura}` : 'Nueva factura';
-    selectors.invoiceForm.elements.numero_factura.value = invoice?.numero_factura ?? nextInvoiceNumber();
+    const settings = readSettingsEnvelope()?.settings || settingsModel.getDefaultSettings();
+    selectors.invoiceForm.elements.numero_factura.value = invoice?.numero_factura ?? settingsModel.formatInvoiceNumber(settings.invoice_prefix, settings.next_invoice_number);
     selectors.invoiceForm.elements.fecha_emision.value = invoice?.fecha_emision ?? new Date().toISOString().slice(0, 10);
     const due = new Date();
-    due.setDate(due.getDate() + 15);
+    due.setDate(due.getDate() + settings.default_due_days);
     selectors.invoiceForm.elements.fecha_vencimiento.value = invoice?.fecha_vencimiento ?? due.toISOString().slice(0, 10);
     selectors.invoiceForm.elements.cliente_id.value = invoice?.cliente_id ?? '';
     selectors.invoiceForm.elements.proyecto_relacionado_id.value = invoice?.proyecto_relacionado_id ?? '';
-    selectors.invoiceForm.elements.moneda.value = invoice?.moneda ?? 'USD';
+    selectors.invoiceForm.elements.moneda.value = invoice?.moneda ?? settings.default_currency;
     selectors.invoiceForm.elements.descuento.value = invoice?.descuento ?? 0;
     selectors.invoiceForm.elements.impuestos.value = invoice?.impuestos ?? '';
     (invoice?.items?.length ? invoice.items : [{}]).forEach(addInvoiceItem);
@@ -553,6 +566,7 @@
     const editingId = state.editingId;
     const editingSnapshot = state.editingSnapshot;
     const taxValue = selectors.invoiceForm.elements.impuestos.value;
+    const manualInvoiceNumber = selectors.invoiceForm.elements.numero_factura.value.trim();
     const formCandidate = {
       cliente_id: selectors.invoiceForm.elements.cliente_id.value,
       proyecto_relacionado_id: selectors.invoiceForm.elements.proyecto_relacionado_id.value,
@@ -571,10 +585,15 @@
       }
       const id = editingId || window.crypto?.randomUUID?.();
       if (!id) return { committed: false, reason: 'identity-unavailable' };
+      const settingsEnvelope = current ? null : readSettingsEnvelope();
+      if (!current && !settingsEnvelope) return { committed: false, reason: 'settings-unavailable' };
+      const settings = settingsEnvelope?.settings;
+      const invoiceNumber = current ? current.numero_factura : manualInvoiceNumber || settingsModel.formatInvoiceNumber(settings.invoice_prefix, settings.next_invoice_number);
+      if (!current && state.invoices.some((invoice) => invoice.numero_factura === invoiceNumber)) return { committed: false, reason: 'invoice-number-conflict' };
       const candidate = {
         ...formCandidate,
         id,
-        numero_factura: current ? current.numero_factura : model.nextInvoiceNumber(state.invoices)
+        numero_factura: invoiceNumber
       };
       if (!editingId) candidate.impuestos = model.resolveEstimatedTaxForNewInvoice(candidate, readFiscalConfiguration() || {});
       const validation = model.validateInvoice(candidate, { clients: state.clients, projects: state.projects });
@@ -594,10 +613,16 @@
       const nextInvoices = current
         ? state.invoices.map((invoice) => invoice.id === record.id ? record : invoice)
         : [record, ...state.invoices];
+      const advancedSettings = current ? null : settingsModel.createSettingsEnvelope(
+        { ...settings, next_invoice_number: settings.next_invoice_number + 1 },
+        settingsEnvelope.revision + 1
+      );
+      if (!current && !advancedSettings) return { committed: false, reason: 'settings-unavailable' };
       return commitLockedTransition(
         nextInvoices,
         state.payments,
-        () => recordActivity('Facturas', intent === 'send' ? 'Factura enviada' : 'Factura guardada', `${record.numero_factura}.`)
+        () => recordActivity('Facturas', intent === 'send' ? 'Factura enviada' : 'Factura guardada', `${record.numero_factura}.`),
+        current ? null : settingsModel.serializeSettingsEnvelope(advancedSettings)
       );
     }, submitter || selectors.invoiceForm);
     if (!committed.committed) return;

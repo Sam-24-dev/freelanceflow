@@ -36,6 +36,17 @@ test('uses defaults for corrupt or invalid stored settings and preserves valid r
   assert.deepEqual(model.parseStoredSettings('{bad json'), defaults);
   assert.deepEqual(model.parseStoredSettings('[]'), defaults);
   assert.deepEqual(model.parseStoredSettings('{"invoice_prefix":""}'), defaults);
-  const saved = { invoice_prefix: 'FF-', next_invoice_number: 26, default_due_days: 30, default_currency: 'EUR' };
-  assert.deepEqual(model.parseStoredSettings(JSON.stringify(saved)), saved);
+  const saved = { invoice_prefix: 'FF-', next_invoice_number: 26, default_due_days: 30, default_currency: 'USD' };
+  assert.deepEqual(model.parseStoredSettings(model.serializeSettingsEnvelope(model.createSettingsEnvelope(saved, 4))), saved);
+});
+
+test('persists only a strict versioned settings envelope with exact setting types', () => {
+  const envelope = model.createSettingsEnvelope({ invoice_prefix: 'FF-', next_invoice_number: 26, default_due_days: 30, default_currency: 'USD' }, 4);
+  const raw = model.serializeSettingsEnvelope(envelope);
+
+  assert.deepEqual(model.parseStoredSettingsEnvelope(raw), envelope);
+  assert.equal(model.parseStoredSettingsEnvelope(JSON.stringify({ ...envelope, unexpected: true })), null);
+  assert.equal(model.parseStoredSettingsEnvelope(JSON.stringify({ ...envelope, revision: '4' })), null);
+  assert.equal(model.parseStoredSettingsEnvelope(JSON.stringify({ ...envelope, settings: { ...envelope.settings, next_invoice_number: '26' } })), null);
+  assert.equal(model.parseStoredSettingsEnvelope(JSON.stringify({ invoice_prefix: 'FF-', next_invoice_number: 26, default_due_days: 30, default_currency: 'USD' })), null);
 });

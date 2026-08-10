@@ -4193,8 +4193,8 @@ body.client-drawer-open {
   top: 1.3rem;
   right: 0.85rem;
   display: grid;
-  width: 2.35rem;
-  height: 2.35rem;
+  width: 2.75rem;
+  height: 2.75rem;
   place-items: center;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 0.8rem;

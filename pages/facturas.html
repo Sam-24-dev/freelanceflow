@@ -174,7 +174,7 @@
         <label><span>Proyecto relacionado</span><select name="proyecto_relacionado_id"><option value="">Sin proyecto asociado</option></select></label>
       </div>
       <div class="invoice-fields-row is-three">
-        <label><span>Número</span><input name="numero_factura" readonly aria-readonly="true"></label>
+        <label><span>Número</span><input name="numero_factura"></label>
         <label><span>Fecha de emisión *</span><input type="date" name="fecha_emision" required><small data-error-for="fecha_emision"></small></label>
         <label><span>Fecha de vencimiento *</span><input type="date" name="fecha_vencimiento" required><small data-error-for="fecha_vencimiento"></small></label>
       </div>
@@ -255,6 +255,7 @@
   <script src="../assets/js/project-model.js"></script>
   <script src="../assets/vendor/jspdf.umd.min.js"></script>
   <script src="../assets/js/fiscal-config-model.js"></script>
+  <script src="../assets/js/settings-model.js"></script>
   <script src="../assets/js/invoice-model.js"></script>
   <script src="../assets/js/invoice-pdf.js"></script>
   <script src="../assets/js/facturas.js"></script>

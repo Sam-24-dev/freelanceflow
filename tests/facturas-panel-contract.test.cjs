@@ -83,6 +83,7 @@ test('FF-INV-003 bootstraps mock invoice history before the first locked transit
     window: {
       navigator: { locks: { request: async (_name, _options, callback) => callback() } },
       FreelanceFlowInvoiceModel: require(path.join(root, 'assets/js/invoice-model.js')),
+      FreelanceFlowSettingsModel: require(path.join(root, 'assets/js/settings-model.js')),
       FreelanceFlowClientModel: { getEffectiveClients: (clients) => clients, getSelectableClients: (clients) => clients },
       FreelanceFlowProjectModel: { getEffectiveProjects: (projects) => projects },
       FreelanceFlowDataLoader: { loadJson: async () => mockData },
@@ -120,6 +121,105 @@ test('FF-INV-003 bootstraps mock invoice history before the first locked transit
   assert.ok(mockData.facturas.every((invoice) => controller.state.invoices.some((item) => item.id === invoice.id)));
   assert.ok(mockData.pagos_factura.every((payment) => controller.state.payments.some((item) => item.id === payment.id)));
   assert.equal(controller.state.invoices.at(-1).numero_factura, 'FAC-0025');
+});
+
+test('FF-SET-003 persists an explicit manual invoice number instead of replacing it with the settings default', async () => {
+  const mockData = JSON.parse(fs.readFileSync(path.join(root, 'assets/data/mock-data.json'), 'utf8'));
+  const storage = new Map();
+  const elements = new Map();
+  const field = (value = '') => ({ value, addEventListener() {}, focus() {} });
+  const element = () => ({
+    hidden: false,
+    textContent: '',
+    innerHTML: '',
+    dataset: {},
+    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+    addEventListener() {},
+    setAttribute() {},
+    removeAttribute() {},
+    focus() {},
+    contains() { return false; },
+    getClientRects() { return [{}]; },
+    insertAdjacentHTML() {},
+    querySelectorAll() { return []; },
+    querySelector() { return null; }
+  });
+  const document = {
+    body: element(),
+    querySelector(selector) {
+      if (!elements.has(selector)) elements.set(selector, element());
+      return elements.get(selector);
+    },
+    querySelectorAll() { return []; },
+    addEventListener() {}
+  };
+  const itemFields = {
+    '[name="origen_item"]': field('Manual'),
+    '[name="descripcion_item"]': field('Servicio manual'),
+    '[name="cantidad"]': field('1'),
+    '[name="precio_unitario"]': field('100')
+  };
+  const invoiceItems = document.querySelector('[data-invoice-items]');
+  invoiceItems.querySelectorAll = () => [{ querySelector: (selector) => itemFields[selector] }];
+  const invoiceForm = document.querySelector('[data-invoice-form-element]');
+  invoiceForm.reset = () => {};
+  invoiceForm.elements = {
+    cliente_id: field('cli_001'),
+    proyecto_relacionado_id: field('proy_001'),
+    numero_factura: field('MAN-9001'),
+    fecha_emision: field('2026-12-01'),
+    fecha_vencimiento: field('2026-12-31'),
+    moneda: field('USD'),
+    descuento: field('0'),
+    impuestos: field('')
+  };
+  document.querySelector('[data-invoice-filters]').elements = { query: field(), period: field(), clientId: field(), projectId: field() };
+  document.querySelector('[data-payment-form]').elements = { monto_pagado: field() };
+  document.querySelector('[data-void-form]').elements = {};
+
+  const invoiceModel = require(path.join(root, 'assets/js/invoice-model.js'));
+  const settingsModel = require(path.join(root, 'assets/js/settings-model.js'));
+  storage.set('freelanceflow_settings_v1', settingsModel.serializeSettingsEnvelope(settingsModel.createSettingsEnvelope({
+    invoice_prefix: 'INV-', next_invoice_number: 42, default_due_days: 15, default_currency: 'USD'
+  }, 7)));
+  const sandbox = {
+    window: {
+      navigator: { locks: { request: async (_name, _options, callback) => callback() } },
+      crypto: { randomUUID: () => 'fac_manual_9001' },
+      FreelanceFlowInvoiceModel: invoiceModel,
+      FreelanceFlowSettingsModel: settingsModel,
+      FreelanceFlowClientModel: { getEffectiveClients: (clients) => clients, getSelectableClients: (clients) => clients },
+      FreelanceFlowProjectModel: { getEffectiveProjects: (projects) => projects },
+      FreelanceFlowDataLoader: { loadJson: async () => mockData },
+      clearTimeout() {}, setTimeout() { return 0; }, location: { search: '' }
+    },
+    document,
+    localStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
+    requestAnimationFrame(callback) { callback(); },
+    URLSearchParams,
+    Intl,
+    Date,
+    console
+  };
+  const controllerSource = facturasSource
+    .replace('      renderClientAndProjectOptions();', '      // Rendering is outside this persistence contract.')
+    .replace('      renderList();', '      // Rendering is outside this persistence contract.')
+    .replace('  bindEvents();', '  window.__invoiceControllerTest = { state, loadData, handleInvoiceSubmit };')
+    .replace('  loadData();', '')
+    .replace('    closeInvoiceForm();\n    renderList();\n    showToast(intent === \'send\' ? \'Factura enviada. Estado actualizado a Enviada.\' : \'Factura guardada como borrador.\');', '');
+  require('node:vm').runInNewContext(controllerSource, sandbox);
+  const controller = sandbox.window.__invoiceControllerTest;
+
+  await controller.loadData();
+  await controller.handleInvoiceSubmit({ preventDefault() {}, submitter: { value: 'draft', focus() {} } });
+
+  const durable = invoiceModel.readInvoiceStorage(sandbox.localStorage, 'freelanceflow_invoice_transition_v1', 'freelanceflow_invoices_v1', 'freelanceflow_invoice_payments_v1', {
+    clients: mockData.clientes, projects: mockData.proyectos
+  });
+  const created = durable.invoices.find((invoice) => invoice.id === 'fac_manual_9001');
+  assert.equal(created.numero_factura, 'MAN-9001');
+  assert.equal(created.fecha_vencimiento, '2026-12-31');
+  assert.equal(settingsModel.resolveStoredSettingsEnvelope(storage.get('freelanceflow_settings_v1'), invoiceModel.readInvoiceTransitionSettings(sandbox.localStorage, 'freelanceflow_invoice_transition_v1')).settings.next_invoice_number, 43);
 });
 
 function createInvoicePanelDom({ simulateDetailRerender = false, deferAnimationFrame = false } = {}) {
@@ -228,6 +328,7 @@ function createInvoicePanelDom({ simulateDetailRerender = false, deferAnimationF
         calculateInvoiceMetrics: () => ({ pendingAmount: 0, overdueAmount: 0, collectedAmount: 0, pendingCount: 0, overdueCount: 0 }),
         filterInvoices: () => []
       },
+      FreelanceFlowSettingsModel: {},
       FreelanceFlowClientModel: {},
       FreelanceFlowDataLoader: { loadJson: () => new Promise(() => {}) },
       clearTimeout() {}, setTimeout() { return 0; }, location: { search: '' }

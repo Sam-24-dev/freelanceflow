@@ -239,12 +239,13 @@
     return { committed: true, invoices: nextInvoices, payments: nextPayments };
   }
 
-  function persistInvoiceTransition(storage, transitionKey, invoices = [], payments = [], transactionId = String(Date.now()), context = {}) {
-    if (!isNonEmptyString(transactionId) || !validateInvoiceStorage(invoices, payments, context).valid) return false;
+  function persistInvoiceTransition(storage, transitionKey, invoices = [], payments = [], transactionId = String(Date.now()), context = {}, settingsEnvelope = null) {
+    if (!isNonEmptyString(transactionId) || !validateInvoiceStorage(invoices, payments, context).valid || (settingsEnvelope !== null && typeof settingsEnvelope !== 'string')) return false;
     const stageKey = `${transitionKey}:${transactionId}`;
     try {
       storage.setItem(`${stageKey}:invoices`, JSON.stringify({ version: INVOICE_STORAGE_VERSION, invoices }));
       storage.setItem(`${stageKey}:payments`, JSON.stringify({ version: INVOICE_STORAGE_VERSION, payments }));
+      if (settingsEnvelope !== null) storage.setItem(`${stageKey}:settings`, settingsEnvelope);
       storage.setItem(transitionKey, JSON.stringify({ version: INVOICE_STORAGE_VERSION, transactionId }));
       return true;
     } catch {
@@ -263,6 +264,13 @@
     } catch {
       return null;
     }
+  }
+
+  function readInvoiceTransitionSettings(storage, transitionKey) {
+    try {
+      const marker = parseTransitionMarker(storage.getItem(transitionKey));
+      return marker ? storage.getItem(`${transitionKey}:${marker.transactionId}:settings`) : null;
+    } catch { return null; }
   }
 
   function readInvoiceStorage(storage, transitionKey, invoiceKey, paymentKey, context = {}) {
@@ -494,6 +502,7 @@
     normalizeText,
     persistInvoiceTransition,
     readInvoiceTransition,
+    readInvoiceTransitionSettings,
     readInvoiceStorage,
     round,
     runSerializedInvoiceMutation,
