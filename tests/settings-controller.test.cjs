@@ -5,6 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const model = require('../assets/js/settings-model.js');
+const invoiceModel = require('../assets/js/invoice-model.js');
 
 function loadController({ activity } = {}) {
   const handlers = {};
@@ -38,7 +39,13 @@ function loadController({ activity } = {}) {
     addEventListener(type, handler) { if (type === 'DOMContentLoaded') handlers.ready = handler; },
     getElementById(id) { return elements[id]; }
   };
-  const window = { FreelanceFlowSettingsModel: model, FreelanceFlowActivity: activity, confirm: () => true };
+  const window = {
+    FreelanceFlowSettingsModel: model,
+    FreelanceFlowInvoiceModel: invoiceModel,
+    FreelanceFlowActivity: activity,
+    navigator: { locks: { request: async (_name, _options, callback) => callback({}) } },
+    confirm: () => true
+  };
   const context = { window, document, localStorage: { getItem: (key) => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) }, FormData: class { constructor() { this.values = fields; } entries() { return this.values.map(({ name, value }) => [name, value]); } } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../assets/js/ajustes.js'), 'utf8'), context);
   handlers.ready();
@@ -56,18 +63,18 @@ test('editing settings clears and hides prior success feedback', () => {
   assert.equal(status.hidden, true);
 });
 
-test('a logging failure does not prevent saved-settings success feedback', () => {
+test('a logging failure does not prevent saved-settings success feedback', async () => {
   const { handlers, status } = loadController({ activity: { record() { throw new Error('logger unavailable'); } } });
 
-  assert.doesNotThrow(() => handlers.submit({ preventDefault() {} }));
+  await assert.doesNotReject(() => handlers.submit({ preventDefault() {} }));
   assert.equal(status.textContent, 'Ajustes guardados correctamente.');
   assert.equal(status.hidden, false);
 });
 
-test('a logging failure does not prevent restored-settings success feedback', () => {
+test('a logging failure does not prevent restored-settings success feedback', async () => {
   const { handlers, status } = loadController({ activity: { record() { throw new Error('logger unavailable'); } } });
 
-  assert.doesNotThrow(() => handlers.click());
+  await assert.doesNotReject(() => handlers.click());
   assert.equal(status.textContent, 'Valores predeterminados restaurados.');
   assert.equal(status.hidden, false);
 });
