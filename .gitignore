@@ -36,3 +36,4 @@ tmp/
 # Python bytecode and static analysis
 *.py[cod]
 .mypy_cache/
+backend/.venv/

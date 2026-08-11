@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "accounts",
     "workspaces",
     "clients",
+    "services",
 ]
 
 MIDDLEWARE = [
