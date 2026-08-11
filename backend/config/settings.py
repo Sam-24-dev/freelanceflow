@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "services",
     "proposals",
     "projects",
+    "fiscal",
 ]
 
 MIDDLEWARE = [
