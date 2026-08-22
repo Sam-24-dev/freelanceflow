@@ -1,14 +1,17 @@
 from datetime import date
+from threading import Barrier, Thread
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
+from django.db import DatabaseError, close_old_connections, connection
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 
 from accounts.models import User
 from clients.models import Client
 from fiscal.services import create_fiscal_configuration
+from invoices.models import Invoice
 from invoices.services import create_draft_invoice, issue_invoice
 from payments.models import Payment, PaymentReversal
 from payments.services import (
@@ -147,3 +150,170 @@ class PaymentTriggerTextContractTests(TestCase):
         self.assertIn("CHAR_LENGTH(TRIM(NEW.source_type))", sql)
         self.assertIn("CHAR_LENGTH(TRIM(NEW.source_reference))", sql)
         self.assertIn("CHAR_LENGTH(TRIM(NEW.reason))", sql)
+
+class PaymentDirectSqlConcurrencyProofTests(TransactionTestCase):
+    """Runtime gate: prove trigger serialization using separate MySQL connections."""
+
+    reset_sequences = True
+    runner_managed_database_cleanup = True
+
+    def _fixture_teardown(self):
+        """Leave immutable facts for destruction of this isolated Django test database.
+
+        Django's MySQL flush uses DELETE when sequence reset is disabled. Immutable
+        project and ledger triggers correctly reject those deletes, so a normal
+        TransactionTestCase fixture flush cannot be used for this runtime-only
+        proof. Run this class in its own test invocation without --keepdb; the
+        test runner then drops the complete disposable database lawfully.
+        """
+
+    def setUp(self):
+        token = uuid4().hex
+        self.owner = User.objects.create_user(
+            email=f"payment-concurrency-owner-{token}@example.com",
+            password="password",
+        )
+        self.workspace = create_workspace_with_owner(
+            owner=self.owner,
+            name=f"Payments concurrency {token}",
+            slug=f"payments-concurrency-{token}",
+        )
+        self.context = ActiveWorkspaceContext(
+            self.workspace,
+            Membership.objects.get(workspace=self.workspace, user=self.owner),
+        )
+        self.client = Client.objects.create(
+            workspace=self.workspace,
+            legal_name=f"Payment concurrency client {token}",
+            client_type=Client.ClientType.COMPANY,
+            tax_identifier=f"PAY-{token}",
+            primary_contact_name="Contact",
+            primary_contact_email=f"payment-concurrency-{token}@example.com",
+        )
+
+    _issued_invoice = PaymentLedgerServiceTests._issued_invoice
+    _payment = PaymentLedgerServiceTests._payment
+
+    def _run_concurrently(self, left, right):
+        barrier = Barrier(2)
+        outcomes = []
+
+        def contender(label, operation):
+            close_old_connections()
+            try:
+                barrier.wait(timeout=10)
+                operation()
+                outcomes.append((label, "success"))
+            except DatabaseError:
+                outcomes.append((label, "rejected"))
+            finally:
+                close_old_connections()
+
+        first = Thread(target=contender, args=("left", left))
+        second = Thread(target=contender, args=("right", right))
+        first.start()
+        second.start()
+        first.join(timeout=20)
+        second.join(timeout=20)
+        self.assertFalse(first.is_alive())
+        self.assertFalse(second.is_alive())
+        self.assertEqual({label for label, _ in outcomes}, {"left", "right"})
+        return dict(outcomes)
+
+    def _raw_payment_insert(self, invoice, *, amount, reference):
+        def operation():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO payments_payment
+                        (public_id, idempotency_key, fingerprint, amount, currency, source_type, source_reference,
+                         received_at, invoice_number_snapshot, invoice_total_snapshot, invoice_currency_snapshot,
+                         created_at, created_by_id, invoice_id, workspace_id)
+                    VALUES (%s, %s, %s, %s, 'USD', 'CASH', %s, %s, %s, %s, 'USD', %s, %s, %s, %s)
+                    """,
+                    [
+                        uuid4().hex,
+                        uuid4().hex,
+                        "x" * 64,
+                        amount,
+                        reference,
+                        timezone.now(),
+                        invoice.number,
+                        invoice.total,
+                        timezone.now(),
+                        self.owner.pk,
+                        invoice.pk,
+                        self.workspace.pk,
+                    ],
+                )
+        return operation
+
+    def _raw_void(self, invoice):
+        def operation():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE invoices_invoice SET status = 'VOID', voided_at = %s, void_reason = 'concurrent' WHERE id = %s",
+                    [timezone.now(), invoice.pk],
+                )
+        return operation
+
+    def _raw_reversal_insert(self, invoice, payment):
+        def operation():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO payments_paymentreversal
+                        (public_id, idempotency_key, fingerprint, amount, currency, reason, reversed_at,
+                         invoice_number_snapshot, invoice_total_snapshot, invoice_currency_snapshot,
+                         created_at, created_by_id, invoice_id, payment_id, workspace_id)
+                    VALUES (%s, %s, %s, %s, 'USD', 'concurrent', %s, %s, %s, 'USD', %s, %s, %s, %s, %s)
+                    """,
+                    [
+                        uuid4().hex,
+                        uuid4().hex,
+                        "x" * 64,
+                        payment.amount,
+                        timezone.now(),
+                        payment.invoice_number_snapshot,
+                        payment.invoice_total_snapshot,
+                        timezone.now(),
+                        self.owner.pk,
+                        invoice.pk,
+                        payment.pk,
+                        self.workspace.pk,
+                    ],
+                )
+        return operation
+
+    def _assert_no_void_with_active_payment(self, invoice):
+        invoice.refresh_from_db()
+        active = Payment.objects.filter(invoice=invoice, reversals__isnull=True).count()
+        self.assertFalse(invoice.status == Invoice.Status.VOID and active > 0)
+
+    def test_concurrent_direct_sql_payment_and_void_leave_no_active_payment_on_void_invoice(self):
+        invoice = self._issued_invoice()
+        outcomes = self._run_concurrently(
+            self._raw_payment_insert(invoice, amount=Decimal("100.00"), reference="payment-vs-void"),
+            self._raw_void(invoice),
+        )
+        self.assertIn("success", outcomes.values())
+        self._assert_no_void_with_active_payment(invoice)
+
+    def test_concurrent_direct_sql_reversal_and_void_leave_no_active_payment_on_void_invoice(self):
+        invoice = self._issued_invoice()
+        payment = self._payment(invoice, amount=Decimal("100.00"))
+        outcomes = self._run_concurrently(
+            self._raw_reversal_insert(invoice, payment),
+            self._raw_void(invoice),
+        )
+        self.assertIn("success", outcomes.values())
+        self._assert_no_void_with_active_payment(invoice)
+
+    def test_concurrent_raw_overpayments_admit_at_most_one_payment(self):
+        invoice = self._issued_invoice()
+        outcomes = self._run_concurrently(
+            self._raw_payment_insert(invoice, amount=Decimal("60.00"), reference="overpay-a"),
+            self._raw_payment_insert(invoice, amount=Decimal("60.00"), reference="overpay-b"),
+        )
+        self.assertEqual(list(outcomes.values()).count("success"), 1)
+        self.assertEqual(Payment.objects.filter(invoice=invoice).count(), 1)
