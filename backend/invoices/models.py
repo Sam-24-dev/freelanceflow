@@ -13,6 +13,7 @@ from workspaces.models import Workspace
 
 
 CENT = Decimal("0.01")
+PAYMENT_TOTAL_MAX = Decimal("9999999999999999.99")
 _invoice_write_depth = ContextVar("invoice_service_write_depth", default=0)
 
 
@@ -194,6 +195,29 @@ class InvoiceLineItem(models.Model):
             models.CheckConstraint(condition=models.Q(vat_rate__gte=Decimal("0.00"), vat_rate__lte=Decimal("100.00")), name="invoice_line_vat_rate_range"),
             models.CheckConstraint(condition=models.Q(withholding_rate__gte=Decimal("0.00"), withholding_rate__lte=Decimal("100.00")), name="invoice_line_withholding_rate_range"),
         ]
+
+    def clean(self):
+        if not self.invoice_id or any(
+            value is None
+            for value in (
+                self.quantity,
+                self.unit_rate,
+                self.vat_rate,
+                self.withholding_rate,
+            )
+        ):
+            return
+        existing_total = sum(
+            (
+                line.line_total
+                for line in self.invoice.line_items.exclude(pk=self.pk)
+            ),
+            Decimal("0.00"),
+        )
+        if existing_total + self.line_total > PAYMENT_TOTAL_MAX:
+            raise ValidationError(
+                {"quantity": "Invoice total exceeds the payment ledger capacity."}
+            )
 
     def save(self, *args, **kwargs):
         if not _service_write_is_authorized():

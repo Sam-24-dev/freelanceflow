@@ -307,3 +307,20 @@ class InvoicePaymentTriggerMigrationTests(TestCase):
         self.assertIn("payments_payment", trigger)
         self.assertIn("payments_paymentreversal", trigger)
         self.assertIn("Issued invoices with active payments cannot be voided.", trigger)
+
+
+class InvoicePaymentCapacityTests(InvoiceDomainTests):
+    def test_issuing_rejects_line_above_payment_decimal_capacity(self):
+        self._fiscal(vat=Decimal("15.00"))
+        draft = create_draft_invoice(
+            self.context,
+            self._project(quantity=Decimal("9999999999.99"), rate=Decimal("9999999999.99")),
+        )
+        with self.assertRaises(ValidationError):
+            issue_invoice(self.context, draft)
+
+    def test_capacity_migration_preflights_draft_issuing_and_issued_totals(self):
+        sql = (Path(__file__).with_name("migrations") / "0004_enforce_invoice_total_capacity.py").read_text(encoding="utf-8")
+        self.assertIn("invoice.status IN ('DRAFT', 'ISSUING', 'ISSUED')", sql)
+        self.assertLess(sql.index("migrations.RunPython("), sql.index("DROP TRIGGER IF EXISTS invoice_line_validate_insert"))
+        self.assertIn("DECIMAL(65,2)", sql)
