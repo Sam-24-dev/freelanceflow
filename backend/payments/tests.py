@@ -3,7 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 
 from accounts.models import User
@@ -128,3 +128,22 @@ class PaymentLedgerServiceTests(TestCase):
                 self.context, invoice, amount=Decimal("10.00"), idempotency_key=key,
                 source_type="cash", source_reference="different", received_at=received_at,
             )
+
+
+class ImmutableTriggerRunnerContractTests(TestCase):
+    def test_parent_marker_cannot_authenticate_child_mode(self):
+        from config.test_runner import is_authenticated_isolated_child
+        self.assertFalse(is_authenticated_isolated_child({"FREELANCEFLOW_ISOLATED_IMMUTABLE_TRIGGER_TEST": "1"}))
+
+    def test_runner_identifies_raw_transaction_cases(self):
+        from config.test_runner import is_flush_unsafe_transaction_test
+        self.assertFalse(is_flush_unsafe_transaction_test(self))
+        self.assertTrue(is_flush_unsafe_transaction_test(TransactionTestCase("runTest")))
+
+
+class PaymentTriggerTextContractTests(TestCase):
+    def test_trimmed_text_migration_replaces_blank_checks(self):
+        sql = (Path(__file__).with_name("migrations") / "0002_enforce_trimmed_text_contract.py").read_text(encoding="utf-8")
+        self.assertIn("CHAR_LENGTH(TRIM(NEW.source_type))", sql)
+        self.assertIn("CHAR_LENGTH(TRIM(NEW.source_reference))", sql)
+        self.assertIn("CHAR_LENGTH(TRIM(NEW.reason))", sql)
