@@ -1,4 +1,5 @@
 from django.db import IntegrityError, transaction
+from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
 from fiscal.models import FiscalConfiguration
@@ -7,6 +8,8 @@ from proposals.models import Proposal
 from workspaces.context import ActiveWorkspaceContext
 from workspaces.models import Membership, Workspace
 from workspaces.permissions import can_perform_operational_work
+
+from payments.models import Payment, PaymentReversal
 
 from .models import Invoice, InvoiceLineItem, InvoiceSequence, _invoice_service_write_boundary
 
@@ -127,6 +130,14 @@ def issue_invoice(context: ActiveWorkspaceContext, invoice: Invoice):
         return locked_invoice
 
 
+def _has_active_payment(invoice: Invoice) -> bool:
+    reversal = PaymentReversal.objects.filter(payment_id=OuterRef("pk"))
+    return Payment.objects.filter(invoice=invoice).annotate(
+        is_reversed=Exists(reversal)
+    ).filter(is_reversed=False).exists()
+
+
+
 def void_invoice(context: ActiveWorkspaceContext, invoice: Invoice, *, reason: str):
     workspace = _authorize(context)
     if not reason.strip():
@@ -135,6 +146,8 @@ def void_invoice(context: ActiveWorkspaceContext, invoice: Invoice, *, reason: s
         locked_invoice = _locked_invoice(workspace, invoice)
         if locked_invoice.status != Invoice.Status.ISSUED:
             raise InvoiceTransitionError("Only issued invoices can be voided.")
+        if _has_active_payment(locked_invoice):
+            raise InvoiceTransitionError("Issued invoices with active payments cannot be voided.")
         with _invoice_service_write_boundary():
             locked_invoice.status = Invoice.Status.VOID
             locked_invoice.voided_at = timezone.now()
