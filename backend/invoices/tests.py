@@ -1,5 +1,7 @@
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
+from uuid import uuid4
 from queue import Queue
 from threading import Barrier, Thread
 from traceback import format_exc
@@ -15,7 +17,8 @@ from accounts.models import User
 from clients.models import Client
 from fiscal.services import create_fiscal_configuration
 from invoices.models import Invoice, InvoiceLineItem, InvoiceSequence
-from invoices.services import InvoiceAccessDenied, create_draft_invoice, issue_invoice, void_invoice
+from invoices.services import InvoiceAccessDenied, InvoiceTransitionError, create_draft_invoice, issue_invoice, void_invoice
+from payments.services import record_payment, reverse_payment
 from projects.services import convert_accepted_proposal
 from proposals.models import Proposal
 from proposals.services import add_line_item, create_proposal, send_proposal, transition_proposal
@@ -264,8 +267,43 @@ class InvoiceSequenceConcurrencyTests(TransactionTestCase):
                 close_old_connections()
 
         threads = [Thread(target=worker, args=(draft,)) for draft in drafts]
-        for thread in threads: thread.start()
-        for thread in threads: thread.join(timeout=30)
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
         self.assertFalse(any(thread.is_alive() for thread in threads))
         self.assertEqual(sorted(list(results.queue)), ["INV-000001", "INV-000002"])
         self.assertEqual(InvoiceSequence.objects.get(workspace=workspace).next_number, 3)
+
+class InvoicePaymentVoidGuardTests(InvoiceDomainTests):
+    def test_active_payment_blocks_void_until_full_reversal(self):
+        self._fiscal()
+        issued = issue_invoice(self.context, create_draft_invoice(self.context, self._project()))
+        payment = record_payment(
+            self.context, issued, amount=Decimal("100.00"), idempotency_key=uuid4(),
+            source_type="cash", source_reference="receipt",
+        )
+        with self.assertRaises(InvoiceTransitionError):
+            void_invoice(self.context, issued, reason="cancelled")
+        reverse_payment(self.context, issued, payment, idempotency_key=uuid4(), reason="returned")
+        self.assertEqual(void_invoice(self.context, issued, reason="cancelled").status, Invoice.Status.VOID)
+
+
+class InvoicePaymentTriggerMigrationTests(TestCase):
+    def test_update_trigger_preserves_0002_invariants_and_adds_active_payment_block(self):
+        old_migration = (Path(__file__).with_name("migrations") / "0002_enforce_issued_update_contract.py").read_text(encoding="utf-8")
+        required = (
+            "Invoice origin is immutable.", "Invoice transition is invalid.",
+            "Issued invoice data is immutable.", "Draft invoices cannot contain issued data.",
+            "Issued invoice fiscal snapshot is invalid.", "Issued invoice line snapshots are invalid.",
+            "Issued invoices cannot contain void data.", "Void invoices require a reason.",
+        )
+        with connection.cursor() as cursor:
+            cursor.execute("SHOW CREATE TRIGGER invoice_validate_update")
+            trigger = cursor.fetchone()[2]
+        for invariant in required:
+            self.assertIn(invariant, old_migration)
+            self.assertIn(invariant, trigger)
+        self.assertIn("payments_payment", trigger)
+        self.assertIn("payments_paymentreversal", trigger)
+        self.assertIn("Issued invoices with active payments cannot be voided.", trigger)
