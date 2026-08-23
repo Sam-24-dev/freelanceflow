@@ -11,7 +11,7 @@ from django.test import SimpleTestCase, TestCase, TransactionTestCase
 from accounts.models import User
 from categories.models import Category
 from clients.models import Client
-from ledger.models import LedgerEntry, calculate_request_fingerprint
+from ledger.models import LedgerEntry, _ledger_service_write_boundary, calculate_request_fingerprint
 from projects.services import convert_accepted_proposal
 from proposals.models import Proposal
 from proposals.services import add_line_item, create_proposal, send_proposal, transition_proposal
@@ -26,10 +26,14 @@ class LedgerModelTests(TestCase):
         self.workspace = create_workspace_with_owner(owner=self.user, name="Ledger", slug="ledger")
         self.category = Category.objects.create(workspace=self.workspace, name="Travel", default_deductible=True)
 
-    def entry(self, **overrides):
+    def entry_values(self, **overrides):
         values = {"workspace": self.workspace, "idempotency_key": uuid4(), "direction": "EXPENSE", "amount": Decimal("1.00"), "occurred_on": date(2026, 8, 23), "description": "  Taxi  ", "category": self.category, "category_name_snapshot": "Travel", "category_deductible_snapshot": True, "created_by": self.user}
         values.update(overrides)
-        return LedgerEntry.objects.create(**values)
+        return values
+
+    def entry(self, **overrides):
+        with _ledger_service_write_boundary():
+            return LedgerEntry.objects.create(**self.entry_values(**overrides))
 
     def test_manual_expense_uses_active_category_facts_and_is_immutable(self):
         entry = self.entry()
@@ -44,6 +48,29 @@ class LedgerModelTests(TestCase):
             entry.delete()
         with self.assertRaises(ValidationError):
             LedgerEntry.objects.filter(pk=entry.pk).update(description="x")
+
+    def test_public_orm_create_requires_ledger_service_authorization(self):
+        with self.assertRaisesRegex(ValidationError, "Ledger entries must use the ledger services"):
+            LedgerEntry.objects.create(**self.entry_values())
+        with self.assertRaisesRegex(ValidationError, "Ledger entries must use the ledger services"):
+            LedgerEntry(**self.entry_values()).save()
+        with self.assertRaisesRegex(ValidationError, "Ledger entries must use the ledger services"):
+            LedgerEntry.objects.bulk_create([LedgerEntry(**self.entry_values())])
+
+    def test_persisted_entry_cannot_mutate_or_delete_through_any_orm_route(self):
+        entry = self.entry()
+        entry.description = "Changed"
+
+        with self.assertRaisesRegex(ValidationError, "immutable"):
+            entry.save()
+        with self.assertRaisesRegex(ValidationError, "cannot be deleted"):
+            entry.delete()
+        with self.assertRaisesRegex(ValidationError, "immutable"):
+            LedgerEntry.objects.filter(pk=entry.pk).update(description="Changed")
+        with self.assertRaisesRegex(ValidationError, "immutable"):
+            LedgerEntry.objects.bulk_update([entry], ["description"])
+        with self.assertRaisesRegex(ValidationError, "cannot be deleted"):
+            LedgerEntry.objects.filter(pk=entry.pk).delete()
 
     def test_reversal_must_fully_mirror_a_manual_entry_except_direction(self):
         original = self.entry()
