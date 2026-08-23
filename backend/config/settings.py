@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "projects",
     "fiscal",
     "invoices",
+    "ledger",
 ]
 
 MIDDLEWARE = [
