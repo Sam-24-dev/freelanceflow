@@ -8,6 +8,15 @@ from django.test import TestCase, TransactionTestCase
 
 from accounts.models import User
 from categories.models import Category
+from categories.services import (
+    CategoryAccessDenied,
+    create_category,
+    get_categories_for_workspace,
+    get_category_by_public_id,
+    update_category,
+)
+from workspaces.context import ActiveWorkspaceContext
+from workspaces.models import Membership
 from workspaces.services import create_workspace_with_owner
 
 
@@ -106,3 +115,59 @@ class CategoryMySQLIntegrityTests(TransactionTestCase):
         with connection.cursor() as cursor:
             cursor.execute("SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = 'categories_category' ORDER BY TRIGGER_NAME")
             self.assertEqual([row[0] for row in cursor.fetchall()], ["category_normalize_validate_insert", "category_normalize_validate_update", "category_no_delete"])
+
+
+class CategoryServiceTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(email="category-service-owner@example.com", password="password")
+        self.workspace = create_workspace_with_owner(owner=self.owner, name="Category Service", slug="category-service")
+        self.owner_context = ActiveWorkspaceContext(workspace=self.workspace, membership=Membership.objects.get(workspace=self.workspace, user=self.owner))
+        self.operational = User.objects.create_user(email="category-operator@example.com", password="password")
+        self.operational_context = ActiveWorkspaceContext(workspace=self.workspace, membership=Membership.objects.create(workspace=self.workspace, user=self.operational, role=Membership.Role.OPERATIONAL))
+        self.administrative = User.objects.create_user(email="category-admin@example.com", password="password")
+        self.administrative_context = ActiveWorkspaceContext(workspace=self.workspace, membership=Membership.objects.create(workspace=self.workspace, user=self.administrative, role=Membership.Role.ADMINISTRATIVE))
+        self.other_owner = User.objects.create_user(email="category-other-owner@example.com", password="password")
+        self.other_workspace = create_workspace_with_owner(owner=self.other_owner, name="Other Category Service", slug="other-category-service")
+        self.other_context = ActiveWorkspaceContext(workspace=self.other_workspace, membership=Membership.objects.get(workspace=self.other_workspace, user=self.other_owner))
+
+    def create_category(self, context=None, **overrides):
+        payload = {"name": "Travel", "description": "Business travel", "default_deductible": True, "monthly_budget": Decimal("120.00")}
+        payload.update(overrides)
+        return create_category(context or self.owner_context, **payload)
+
+    def test_owner_and_operational_members_can_create_and_update_categories(self):
+        category = self.create_category()
+        self.assertEqual(category.workspace_id, self.workspace.pk)
+        updated = update_category(self.operational_context, category, name="  Client travel ", monthly_budget=Decimal("150.00"), status=Category.Status.INACTIVE)
+        self.assertEqual(updated.name, "Client travel")
+        self.assertEqual(updated.monthly_budget, Decimal("150.00"))
+        self.assertEqual(updated.status, Category.Status.INACTIVE)
+        self.assertIsNone(update_category(self.owner_context, category, monthly_budget=None).monthly_budget)
+
+    def test_only_active_categories_are_selectable(self):
+        active = self.create_category(name="Active")
+        inactive = self.create_category(name="Inactive", status=Category.Status.INACTIVE)
+        self.assertEqual(list(get_categories_for_workspace(self.owner_context, selectable_only=True)), [active])
+        self.assertEqual(set(get_categories_for_workspace(self.owner_context)), {active, inactive})
+
+    def test_services_scope_reads_and_writes_to_the_active_workspace(self):
+        own = self.create_category(name="Own")
+        other = self.create_category(self.other_context, name="Other")
+        self.assertEqual(list(get_categories_for_workspace(self.owner_context)), [own])
+        self.assertEqual(get_category_by_public_id(self.owner_context, own.public_id).pk, own.pk)
+        with self.assertRaises(CategoryAccessDenied):
+            get_category_by_public_id(self.owner_context, other.public_id)
+        with self.assertRaises(CategoryAccessDenied):
+            update_category(self.owner_context, other, description="Nope")
+
+    def test_administrative_members_and_superusers_without_membership_are_denied(self):
+        with self.assertRaises(CategoryAccessDenied):
+            self.create_category(self.administrative_context)
+        superuser = User.objects.create_superuser(email="category-superuser@example.com", password="password")
+        without_membership = ActiveWorkspaceContext(workspace=self.workspace, membership=Membership(id=999999, workspace=self.workspace, user=superuser, role=Membership.Role.OWNER))
+        with self.assertRaises(CategoryAccessDenied):
+            self.create_category(without_membership)
+
+    def test_explicit_workspace_cannot_cross_the_active_workspace(self):
+        with self.assertRaises(CategoryAccessDenied):
+            create_category(self.owner_context, name="Cross workspace", workspace=self.other_workspace)
