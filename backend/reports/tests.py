@@ -200,6 +200,7 @@ class CashActivityReportTests(TestCase):
         self.assertEqual(before["ledger"], list(LedgerEntry.objects.values_list("pk", "amount", "created_at")))
         self.assertEqual(before["payments"], list(Payment.objects.values_list("pk", "amount", "received_at")))
         self.assertEqual(before["reversals"], list(PaymentReversal.objects.values_list("pk", "amount", "reversed_at")))
+        self.assertEqual(payment.workspace_id, self.workspace.pk)
 
     def test_applies_inclusive_ledger_and_guayaquil_payment_boundaries(self):
         self._record_expense(amount=Decimal("2.00"), occurred_on=date(2026, 5, 1))
@@ -264,3 +265,45 @@ class CashActivityReportTests(TestCase):
         self.assertIsInstance(report.cash_in, Decimal)
         self.assertIsInstance(report.cash_out, Decimal)
         self.assertIsInstance(report.net, Decimal)
+
+    def test_groups_only_source_supported_facts_and_excludes_other_workspaces(self):
+        invoice = self._issued_invoice()
+        payment = self._record_payment(invoice, amount=Decimal("10.00"), received_at=datetime(2026, 5, 10, 12, tzinfo=UTC))
+        self._record_expense(
+            amount=Decimal("2.00"),
+            occurred_on=date(2026, 5, 10),
+            client=invoice.client,
+            project=invoice.project,
+            category=self.category,
+        )
+        other_owner = User.objects.create_user(email="reports-group-other@example.com", password="password")
+        other_workspace = create_workspace_with_owner(owner=other_owner, name="Other Group", slug="other-group")
+        other_context = ActiveWorkspaceContext(other_workspace, Membership.objects.get(workspace=other_workspace, user=other_owner))
+        other_category = Category.objects.create(workspace=other_workspace, name="Other Group Category", default_deductible=True)
+        record_manual_entry(
+            other_context,
+            idempotency_key=uuid4(),
+            direction=LedgerEntry.Direction.EXPENSE,
+            amount=Decimal("50.00"),
+            occurred_on=date(2026, 5, 10),
+            description="Other group",
+            category=other_category,
+        )
+
+        report = self._report(date(2026, 5, 10), date(2026, 5, 10))
+
+        self.assertEqual([(item.key, item.cash_in, item.cash_out) for item in report.by_client], [(invoice.client.public_id, Decimal("10.00"), Decimal("2.00"))])
+        self.assertEqual([(item.key, item.cash_in, item.cash_out) for item in report.by_project], [(invoice.project.public_id, Decimal("10.00"), Decimal("2.00"))])
+        self.assertEqual([(item.key, item.cash_in, item.cash_out) for item in report.by_category], [(self.category.public_id, Decimal("0.00"), Decimal("2.00"))])
+        self.assertEqual(payment.workspace_id, self.workspace.pk)
+
+    def test_returns_zero_totals_and_metadata_for_empty_range(self):
+        report = self._report(date(2026, 6, 1), date(2026, 6, 30))
+
+        self.assertEqual((report.cash_in, report.cash_out, report.net), (Decimal("0.00"), Decimal("0.00"), Decimal("0.00")))
+        self.assertEqual((report.start_date, report.end_date), (date(2026, 6, 1), date(2026, 6, 30)))
+        self.assertEqual(report.timezone, "America/Guayaquil")
+        self.assertTrue(timezone.is_aware(report.as_of))
+        self.assertEqual(report.by_client, ())
+        self.assertEqual(report.by_project, ())
+        self.assertEqual(report.by_category, ())
