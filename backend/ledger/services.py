@@ -64,6 +64,19 @@ def _entry_for_key(workspace: Workspace, key: UUID):
     ).first()
 
 
+def _locked_entry_for_public_id(workspace: Workspace, public_id: UUID | str) -> LedgerEntry:
+    try:
+        return LedgerEntry.objects.for_workspace(workspace).select_for_update().get(public_id=public_id)
+    except (LedgerEntry.DoesNotExist, TypeError, ValueError, ValidationError) as error:
+        raise LedgerAccessDenied("Ledger entry is not available in the active workspace.") from error
+
+
+def _reversal_for_original(workspace: Workspace, original: LedgerEntry):
+    return LedgerEntry.objects.for_workspace(workspace).select_for_update().filter(
+        reversal_of_id=original.pk
+    ).first()
+
+
 def _replay_or_conflict(entry: LedgerEntry, request_fingerprint: str) -> LedgerEntry:
     if entry.request_fingerprint == request_fingerprint:
         return entry
@@ -160,3 +173,80 @@ def record_manual_entry(
                 raise
             return _replay_or_conflict(existing, request_fingerprint)
         return entry
+
+
+def reverse_manual_entry(
+    context: ActiveWorkspaceContext,
+    *,
+    idempotency_key: UUID | str,
+    entry_public_id: UUID | str,
+) -> LedgerEntry:
+    """Append the single permitted reversal for one manual Ledger entry."""
+    workspace, _ = _authorize(context)
+    key = _idempotency_key(idempotency_key)
+
+    with transaction.atomic():
+        original = _locked_entry_for_public_id(workspace, entry_public_id)
+        if original.source != LedgerEntry.Source.MANUAL or original.reversal_of_id is not None:
+            raise LedgerValidationError("Only an unreversed manual Ledger entry can be reversed.")
+
+        direction = (
+            LedgerEntry.Direction.EXPENSE
+            if original.direction == LedgerEntry.Direction.INCOME
+            else LedgerEntry.Direction.INCOME
+        )
+        request_fingerprint = calculate_request_fingerprint(
+            workspace_id=original.workspace_id,
+            direction=direction,
+            source=LedgerEntry.Source.REVERSAL,
+            amount=original.amount,
+            currency="USD",
+            occurred_on=original.occurred_on,
+            description=original.description,
+            category_id=original.category_id,
+            client_id=original.client_id,
+            project_id=original.project_id,
+            reversal_of_id=original.pk,
+        )
+        existing = _entry_for_key(workspace, key)
+        if existing is not None:
+            return _replay_or_conflict(existing, request_fingerprint)
+
+        existing_reversal = _reversal_for_original(workspace, original)
+        if existing_reversal is not None:
+            if existing_reversal.idempotency_key == key:
+                return _replay_or_conflict(existing_reversal, request_fingerprint)
+            raise LedgerValidationError("Manual Ledger entry has already been reversed.")
+
+        reversal = LedgerEntry(
+            workspace_id=original.workspace_id,
+            idempotency_key=key,
+            request_fingerprint=request_fingerprint,
+            direction=direction,
+            source=LedgerEntry.Source.REVERSAL,
+            amount=original.amount,
+            currency="USD",
+            occurred_on=original.occurred_on,
+            description=original.description,
+            category_id=original.category_id,
+            category_name_snapshot=original.category_name_snapshot,
+            category_deductible_snapshot=original.category_deductible_snapshot,
+            client_id=original.client_id,
+            project_id=original.project_id,
+            reversal_of=original,
+            created_by_id=original.created_by_id,
+        )
+        try:
+            with transaction.atomic(), _ledger_service_write_boundary():
+                reversal.save()
+        except IntegrityError:
+            existing = _entry_for_key(workspace, key)
+            if existing is not None:
+                return _replay_or_conflict(existing, request_fingerprint)
+            existing_reversal = _reversal_for_original(workspace, original)
+            if existing_reversal is not None:
+                if existing_reversal.idempotency_key == key:
+                    return _replay_or_conflict(existing_reversal, request_fingerprint)
+                raise LedgerValidationError("Manual Ledger entry has already been reversed.")
+            raise
+        return reversal

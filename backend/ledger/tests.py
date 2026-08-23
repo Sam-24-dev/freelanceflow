@@ -2,11 +2,12 @@ import importlib
 from datetime import date
 from inspect import signature
 from decimal import Decimal
+from threading import Barrier, Thread
 from unittest.mock import Mock, call, patch
 from uuid import uuid4
 
 from django.core.exceptions import ValidationError
-from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.db import DatabaseError, IntegrityError, close_old_connections, connection, transaction
 from django.test import SimpleTestCase, TestCase, TransactionTestCase
 
 from accounts.models import User
@@ -17,8 +18,10 @@ from ledger.models import LedgerEntry, _ledger_service_write_boundary, calculate
 from ledger.services import (
     LedgerAccessDenied,
     LedgerIdempotencyConflict,
+    LedgerValidationError,
     get_ledger_entries,
     record_manual_entry,
+    reverse_manual_entry,
 )
 from projects.services import convert_accepted_proposal
 from proposals.models import Proposal
@@ -356,3 +359,162 @@ class LedgerManualEntryServiceTests(TestCase):
             self.record(source=LedgerEntry.Source.REVERSAL)
         with self.assertRaises((TypeError, ValueError)):
             self.record(idempotency_key="not-a-uuid")
+
+
+class LedgerManualReversalServiceTests(LedgerManualEntryServiceTests):
+    def reverse(self, original, context=None, **overrides):
+        values = {"idempotency_key": uuid4(), "entry_public_id": original.public_id}
+        values.update(overrides)
+        return reverse_manual_entry(self.context if context is None else context, **values)
+
+    def test_requires_fresh_authorization_and_hides_cross_workspace_sources(self):
+        original = self.record()
+        with self.assertRaises(LedgerAccessDenied):
+            self.reverse(original, context=self.administrative_context)
+        self.operational.is_active = False
+        self.operational.save(update_fields=["is_active"])
+        with self.assertRaises(LedgerAccessDenied):
+            self.reverse(original, context=self.operational_context)
+        with self.assertRaises(LedgerAccessDenied):
+            self.reverse(original, context=self.other_context)
+
+    def test_derives_all_reversal_facts_from_the_manual_original(self):
+        original = self.record(self.operational_context, project=self.project)
+        reversal = self.reverse(original)
+
+        self.assertEqual(reversal.workspace_id, original.workspace_id)
+        self.assertEqual(reversal.created_by_id, original.created_by_id)
+        self.assertEqual(reversal.reversal_of_id, original.pk)
+        self.assertEqual(reversal.source, LedgerEntry.Source.REVERSAL)
+        self.assertEqual(reversal.direction, LedgerEntry.Direction.INCOME)
+        self.assertEqual(reversal.amount, original.amount)
+        self.assertEqual(reversal.currency, "USD")
+        self.assertEqual(reversal.occurred_on, original.occurred_on)
+        self.assertEqual(reversal.description, original.description)
+        self.assertEqual(reversal.category_id, original.category_id)
+        self.assertEqual(reversal.category_name_snapshot, original.category_name_snapshot)
+        self.assertEqual(reversal.category_deductible_snapshot, original.category_deductible_snapshot)
+        self.assertEqual(reversal.client_id, original.client_id)
+        self.assertEqual(reversal.project_id, original.project_id)
+
+        parameters = signature(reverse_manual_entry).parameters
+        self.assertFalse({
+            "workspace", "created_by", "source", "direction", "amount", "currency", "occurred_on",
+            "description", "category", "client", "project", "reversal_of",
+        } & parameters.keys())
+
+    def test_replays_same_key_conflicts_on_another_source_and_rejects_reversal_sources(self):
+        original = self.record()
+        second_original = self.record(description="Parking")
+        key = uuid4()
+        first = self.reverse(original, idempotency_key=key)
+
+        self.assertEqual(self.reverse(original, idempotency_key=key).pk, first.pk)
+        with self.assertRaises(LedgerIdempotencyConflict):
+            self.reverse(second_original, idempotency_key=key)
+        with self.assertRaises(LedgerValidationError):
+            self.reverse(original, idempotency_key=uuid4())
+        with self.assertRaises(LedgerValidationError):
+            self.reverse(first)
+
+    def test_integrity_error_rolls_back_a_new_reversal_when_no_replay_exists(self):
+        original = self.record()
+        original_save = LedgerEntry.save
+
+        def save_then_fail(instance, *args, **kwargs):
+            original_save(instance, *args, **kwargs)
+            raise IntegrityError("simulated insert race")
+
+        with patch.object(LedgerEntry, "save", autospec=True, side_effect=save_then_fail):
+            with self.assertRaises(IntegrityError):
+                self.reverse(original)
+
+        self.assertFalse(LedgerEntry.objects.filter(reversal_of=original).exists())
+        self.assertEqual(LedgerEntry.objects.filter(pk=original.pk).count(), 1)
+
+    def test_integrity_error_recovers_the_same_key_reversal(self):
+        original = self.record()
+        key = uuid4()
+        persisted = self.reverse(original, idempotency_key=key)
+        original_entry_for_key = ledger_services._entry_for_key
+        lookups = 0
+
+        def hide_then_find_racing_key(workspace, idempotency_key):
+            nonlocal lookups
+            lookups += 1
+            if lookups == 1:
+                return None
+            return original_entry_for_key(workspace, idempotency_key)
+
+        with (
+            patch("ledger.services._entry_for_key", side_effect=hide_then_find_racing_key),
+            patch("ledger.services._reversal_for_original", return_value=None),
+            patch.object(LedgerEntry, "save", autospec=True, side_effect=IntegrityError("duplicate reversal")),
+        ):
+            recovered = self.reverse(original, idempotency_key=key)
+
+        self.assertEqual(recovered.pk, persisted.pk)
+        self.assertEqual(lookups, 2)
+        self.assertEqual(LedgerEntry.objects.filter(reversal_of=original).count(), 1)
+
+
+class LedgerManualReversalConcurrencyTests(TransactionTestCase):
+    """Runtime gate: two MySQL connections must share one idempotent reversal."""
+
+    reset_sequences = True
+
+    def _fixture_teardown(self):
+        """Immutable Ledger rows require disposal of this isolated test database."""
+
+    def setUp(self):
+        token = uuid4().hex
+        self.owner = User.objects.create_user(email=f"ledger-reversal-{token}@example.com", password="password")
+        self.workspace = create_workspace_with_owner(owner=self.owner, name=f"Ledger reversal {token}", slug=f"ledger-reversal-{token}")
+        self.context = ActiveWorkspaceContext(
+            self.workspace,
+            Membership.objects.get(workspace=self.workspace, user=self.owner),
+        )
+        self.category = Category.objects.create(workspace=self.workspace, name="Travel", default_deductible=True)
+        self.original = record_manual_entry(
+            self.context,
+            idempotency_key=uuid4(),
+            direction=LedgerEntry.Direction.EXPENSE,
+            amount=Decimal("12.00"),
+            occurred_on=date(2026, 8, 23),
+            description="Taxi ride",
+            category=self.category,
+        )
+
+    def test_concurrent_same_key_reversal_returns_one_persisted_result(self):
+        barrier = Barrier(2)
+        outcomes = []
+        key = uuid4()
+
+        def contender(label):
+            close_old_connections()
+            try:
+                barrier.wait(timeout=10)
+                reversal = reverse_manual_entry(
+                    self.context,
+                    idempotency_key=key,
+                    entry_public_id=self.original.public_id,
+                )
+                outcomes.append((label, "success", reversal.public_id))
+            except DatabaseError as error:
+                outcomes.append((label, "error", type(error).__name__))
+            finally:
+                close_old_connections()
+
+        left = Thread(target=contender, args=("left",))
+        right = Thread(target=contender, args=("right",))
+        left.start()
+        right.start()
+        left.join(timeout=20)
+        right.join(timeout=20)
+
+        self.assertFalse(left.is_alive())
+        self.assertFalse(right.is_alive())
+        self.assertEqual({label for label, _, _ in outcomes}, {"left", "right"})
+        self.assertTrue(all(status == "success" for _, status, _ in outcomes))
+        self.assertEqual(len({public_id for _, _, public_id in outcomes}), 1)
+        self.assertEqual(LedgerEntry.objects.filter(reversal_of=self.original).count(), 1)
