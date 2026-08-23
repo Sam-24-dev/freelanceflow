@@ -1,5 +1,6 @@
 import uuid
 from decimal import Decimal
+from hashlib import sha256
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -11,6 +12,21 @@ from projects.models import Project
 from workspaces.models import Workspace
 
 CENT = Decimal("0.01")
+NULL_SENTINEL = "NULL"
+
+
+def calculate_request_fingerprint(*, workspace_id, direction, source, amount, currency, occurred_on, description,
+                                  category_id=None, client_id=None, project_id=None, reversal_of_id=None):
+    """Return the trigger-owned idempotency digest for immutable request semantics."""
+    amount = Decimal(amount)
+    if amount != amount.quantize(CENT):
+        raise ValueError("Ledger request fingerprint requires exact cents.")
+    values = (
+        workspace_id, direction, source, f"{amount:.2f}", currency, occurred_on.isoformat(),
+        " ".join(description.split()), category_id, client_id, project_id, reversal_of_id,
+    )
+    canonical = "|".join(NULL_SENTINEL if value is None else str(value) for value in values)
+    return sha256(canonical.encode("utf-8")).hexdigest()
 
 
 class LedgerQuerySet(models.QuerySet):
@@ -40,6 +56,7 @@ class LedgerEntry(models.Model):
     public_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     idempotency_key = models.UUIDField()
     fingerprint = models.CharField(max_length=64, editable=False)
+    request_fingerprint = models.CharField(max_length=64, editable=False)
     direction = models.CharField(max_length=7, choices=Direction.choices)
     source = models.CharField(max_length=8, choices=Source.choices, default=Source.MANUAL)
     amount = models.DecimalField(max_digits=18, decimal_places=2)
