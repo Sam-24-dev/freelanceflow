@@ -1,4 +1,6 @@
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from decimal import Decimal
 from hashlib import sha256
 
@@ -13,6 +15,27 @@ from workspaces.models import Workspace
 
 CENT = Decimal("0.01")
 NULL_SENTINEL = "NULL"
+
+
+_ledger_service_write_depth = ContextVar("ledger_service_write_depth", default=0)
+
+
+@contextmanager
+def _ledger_service_write_boundary():
+    """Coordinate Ledger creation in this Python process only.
+
+    This is not a security boundary. Database constraints and triggers remain
+    the durable protection against direct SQL writes.
+    """
+    token = _ledger_service_write_depth.set(_ledger_service_write_depth.get() + 1)
+    try:
+        yield
+    finally:
+        _ledger_service_write_depth.reset(token)
+
+
+def _service_write_is_authorized() -> bool:
+    return _ledger_service_write_depth.get() > 0
 
 
 def calculate_request_fingerprint(*, workspace_id, direction, source, amount, currency, occurred_on, description,
@@ -32,6 +55,14 @@ def calculate_request_fingerprint(*, workspace_id, direction, source, amount, cu
 class LedgerQuerySet(models.QuerySet):
     def for_workspace(self, workspace):
         return self.filter(workspace=workspace)
+
+    def create(self, **kwargs):
+        if not _service_write_is_authorized():
+            raise ValidationError("Ledger entries must use the ledger services.")
+        return super().create(**kwargs)
+
+    def bulk_create(self, objs, batch_size=None, ignore_conflicts=False, update_conflicts=False, update_fields=None, unique_fields=None):
+        raise ValidationError("Ledger entries must use the ledger services.")
 
     def update(self, **kwargs):
         raise ValidationError("Ledger entries are immutable.")
@@ -127,6 +158,8 @@ class LedgerEntry(models.Model):
     def save(self, *args, **kwargs):
         if not self._state.adding:
             raise ValidationError("Ledger entries are immutable.")
+        if not _service_write_is_authorized():
+            raise ValidationError("Ledger entries must use the ledger services.")
         self.full_clean()
         return super().save(*args, **kwargs)
 
