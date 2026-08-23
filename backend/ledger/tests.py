@@ -1,15 +1,17 @@
+import importlib
 from datetime import date
 from decimal import Decimal
+from unittest.mock import Mock
 from uuid import uuid4
 
 from django.core.exceptions import ValidationError
 from django.db import DatabaseError, connection, transaction
-from django.test import TestCase, TransactionTestCase
+from django.test import SimpleTestCase, TestCase, TransactionTestCase
 
 from accounts.models import User
 from categories.models import Category
 from clients.models import Client
-from ledger.models import LedgerEntry
+from ledger.models import LedgerEntry, calculate_request_fingerprint
 from projects.services import convert_accepted_proposal
 from proposals.models import Proposal
 from proposals.services import add_line_item, create_proposal, send_proposal, transition_proposal
@@ -51,6 +53,53 @@ class LedgerModelTests(TestCase):
             self.entry(source="REVERSAL", reversal_of=original, direction="EXPENSE")
 
 
+class LedgerRequestFingerprintTests(SimpleTestCase):
+    def test_canonical_request_fingerprint_ignores_nonsemantic_values_and_changes_for_each_semantic_dimension(self):
+        values = {
+            "workspace_id": 1,
+            "direction": "EXPENSE",
+            "source": "MANUAL",
+            "amount": Decimal("1.00"),
+            "currency": "USD",
+            "occurred_on": date(2026, 8, 23),
+            "description": "  Taxi   ride  ",
+            "category_id": 2,
+            "client_id": 3,
+            "project_id": 4,
+            "reversal_of_id": None,
+        }
+        baseline = calculate_request_fingerprint(**values)
+        self.assertEqual(baseline, calculate_request_fingerprint(**{**values, "description": "Taxi ride"}))
+        for field, value in {
+            "workspace_id": 10, "direction": "INCOME", "source": "REVERSAL", "amount": Decimal("2.00"),
+            "currency": "EUR", "occurred_on": date(2026, 8, 24), "description": "Train ride",
+            "category_id": 20, "client_id": 30, "project_id": 40, "reversal_of_id": 50,
+        }.items():
+            with self.subTest(field=field):
+                self.assertNotEqual(baseline, calculate_request_fingerprint(**{**values, field: value}))
+
+
+class LedgerRequestFingerprintMigrationTests(SimpleTestCase):
+    def test_preflight_rejects_legacy_rows_before_non_null_request_fingerprint(self):
+        migration = importlib.import_module("ledger.migrations.0002_add_request_fingerprint")
+        model = Mock()
+        model.objects.exists.return_value = True
+        apps = Mock()
+        apps.get_model.return_value = model
+
+        with self.assertRaisesRegex(RuntimeError, "empty ledger table"):
+            migration.ensure_ledger_table_is_empty(apps, None)
+
+    def test_trigger_replacement_has_no_fake_noop_reverse(self):
+        migration = importlib.import_module("ledger.migrations.0002_add_request_fingerprint")
+        trigger_operations = [
+            operation for operation in migration.Migration.operations
+            if isinstance(operation, migration.migrations.RunSQL)
+        ]
+
+        self.assertEqual([operation.reverse_sql for operation in trigger_operations], [None, None])
+
+
 class LedgerMySQLIntegrityTests(TransactionTestCase):
     reset_sequences = True
 
@@ -83,8 +132,22 @@ class LedgerMySQLIntegrityTests(TransactionTestCase):
         columns = ", ".join(values)
         placeholders = ", ".join(["%s"] * len(values))
         with connection.cursor() as cursor:
-            cursor.execute(f"INSERT INTO ledger_ledgerentry ({columns}, created_at, fingerprint) VALUES ({placeholders}, NOW(), 'forged')", list(values.values()))
+            cursor.execute(f"INSERT INTO ledger_ledgerentry ({columns}, created_at, fingerprint, request_fingerprint) VALUES ({placeholders}, NOW(), 'forged', 'forged-request')", list(values.values()))
             return cursor.lastrowid
+
+    def test_direct_sql_overwrites_forged_request_fingerprint_with_semantic_value(self):
+        first_id = self._insert(description="  Taxi   ride  ")
+        second_id = self._insert(description="Taxi ride", created_by_id=self.other_user.pk)
+        first = LedgerEntry.objects.get(pk=first_id)
+        second = LedgerEntry.objects.get(pk=second_id)
+
+        self.assertEqual(first.request_fingerprint, second.request_fingerprint)
+        self.assertNotEqual(first.request_fingerprint, "forged-request")
+        self.assertEqual(first.request_fingerprint, calculate_request_fingerprint(
+            workspace_id=self.workspace.pk, direction="EXPENSE", source="MANUAL", amount=Decimal("1.00"),
+            currency="USD", occurred_on=date(2026, 8, 23), description="Taxi ride", category_id=self.category.pk,
+            client_id=self.client.pk, project_id=None, reversal_of_id=None,
+        ))
 
     def test_direct_sql_rejects_forged_scalars_category_status_and_tenant_links(self):
         cases = (
