@@ -1,10 +1,19 @@
-from django.db import DatabaseError, connection, transaction
+from unittest.mock import patch
+
+from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.db.models.deletion import ProtectedError
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from accounts.models import User
 from audit.models import AuditEvent, AuditEventWorkspaceRequired, AuditEventWriteBoundaryViolation, audit_event_write_boundary
-from workspaces.models import Membership, Workspace
+from workspaces.models import Membership, Workspace, allow_membership_writes
+from workspaces.permissions import WorkspacePermissionDenied
+from workspaces.services import (
+    LastOwnerViolation,
+    change_membership_role,
+    create_workspace_with_owner,
+    remove_membership,
+)
 
 class AuditEventSchemaTests(TestCase):
     def setUp(self):
@@ -82,3 +91,143 @@ class AuditEventTriggerTests(TransactionTestCase):
     def assert_trigger_rejects_insert(self, *, workspace_id=None, actor_id=None, target_id=None, role_after=Membership.Role.OWNER):
         with transaction.atomic(), self.assertRaises(DatabaseError):
             self.insert(workspace_id=self.workspace.pk if workspace_id is None else workspace_id, actor_id=self.user.pk if actor_id is None else actor_id, target_id=self.member.pk if target_id is None else target_id, role_after=role_after)
+
+
+class AuditEventSourceEventTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user("audit-owner@example.com", "password")
+        self.workspace = create_workspace_with_owner(
+            name="Audit Studio", slug="audit-studio", owner=self.owner
+        )
+        self.owner_membership = Membership.objects.get(
+            workspace=self.workspace, user=self.owner
+        )
+
+    def events(self):
+        return AuditEvent.objects.for_workspace(self.workspace)
+
+    def member(self, email="audit-member@example.com", role=Membership.Role.OPERATIONAL):
+        user = User.objects.create_user(email, "password")
+        return Membership.objects.create(workspace=self.workspace, user=user, role=role)
+
+    def test_workspace_creation_appends_one_owner_snapshot(self):
+        events = list(self.events())
+
+        self.assertEqual(len(events), 1)
+        event = events[0]
+        self.assertEqual(
+            (event.event_type, event.actor, event.target_membership_id, event.role_before, event.role_after),
+            (AuditEvent.EventType.WORKSPACE_CREATED, self.owner, self.owner_membership.pk, None, Membership.Role.OWNER),
+        )
+
+    def test_role_change_and_removal_append_tenant_bound_snapshots(self):
+        member = self.member()
+
+        change_membership_role(
+            workspace_id=self.workspace.pk,
+            membership_id=member.pk,
+            role=Membership.Role.ADMINISTRATIVE,
+            actor=self.owner,
+        )
+        self.assertEqual(self.events().count(), 2)
+        remove_membership(
+            workspace_id=self.workspace.pk,
+            membership_id=member.pk,
+            actor=self.owner,
+        )
+
+        changed, removed = list(self.events().order_by("pk"))[-2:]
+        self.assertEqual(
+            (changed.event_type, changed.target_membership_id, changed.role_before, changed.role_after),
+            (AuditEvent.EventType.MEMBERSHIP_ROLE_CHANGED, member.pk, Membership.Role.OPERATIONAL, Membership.Role.ADMINISTRATIVE),
+        )
+        self.assertEqual(
+            (removed.event_type, removed.target_membership_id, removed.role_before, removed.role_after),
+            (AuditEvent.EventType.MEMBERSHIP_REMOVED, member.pk, Membership.Role.ADMINISTRATIVE, None),
+        )
+        self.assertEqual(self.events().count(), 3)
+        self.assertFalse(Membership.objects.filter(pk=member.pk).exists())
+
+    def test_audit_and_source_mutations_rollback_together(self):
+        member = self.member()
+        baseline = self.events().count()
+
+        with patch("workspaces.services.record_audit_event", side_effect=IntegrityError):
+            with self.assertRaises(IntegrityError):
+                change_membership_role(
+                    workspace_id=self.workspace.pk,
+                    membership_id=member.pk,
+                    role=Membership.Role.ADMINISTRATIVE,
+                    actor=self.owner,
+                )
+        member.refresh_from_db()
+        self.assertEqual(member.role, Membership.Role.OPERATIONAL)
+        self.assertEqual(self.events().count(), baseline)
+
+        with patch.object(Membership, "delete", side_effect=IntegrityError):
+            with self.assertRaises(IntegrityError):
+                remove_membership(
+                    workspace_id=self.workspace.pk,
+                    membership_id=member.pk,
+                    actor=self.owner,
+                )
+        self.assertTrue(Membership.objects.filter(pk=member.pk).exists())
+        self.assertEqual(self.events().count(), baseline)
+
+    def test_non_last_owner_can_remove_themself_and_records_once_before_deletion(self):
+        self.member("second-audit-owner@example.com", Membership.Role.OWNER)
+
+        remove_membership(
+            workspace_id=self.workspace.pk,
+            membership_id=self.owner_membership.pk,
+            actor=self.owner,
+        )
+
+        event = self.events().order_by("pk").last()
+        self.assertEqual(
+            (event.event_type, event.actor, event.target_membership_id, event.role_before, event.role_after),
+            (AuditEvent.EventType.MEMBERSHIP_REMOVED, self.owner, self.owner_membership.pk, Membership.Role.OWNER, None),
+        )
+        self.assertFalse(Membership.objects.filter(pk=self.owner_membership.pk).exists())
+
+    def test_last_owner_and_unauthorized_actors_cannot_mutate_or_append(self):
+        member = self.member()
+        baseline = self.events().count()
+
+        with self.assertRaises(LastOwnerViolation):
+            remove_membership(
+                workspace_id=self.workspace.pk,
+                membership_id=self.owner_membership.pk,
+                actor=self.owner,
+            )
+        stale_owner = self.member("stale-owner@example.com", Membership.Role.OWNER)
+        with allow_membership_writes():
+            stale_owner.role = Membership.Role.ADMINISTRATIVE
+            stale_owner.save(update_fields=["role"])
+        inactive_owner = self.member("inactive-owner@example.com", Membership.Role.OWNER)
+        inactive_owner.user.is_active = False
+        inactive_owner.user.save(update_fields=["is_active"])
+        superuser = User.objects.create_superuser("audit-super@example.com", "password")
+        for actor in (member.user, stale_owner.user, inactive_owner.user, superuser):
+            with self.subTest(actor=actor.pk), self.assertRaises(WorkspacePermissionDenied):
+                change_membership_role(
+                    workspace_id=self.workspace.pk,
+                    membership_id=member.pk,
+                    role=Membership.Role.ADMINISTRATIVE,
+                    actor=actor,
+                )
+        self.assertEqual(self.events().count(), baseline)
+
+    def test_same_role_change_is_a_noop_without_audit_recursion(self):
+        member = self.member("same-role@example.com")
+        baseline = self.events().count()
+
+        result = change_membership_role(
+            workspace_id=self.workspace.pk,
+            membership_id=member.pk,
+            role=Membership.Role.OPERATIONAL,
+            actor=self.owner,
+        )
+
+        self.assertEqual(result.pk, member.pk)
+        self.assertEqual(self.events().count(), baseline)
