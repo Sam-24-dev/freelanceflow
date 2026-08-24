@@ -1,4 +1,4 @@
-﻿from contextlib import contextmanager
+from contextlib import contextmanager
 from contextvars import ContextVar
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -9,6 +9,9 @@ from workspaces.models import Membership, Workspace
 _audit_write_depth = ContextVar("audit_write_depth", default=0)
 
 class AuditEventWriteBoundaryViolation(ValueError):
+    pass
+
+class AuditEventWorkspaceRequired(ValueError):
     pass
 
 @contextmanager
@@ -23,8 +26,82 @@ def _audit_write_is_authorized():
     return _audit_write_depth.get() > 0
 
 class AuditEventQuerySet(models.QuerySet):
+    _audit_workspace_id = None
+
+    def _clone(self):
+        clone = super()._clone()
+        clone._audit_workspace_id = self._audit_workspace_id
+        return clone
+
     def for_workspace(self, workspace):
-        return self.filter(workspace=workspace)
+        if not isinstance(workspace, Workspace) or workspace.pk is None:
+            raise AuditEventWorkspaceRequired("Audit event reads require a saved Workspace.")
+        queryset = self.filter(workspace=workspace)
+        queryset._audit_workspace_id = workspace.pk
+        return queryset
+
+    def _require_workspace(self):
+        if self._audit_workspace_id is None:
+            raise AuditEventWorkspaceRequired("Audit event reads require AuditEvent.objects.for_workspace(workspace).")
+
+    def _require_same_workspace(self, other):
+        self._require_workspace()
+        if not isinstance(other, AuditEventQuerySet) or other._audit_workspace_id != self._audit_workspace_id:
+            raise AuditEventWorkspaceRequired("Audit event querysets may only be combined within one workspace.")
+
+    def _fetch_all(self):
+        self._require_workspace()
+        return super()._fetch_all()
+    def aggregate(self, *args, **kwargs):
+        self._require_workspace()
+        return super().aggregate(*args, **kwargs)
+    async def aaggregate(self, *args, **kwargs):
+        self._require_workspace()
+        return await super().aaggregate(*args, **kwargs)
+    def count(self):
+        self._require_workspace()
+        return super().count()
+    async def acount(self):
+        self._require_workspace()
+        return await super().acount()
+    def exists(self):
+        self._require_workspace()
+        return super().exists()
+    async def aexists(self):
+        self._require_workspace()
+        return await super().aexists()
+    def contains(self, obj):
+        self._require_workspace()
+        return super().contains(obj)
+    async def acontains(self, obj):
+        self._require_workspace()
+        return await super().acontains(obj)
+    def iterator(self, *args, **kwargs):
+        self._require_workspace()
+        return super().iterator(*args, **kwargs)
+    async def aiterator(self, *args, **kwargs):
+        self._require_workspace()
+        async for item in super().aiterator(*args, **kwargs):
+            yield item
+    def explain(self, *args, **kwargs):
+        self._require_workspace()
+        return super().explain(*args, **kwargs)
+
+    def __and__(self, other):
+        self._require_same_workspace(other)
+        return super().__and__(other)
+    def __or__(self, other):
+        self._require_same_workspace(other)
+        return super().__or__(other)
+    def __xor__(self, other):
+        self._require_same_workspace(other)
+        return super().__xor__(other)
+    def _combinator_query(self, combinator, *other_qs, all=False):
+        self._require_workspace()
+        for other in other_qs:
+            self._require_same_workspace(other)
+        return super()._combinator_query(combinator, *other_qs, all=all)
+
     def create(self, **kwargs):
         if not _audit_write_is_authorized():
             raise AuditEventWriteBoundaryViolation("Audit events may only be appended by audited domain services.")
@@ -39,7 +116,12 @@ class AuditEventQuerySet(models.QuerySet):
         raise AuditEventWriteBoundaryViolation("Audit events are immutable.")
 
 class AuditEventManager(models.Manager.from_queryset(AuditEventQuerySet)):
-    pass
+    def all(self):
+        raise AuditEventWorkspaceRequired("Audit event reads require AuditEvent.objects.for_workspace(workspace).")
+    def for_workspace(self, workspace):
+        return self.get_queryset().for_workspace(workspace)
+    def raw(self, *args, **kwargs):
+        raise AuditEventWorkspaceRequired("Raw audit event reads are not a public API; use for_workspace(workspace).")
 
 class AuditEvent(models.Model):
     class EventType(models.TextChoices):
@@ -53,10 +135,13 @@ class AuditEvent(models.Model):
     role_before = models.CharField(max_length=20, choices=Membership.Role.choices, null=True, blank=True)
     role_after = models.CharField(max_length=20, choices=Membership.Role.choices, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Django's internal relation collector needs this unguarded base manager.
+    # It is not a security boundary; services authorize public reads.
+    _base_objects = models.Manager()
     objects = AuditEventManager()
 
     class Meta:
-        base_manager_name = "objects"
+        base_manager_name = "_base_objects"
         ordering = ["-created_at", "-pk"]
         constraints = [
             models.CheckConstraint(condition=Q(target_membership_id__gt=0), name="audit_event_target_membership_positive"),
