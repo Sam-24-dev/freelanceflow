@@ -81,6 +81,7 @@ class WorkspaceMembershipServiceTests(TestCase):
                 workspace_id=workspace.id,
                 membership_id=membership.id,
                 role="INVALID",
+                actor=self.owner,
             )
 
         membership.role = "INVALID"
@@ -96,6 +97,7 @@ class WorkspaceMembershipServiceTests(TestCase):
                 workspace_id=workspace.id,
                 membership_id=membership.id,
                 role=Membership.Role.ADMINISTRATIVE,
+                actor=self.owner,
             )
 
         membership.refresh_from_db()
@@ -109,6 +111,7 @@ class WorkspaceMembershipServiceTests(TestCase):
             remove_membership(
                 workspace_id=workspace.id,
                 membership_id=membership.id,
+                actor=self.owner,
             )
 
         self.assertTrue(Membership.objects.filter(pk=membership.pk).exists())
@@ -126,6 +129,7 @@ class WorkspaceMembershipServiceTests(TestCase):
             workspace_id=workspace.id,
             membership_id=membership.id,
             role=Membership.Role.ADMINISTRATIVE,
+            actor=self.owner,
         )
 
         membership.refresh_from_db()
@@ -150,6 +154,7 @@ class WorkspaceMembershipServiceTests(TestCase):
         remove_membership(
             workspace_id=workspace.id,
             membership_id=membership.id,
+            actor=self.owner,
         )
 
         self.assertFalse(Membership.objects.filter(pk=membership.pk).exists())
@@ -177,10 +182,11 @@ class WorkspaceMembershipServiceTests(TestCase):
 
     def test_memberships_are_isolated_by_workspace(self):
         first_workspace = self.create_workspace("first")
+        second_owner = User.objects.create_user("second@example.com", "password")
         second_workspace = create_workspace_with_owner(
             name="Second Studio",
             slug="second",
-            owner=User.objects.create_user("second@example.com", "password"),
+            owner=second_owner,
         )
         first_membership = Membership.objects.get(
             workspace=first_workspace,
@@ -191,6 +197,7 @@ class WorkspaceMembershipServiceTests(TestCase):
             remove_membership(
                 workspace_id=second_workspace.id,
                 membership_id=first_membership.id,
+                actor=second_owner,
             )
 
         self.assertTrue(Membership.objects.filter(pk=first_membership.pk).exists())
@@ -263,14 +270,15 @@ class WorkspaceMembershipServiceTests(TestCase):
         self.assertTrue(Workspace.objects.filter(pk=workspace.pk).exists())
         self.assertTrue(Membership.objects.filter(pk=membership.pk).exists())
 
-    def test_deleting_workspace_cascades_to_memberships(self):
+    def test_deleting_workspace_with_retained_audit_facts_is_protected(self):
         workspace = self.create_workspace()
         membership = Membership.objects.get(workspace=workspace, user=self.owner)
 
-        workspace.delete()
+        with self.assertRaises(ProtectedError):
+            workspace.delete()
 
-        self.assertFalse(Workspace.objects.filter(pk=workspace.pk).exists())
-        self.assertFalse(Membership.objects.filter(pk=membership.pk).exists())
+        self.assertTrue(Workspace.objects.filter(pk=workspace.pk).exists())
+        self.assertTrue(Membership.objects.filter(pk=membership.pk).exists())
 
 
 class ActiveWorkspaceContextTests(TestCase):
@@ -378,8 +386,9 @@ class ActiveWorkspaceContextTests(TestCase):
             self.assertEqual(str(error), str(errors[0]))
         self.assertNotIn(ACTIVE_WORKSPACE_SESSION_KEY, request.session)
     def test_revoked_membership_invalidates_the_selected_context(self):
+        workspace_owner = User.objects.create_user("workspace-owner@example.com", "password")
         workspace = self.create_workspace(
-            owner=User.objects.create_user("workspace-owner@example.com", "password"),
+            owner=workspace_owner,
             slug="revoked-context",
         )
         membership = Membership.objects.create(
@@ -389,7 +398,11 @@ class ActiveWorkspaceContextTests(TestCase):
         )
         request = self.request_for(self.user)
         select_active_workspace(request, workspace.public_id)
-        remove_membership(workspace_id=workspace.id, membership_id=membership.id)
+        remove_membership(
+            workspace_id=workspace.id,
+            membership_id=membership.id,
+            actor=workspace_owner,
+        )
 
         with self.assertRaises(ActiveWorkspaceMembershipRequired):
             resolve_active_workspace_context(request)
