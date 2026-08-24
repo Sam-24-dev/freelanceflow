@@ -6,8 +6,10 @@ from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from accounts.models import User
 from audit.models import AuditEvent, AuditEventWorkspaceRequired, AuditEventWriteBoundaryViolation, audit_event_write_boundary
+from audit.services import AuditEventAccessDenied, list_audit_events
+from workspaces.context import ActiveWorkspaceContext
 from workspaces.models import Membership, Workspace, allow_membership_writes
-from workspaces.permissions import WorkspacePermissionDenied
+from workspaces.permissions import WorkspacePermissionDenied, can_read_audit_events
 from workspaces.services import (
     LastOwnerViolation,
     change_membership_role,
@@ -231,3 +233,184 @@ class AuditEventSourceEventTests(TestCase):
 
         self.assertEqual(result.pk, member.pk)
         self.assertEqual(self.events().count(), baseline)
+
+
+class AuditEventReadServiceTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user("audit-read-owner@example.com", "password")
+        self.workspace = create_workspace_with_owner(
+            name="Audit Read", slug="audit-read", owner=self.owner
+        )
+        self.administrator = User.objects.create_user(
+            "audit-read-administrator@example.com", "password"
+        )
+        self.administrative_membership = Membership.objects.create(
+            workspace=self.workspace,
+            user=self.administrator,
+            role=Membership.Role.ADMINISTRATIVE,
+        )
+        self.context = ActiveWorkspaceContext(
+            workspace=self.workspace, membership=self.administrative_membership
+        )
+        self.operational = User.objects.create_user(
+            "audit-read-operational@example.com", "password"
+        )
+        self.operational_membership = Membership.objects.create(
+            workspace=self.workspace,
+            user=self.operational,
+            role=Membership.Role.OPERATIONAL,
+        )
+        self.other_owner = User.objects.create_user(
+            "audit-read-other@example.com", "password"
+        )
+        self.other_workspace = create_workspace_with_owner(
+            name="Other Audit Read", slug="other-audit-read", owner=self.other_owner
+        )
+        self.other_membership = Membership.objects.get(
+            workspace=self.other_workspace, user=self.other_owner
+        )
+
+    def append_event(self, *, workspace=None, actor=None, target_membership=None):
+        workspace = workspace or self.workspace
+        actor = actor or self.owner
+        target_membership = target_membership or self.administrative_membership
+        with audit_event_write_boundary():
+            return AuditEvent.objects.create(
+                workspace=workspace,
+                actor=actor,
+                event_type=AuditEvent.EventType.MEMBERSHIP_ROLE_CHANGED,
+                target_membership_id=target_membership.pk,
+                role_before=Membership.Role.OPERATIONAL,
+                role_after=Membership.Role.ADMINISTRATIVE,
+            )
+
+    def test_permission_predicate_allows_only_administrative_memberships(self):
+        self.assertTrue(can_read_audit_events(self.administrative_membership))
+        self.assertFalse(
+            can_read_audit_events(
+                Membership(
+                    workspace=self.workspace,
+                    user=self.owner,
+                    role=Membership.Role.OWNER,
+                )
+            )
+        )
+        self.assertFalse(can_read_audit_events(self.operational_membership))
+
+    def test_administrative_member_reads_only_own_events_without_writes(self):
+        own_event = self.append_event()
+        other_event = self.append_event(
+            workspace=self.other_workspace,
+            actor=self.other_owner,
+            target_membership=self.other_membership,
+        )
+        baseline = {
+            "events": AuditEvent._base_objects.count(),
+            "memberships": Membership.objects.count(),
+            "workspaces": Workspace.objects.count(),
+        }
+
+        events = list(list_audit_events(self.context))
+
+        self.assertIn(own_event, events)
+        self.assertNotIn(other_event, events)
+        self.assertEqual(
+            {
+                "events": AuditEvent._base_objects.count(),
+                "memberships": Membership.objects.count(),
+                "workspaces": Workspace.objects.count(),
+            },
+            baseline,
+        )
+
+    def test_read_order_is_newest_first_then_primary_key_descending(self):
+        first = self.append_event()
+        second = self.append_event()
+        tied_created_at = timezone.now()
+        with patch("django.db.models.fields.timezone.now", return_value=tied_created_at):
+            tied_first = self.append_event()
+            tied_second = self.append_event()
+
+        events = list(list_audit_events(self.context))
+
+        self.assertEqual(events[:4], [tied_second, tied_first, second, first])
+
+    def test_owner_operational_missing_revoked_inactive_and_malformed_contexts_are_denied(self):
+        owner_context = ActiveWorkspaceContext(
+            workspace=self.workspace,
+            membership=Membership.objects.get(workspace=self.workspace, user=self.owner),
+        )
+        operational_context = ActiveWorkspaceContext(
+            workspace=self.workspace, membership=self.operational_membership
+        )
+        missing_context = ActiveWorkspaceContext(
+            workspace=self.workspace,
+            membership=Membership(
+                pk=999999,
+                workspace=self.workspace,
+                user=self.administrator,
+                role=Membership.Role.ADMINISTRATIVE,
+            ),
+        )
+        revoked_membership = Membership.objects.create(
+            workspace=self.workspace,
+            user=User.objects.create_user("audit-read-revoked@example.com", "password"),
+            role=Membership.Role.ADMINISTRATIVE,
+        )
+        revoked_context = ActiveWorkspaceContext(
+            workspace=self.workspace, membership=revoked_membership
+        )
+        with allow_membership_writes():
+            revoked_membership.delete()
+        inactive_membership = Membership.objects.create(
+            workspace=self.workspace,
+            user=User.objects.create_user("audit-read-inactive@example.com", "password"),
+            role=Membership.Role.ADMINISTRATIVE,
+        )
+        inactive_membership.user.is_active = False
+        inactive_membership.user.save(update_fields=["is_active"])
+        inactive_context = ActiveWorkspaceContext(
+            workspace=self.workspace, membership=inactive_membership
+        )
+        malformed_context = ActiveWorkspaceContext(
+            workspace=self.workspace, membership=object()
+        )
+        superuser = User.objects.create_superuser(
+            "audit-read-superuser@example.com", "password"
+        )
+        superuser_owner_context = ActiveWorkspaceContext(
+            workspace=self.workspace,
+            membership=Membership.objects.create(
+                workspace=self.workspace,
+                user=superuser,
+                role=Membership.Role.OWNER,
+            ),
+        )
+
+        for context in (
+            owner_context,
+            operational_context,
+            missing_context,
+            revoked_context,
+            inactive_context,
+            malformed_context,
+            superuser_owner_context,
+            None,
+        ):
+            with self.subTest(context=context), self.assertRaises(AuditEventAccessDenied):
+                list(list_audit_events(context))
+
+    def test_stale_and_cross_workspace_contexts_are_denied(self):
+        stale_context = ActiveWorkspaceContext(
+            workspace=self.workspace, membership=self.administrative_membership
+        )
+        with allow_membership_writes():
+            self.administrative_membership.role = Membership.Role.OPERATIONAL
+            self.administrative_membership.save(update_fields=["role"])
+        cross_workspace_context = ActiveWorkspaceContext(
+            workspace=self.workspace, membership=self.other_membership
+        )
+
+        for context in (stale_context, cross_workspace_context):
+            with self.subTest(context=context), self.assertRaises(AuditEventAccessDenied):
+                list(list_audit_events(context))
