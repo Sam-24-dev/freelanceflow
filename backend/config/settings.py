@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     "audit",
     "payments",
     "workspaces",
+    "preferences",
     "clients",
     "categories",
     "services",
