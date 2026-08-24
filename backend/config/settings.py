@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "accounts",
     "audit",
     "payments",
+    "notifications.apps.NotificationsConfig",
     "workspaces",
     "preferences",
     "clients",
