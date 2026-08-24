@@ -22,6 +22,11 @@ def can_manage_workspace_memberships(membership: Membership) -> bool:
     return membership.role == Membership.Role.OWNER
 
 
+def can_read_audit_events(membership: Membership) -> bool:
+    """Return whether a membership has the administrative audit-read role."""
+    return membership.role == Membership.Role.ADMINISTRATIVE
+
+
 def can_perform_operational_work(membership: Membership) -> bool:
     """Return whether a membership may perform future operational business work."""
     return membership.role in (Membership.Role.OWNER, Membership.Role.OPERATIONAL)
