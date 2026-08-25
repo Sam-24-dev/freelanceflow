@@ -13,6 +13,7 @@ from invoices.models import Invoice
 from workspaces.context import ActiveWorkspaceContext
 from workspaces.models import Membership
 from workspaces.permissions import can_perform_operational_work
+from notifications.services import fan_out_payment_recorded_notifications
 
 from .models import CENT, Payment, PaymentReversal, payment_service_write_boundary
 
@@ -179,7 +180,7 @@ def record_payment(
         try:
             with transaction.atomic():
                 with payment_service_write_boundary():
-                    return Payment.objects.create(
+                    payment = Payment.objects.create(
                         workspace=workspace,
                         invoice=locked_invoice,
                         idempotency_key=idempotency_key,
@@ -199,6 +200,8 @@ def record_payment(
             if existing is None:
                 raise
             return _assert_same_fingerprint(existing, fingerprint)
+        fan_out_payment_recorded_notifications(payment, actor_membership=membership)
+        return payment
 
 
 def reverse_payment(
