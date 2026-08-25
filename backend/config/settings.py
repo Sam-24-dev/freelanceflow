@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "invoices",
     "ledger",
     "reports",
+    "api.apps.ApiConfig",
 ]
 
 MIDDLEWARE = [
@@ -110,3 +111,8 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"
 TEST_RUNNER = "config.test_runner.ImmutableTriggerSafeDiscoverRunner"
+
+SESSION_COOKIE_AGE = 28_800
+SESSION_SAVE_EVERY_REQUEST = False
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+CSRF_FAILURE_VIEW = "api.http.csrf_failure"
