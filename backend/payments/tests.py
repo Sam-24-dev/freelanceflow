@@ -2,6 +2,7 @@ from datetime import date
 from threading import Barrier, Thread
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
 from django.db import DatabaseError, close_old_connections, connection
@@ -14,6 +15,7 @@ from fiscal.services import create_fiscal_configuration
 from invoices.models import Invoice
 from invoices.services import create_draft_invoice, issue_invoice
 from payments.models import Payment, PaymentReversal
+from notifications.models import InAppNotification, notification_write_boundary
 from payments.services import (
     PaymentIdempotencyConflict,
     PaymentValidationError,
@@ -24,7 +26,7 @@ from projects.services import convert_accepted_proposal
 from proposals.models import Proposal
 from proposals.services import add_line_item, create_proposal, send_proposal, transition_proposal
 from workspaces.context import ActiveWorkspaceContext
-from workspaces.models import Membership
+from workspaces.models import Membership, Workspace
 from workspaces.services import create_workspace_with_owner
 
 
@@ -131,6 +133,49 @@ class PaymentLedgerServiceTests(TestCase):
                 self.context, invoice, amount=Decimal("10.00"), idempotency_key=key,
                 source_type="cash", source_reference="different", received_at=received_at,
             )
+
+    def test_new_payment_notifies_only_other_active_workspace_members(self):
+        recipient = User.objects.create_user(email="payment-recipient@example.com", password="password")
+        inactive = User.objects.create_user(email="payment-inactive@example.com", password="password", is_active=False)
+        membership = Membership.objects.create(workspace=self.workspace, user=recipient, role="OPERATIONAL")
+        Membership.objects.create(workspace=self.workspace, user=inactive, role="OPERATIONAL")
+        other_workspace = Workspace.objects.create(name="Other", slug="other-payments")
+        Membership.objects.create(workspace=other_workspace, user=User.objects.create_user(email="other-recipient@example.com", password="password"), role="OPERATIONAL")
+
+        payment = self._payment(self._issued_invoice())
+
+        self.assertEqual(list(InAppNotification.objects.filter(source_payment=payment).values_list("recipient_id", flat=True)), [membership.pk])
+
+    def test_payment_replay_or_conflict_never_refans_out_notifications(self):
+        recipient = User.objects.create_user(email="payment-replay@example.com", password="password")
+        Membership.objects.create(workspace=self.workspace, user=recipient, role="OPERATIONAL")
+        invoice, key, received_at = self._issued_invoice(), uuid4(), timezone.now()
+        payment = record_payment(self.context, invoice, amount="10.00", idempotency_key=key, source_type="cash", source_reference="receipt", received_at=received_at)
+
+        record_payment(self.context, invoice, amount="10.00", idempotency_key=key, source_type="cash", source_reference="receipt", received_at=received_at)
+        with self.assertRaises(PaymentIdempotencyConflict):
+            record_payment(self.context, invoice, amount="10.00", idempotency_key=key, source_type="cash", source_reference="other", received_at=received_at)
+
+        self.assertEqual(InAppNotification.objects.filter(source_payment=payment).count(), 1)
+
+    def test_fanout_failure_rolls_back_the_new_payment(self):
+        recipient = User.objects.create_user(email="payment-failure@example.com", password="password")
+        recipient_membership = Membership.objects.create(workspace=self.workspace, user=recipient, role="OPERATIONAL")
+        invoice = self._issued_invoice()
+
+        def partial_fanout(payment, *, actor_membership):
+            with notification_write_boundary():
+                InAppNotification.objects.create(
+                    workspace=self.workspace, recipient=recipient_membership, source_payment=payment
+                )
+            raise RuntimeError("fan-out failed")
+
+        with patch("payments.services.fan_out_payment_recorded_notifications", side_effect=partial_fanout):
+            with self.assertRaisesRegex(RuntimeError, "fan-out failed"):
+                self._payment(invoice)
+
+        self.assertFalse(Payment.objects.filter(invoice=invoice).exists())
+        self.assertFalse(InAppNotification.objects.exists())
 
 
 class ImmutableTriggerRunnerContractTests(TestCase):

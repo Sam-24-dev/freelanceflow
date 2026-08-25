@@ -1,6 +1,6 @@
 import os
 from importlib import import_module
-from threading import Barrier, Thread
+from threading import Barrier, BrokenBarrierError, Thread
 from unittest import TestCase, skipUnless
 from uuid import uuid4
 
@@ -24,10 +24,27 @@ from django.utils import timezone
 
 from accounts.models import User
 from notifications.models import InAppNotification, NotificationWriteBoundaryViolation, notification_write_boundary
+from notifications.services import (
+    NotificationAccessDenied,
+    archive_notification,
+    list_notifications,
+    read_notification,
+)
 from payments.models import Payment
 from payments.tests import PaymentLedgerServiceTests
 from preferences.models import MembershipInterfacePreference
+from workspaces.context import ActiveWorkspaceContext
 from workspaces.models import Membership, Workspace, allow_membership_writes
+
+
+def _is_mysql_duplicate_key(error: IntegrityError) -> bool:
+    seen, current = set(), error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if getattr(current, "args", ()) and current.args[0] == 1062:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 @skipUnless(connection.vendor == "sqlite", "uses the noncredentialed SQLite model harness")
@@ -86,6 +103,13 @@ class NotificationSchemaTests(TestCase):
         self.assertIs(recipient.remote_field.on_delete, models.DO_NOTHING)
         self.assertFalse(recipient.db_constraint)
 
+    def test_mysql_duplicate_classifier_accepts_only_wrapped_errno_1062(self):
+        wrapped = IntegrityError("Django wrapper")
+        wrapped.__cause__ = Exception(1062, "Duplicate entry")
+
+        self.assertTrue(_is_mysql_duplicate_key(wrapped))
+        self.assertFalse(_is_mysql_duplicate_key(IntegrityError(1452, "Foreign key fails")))
+
     def test_declared_schema_has_current_dependencies_and_constraints(self):
         migration = import_module("notifications.migrations.0001_initial").Migration
         self.assertIn(("workspaces", "0002_alter_membership_user"), migration.dependencies)
@@ -132,6 +156,87 @@ class NotificationMySqlTriggerTests(PaymentLedgerServiceTests):
                 cursor.execute("DELETE FROM notifications_inappnotification WHERE id = %s", [notification.pk])
 
 
+class NotificationServiceTests(PaymentLedgerServiceTests):
+    def _recipient_context(self, email="recipient@example.com"):
+        user = User.objects.create_user(email=email, password="password")
+        membership = Membership.objects.create(workspace=self.workspace, user=user, role="OPERATIONAL")
+        return ActiveWorkspaceContext(self.workspace, membership)
+
+    def test_recipient_isolation_and_archived_notifications_are_hidden_by_default(self):
+        first, second = self._recipient_context("first@example.com"), self._recipient_context("second@example.com")
+        self._payment(self._issued_invoice())
+        first_notification = list_notifications(first).get()
+
+        self.assertEqual(list_notifications(second).count(), 1)
+        archive_notification(first, first_notification.public_id)
+
+        self.assertFalse(list_notifications(first).exists())
+        self.assertEqual(list_notifications(first, include_archived=True).get().state, InAppNotification.State.ARCHIVED)
+
+    def test_invalid_or_inactive_context_is_denied_without_notification_lookup(self):
+        context = self._recipient_context()
+        other = Workspace.objects.create(name="Other", slug="other-notifications")
+        foreign = Membership.objects.create(workspace=other, user=User.objects.create_user(email="foreign@example.com", password="password"), role="OWNER")
+        context.membership.user.is_active = False
+        context.membership.user.save(update_fields=["is_active"])
+
+        with self.assertRaises(NotificationAccessDenied):
+            list_notifications(context)
+        with self.assertRaises(NotificationAccessDenied):
+            read_notification(context, uuid4())
+        with self.assertRaises(NotificationAccessDenied):
+            list_notifications(ActiveWorkspaceContext(self.workspace, foreign))
+
+    def test_revoked_membership_context_is_denied_without_notification_writes(self):
+        context = self._recipient_context("revoked@example.com")
+        with allow_membership_writes():
+            context.membership.delete()
+        before = InAppNotification.objects.count()
+
+        with self.assertRaises(NotificationAccessDenied) as denied:
+            read_notification(context, uuid4())
+
+        self.assertEqual(str(denied.exception), "Active workspace membership is required.")
+        self.assertEqual(InAppNotification.objects.count(), before)
+
+    def test_superuser_without_membership_is_denied_without_notification_writes(self):
+        superuser = User.objects.create_superuser(email="superuser@example.com", password="password")
+        context = ActiveWorkspaceContext(
+            self.workspace,
+            Membership(workspace=self.workspace, user=superuser, role="OWNER"),
+        )
+        before = InAppNotification.objects.count()
+
+        with self.assertRaises(NotificationAccessDenied) as denied:
+            archive_notification(context, uuid4())
+
+        self.assertEqual(str(denied.exception), "Active workspace membership is required.")
+        self.assertEqual(InAppNotification.objects.count(), before)
+
+    def test_unknown_public_id_for_active_member_is_generic_and_does_not_write(self):
+        context = self._recipient_context("unknown@example.com")
+        before = InAppNotification.objects.count()
+
+        with self.assertRaises(NotificationAccessDenied) as denied:
+            archive_notification(context, uuid4())
+
+        self.assertEqual(str(denied.exception), "Notification is not available.")
+        self.assertEqual(InAppNotification.objects.count(), before)
+
+    def test_read_and_archive_are_one_way_idempotent_transitions(self):
+        context = self._recipient_context()
+        self._payment(self._issued_invoice())
+        notification = list_notifications(context).get()
+
+        read = read_notification(context, notification.public_id)
+        self.assertEqual(read.state, InAppNotification.State.READ)
+        self.assertEqual(read_notification(context, notification.public_id).read_at, read.read_at)
+        archived = archive_notification(context, notification.public_id)
+
+        self.assertEqual(archived.state, InAppNotification.State.ARCHIVED)
+        self.assertEqual(archive_notification(context, notification.public_id).archived_at, archived.archived_at)
+
+
 if connection.vendor == "mysql":
     class NotificationMySqlConcurrencyTests(TransactionTestCase):
         setUp = PaymentLedgerServiceTests.setUp
@@ -141,25 +246,49 @@ if connection.vendor == "mysql":
         def test_concurrent_duplicate_recipient_insert_has_one_winner(self):
             payment = self._payment(self._issued_invoice())
             recipient = self.context.membership
-            barrier, outcomes = Barrier(2), []
+            barrier, outcomes, failures, connection_ids = Barrier(2), {}, [], []
 
             def insert(label):
                 db = connections["default"].copy(alias=f"notification-{label}-{uuid4().hex}")
                 try:
+                    db.ensure_connection()
+                    db.set_autocommit(True)
+                    self.assertTrue(db.get_autocommit())
                     with db.cursor() as cursor:
-                        barrier.wait(timeout=10)
+                        cursor.execute("SELECT CONNECTION_ID()")
+                        connection_ids.append(cursor.fetchone()[0])
+                    barrier.wait(timeout=10)
+                    with db.cursor() as cursor:
                         cursor.execute("""INSERT INTO notifications_inappnotification (public_id, kind, state, created_at, recipient_id, source_payment_id, workspace_id) VALUES (%s, 'payment.recorded', 'UNREAD', %s, %s, %s, %s)""", [uuid4().hex, timezone.now(), recipient.pk, payment.pk, self.workspace.pk])
-                    outcomes.append("inserted")
-                except IntegrityError:
-                    outcomes.append("duplicate")
+                    outcomes[label] = "inserted"
+                except IntegrityError as error:
+                    if _is_mysql_duplicate_key(error):
+                        outcomes[label] = "duplicate"
+                    else:
+                        failures.append(error)
+                except (AssertionError, BrokenBarrierError, DatabaseError) as error:
+                    failures.append(error)
                 finally:
-                    db.close()
+                    barrier.abort()
+                    try:
+                        db.close()
+                    except DatabaseError as error:
+                        failures.append(error)
 
-            threads = [Thread(target=insert, args=(label,)) for label in ("left", "right")]
-            [thread.start() for thread in threads]
-            [thread.join(timeout=20) for thread in threads]
+            threads = [
+                Thread(target=insert, args=(label,)) for label in ("left", "right")
+            ]
+            try:
+                [thread.start() for thread in threads]
+                [thread.join(timeout=20) for thread in threads]
+            finally:
+                barrier.abort()
+                [thread.join(timeout=5) for thread in threads]
+
             self.assertFalse(any(thread.is_alive() for thread in threads))
-            self.assertEqual(sorted(outcomes), ["duplicate", "inserted"])
+            self.assertFalse(failures, failures)
+            self.assertEqual(len(set(connection_ids)), 2)
+            self.assertEqual(sorted(outcomes.values()), ["duplicate", "inserted"])
             self.assertEqual(InAppNotification._base_manager.filter(source_payment=payment, recipient=recipient).count(), 1)
 
 del PaymentLedgerServiceTests
