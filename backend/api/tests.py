@@ -1,10 +1,13 @@
 import json
+from uuid import uuid4
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
+from django.utils import timezone
 
-from workspaces.models import Membership, Workspace
+from workspaces.models import Membership, Workspace, allow_membership_writes
 from workspaces.services import remove_membership
 
 
@@ -281,3 +284,233 @@ class WorkspaceApiTests(TestCase):
         self.assertEqual(active_get.status_code, 405)
         self.assertEqual(active_get.json(), {"error": {"code": "method_not_allowed"}})
         self.assertEqual(active_get["Allow"], "POST, OPTIONS")
+
+
+class _FakeNotificationQuerySet:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def filter(self, *args, **kwargs):
+        return type(self)(self.rows[25:])
+
+    def values(self, *fields):
+        return self.rows
+
+
+class NotificationApiTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="notifications@example.com", password="correct-horse-battery-staple"
+        )
+        self.workspace = Workspace.objects.create(name="Notifications", slug="notifications")
+        self.membership = Membership.objects.create(
+            workspace=self.workspace,
+            user=self.user,
+            role=Membership.Role.OPERATIONAL,
+        )
+
+    def authenticate(self, *, active=True, expires_at=1_000_100):
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["api.auth_expires_at"] = expires_at
+        if active:
+            session["workspaces.active_workspace_public_id"] = str(self.workspace.public_id)
+        session.save()
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_requires_api_auth_and_active_workspace(self, mocked_time):
+        anonymous = self.client.get("/api/v1/notifications/")
+        self.assertEqual(anonymous.status_code, 401)
+        self.assertEqual(anonymous.json(), {"error": {"code": "authentication_required"}})
+
+        self.authenticate(active=False)
+        missing_workspace = self.client.get("/api/v1/notifications/")
+        self.assertEqual(missing_workspace.status_code, 400)
+        self.assertEqual(missing_workspace.json(), {"error": {"code": "workspace_required"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_empty_list_has_strict_envelope_and_rejects_unknown_query_parameters(self, mocked_time):
+        self.authenticate()
+        response = self.client.get("/api/v1/notifications/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"data": {"notifications": [], "next_cursor": None}})
+        self.assertEqual(response["Cache-Control"], "no-store")
+
+        invalid = self.client.get("/api/v1/notifications/?workspace_public_id=ignored")
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(invalid.json(), {"error": {"code": "invalid_request"}})
+
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_populated_response_projects_only_recipient_fields(self, mocked_time):
+        from api.notification_views import READ_FIELDS
+
+        self.authenticate()
+        created_at = timezone.now()
+        row = {
+            "public_id": uuid4(),
+            "kind": "payment.recorded",
+            "state": "UNREAD",
+            "created_at": created_at,
+            "read_at": None,
+            "archived_at": None,
+            "pk": 1,
+            "source_payment_id": 77,
+            "recipient_id": 99,
+        }
+        fake = _FakeNotificationQuerySet([row])
+        with patch("api.notification_views.list_notifications", return_value=fake):
+            response = self.client.get("/api/v1/notifications/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(set(response.json()["data"]["notifications"][0]), set(READ_FIELDS))
+        self.assertNotIn("pk", response.json()["data"]["notifications"][0])
+        self.assertNotIn("source_payment_id", response.json()["data"]["notifications"][0])
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_recipient_scope_uses_callers_membership(self, mocked_time):
+        other_user = get_user_model().objects.create_user(
+            email="other-notifications@example.com", password="correct-horse-battery-staple"
+        )
+        Membership.objects.create(
+            workspace=self.workspace,
+            user=other_user,
+            role=Membership.Role.OPERATIONAL,
+        )
+        self.authenticate()
+        fake = _FakeNotificationQuerySet([])
+        with patch("api.notification_views.list_notifications", return_value=fake) as listed:
+            response = self.client.get("/api/v1/notifications/")
+
+        self.assertEqual(response.status_code, 200)
+        context = listed.call_args.args[0]
+        self.assertEqual(context.workspace.pk, self.workspace.pk)
+        self.assertEqual(context.membership.pk, self.membership.pk)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_foreign_workspace_and_revoked_membership_are_rejected(self, mocked_time):
+        foreign = Workspace.objects.create(name="Foreign", slug="foreign")
+        self.authenticate()
+        session = self.client.session
+        session["workspaces.active_workspace_public_id"] = str(foreign.public_id)
+        session.save()
+        foreign_response = self.client.get("/api/v1/notifications/")
+        self.assertEqual(foreign_response.status_code, 400)
+        self.assertEqual(foreign_response.json(), {"error": {"code": "workspace_required"}})
+
+        self.authenticate()
+        with allow_membership_writes():
+            self.membership.delete()
+        revoked_response = self.client.get("/api/v1/notifications/")
+        self.assertEqual(revoked_response.status_code, 400)
+        self.assertEqual(revoked_response.json(), {"error": {"code": "workspace_required"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    @patch("api.notification_views.current_time", return_value=1_000_000)
+    def test_tampered_and_wrong_binding_cursors_are_invalid(self, mocked_cursor_time, mocked_auth_time):
+        from api.notification_views import AUTH_EXPIRY_SESSION_KEY, CURSOR_SESSION_KEY, CURSOR_SIGNER
+
+        self.authenticate()
+        deadline = 1_000_100
+        cursor_data = {
+            "created_at": timezone.now().isoformat(),
+            "pk": 1,
+            "workspace": str(self.workspace.public_id),
+            "membership": self.membership.pk,
+            "subject": str(self.user.pk),
+            "deadline": deadline,
+        }
+        session = self.client.session
+        session[AUTH_EXPIRY_SESSION_KEY] = deadline
+        session[CURSOR_SESSION_KEY] = {"nonce": cursor_data}
+        session.save()
+        signed = CURSOR_SIGNER.sign("v1.nonce")
+
+        for mutate in (
+            lambda data: data.update(subject="foreign"),
+            lambda data: data.update(workspace=str(uuid4())),
+            lambda data: data.update(membership=999),
+            lambda data: data.update(deadline=999),
+        ):
+            session = self.client.session
+            session[CURSOR_SESSION_KEY] = {"nonce": dict(cursor_data)}
+            mutate(session[CURSOR_SESSION_KEY]["nonce"])
+            session.save()
+            response = self.client.get(f"/api/v1/notifications/?cursor={signed}")
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+
+        tampered = self.client.get(f"/api/v1/notifications/?cursor={signed}x")
+        self.assertEqual(tampered.status_code, 400)
+        self.assertEqual(tampered.json(), {"error": {"code": "invalid_request"}})
+
+        with patch("api.notification_views.current_time", return_value=1_000_101):
+            session = self.client.session
+            session[CURSOR_SESSION_KEY] = {"nonce": dict(cursor_data)}
+            session.save()
+            expired = self.client.get(f"/api/v1/notifications/?cursor={signed}")
+        self.assertEqual(expired.status_code, 400)
+        self.assertEqual(expired.json(), {"error": {"code": "invalid_request"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    @patch("api.notification_views.current_time", return_value=1_000_000)
+    def test_keyset_page_boundary_is_ordered_without_duplicates_or_misses(self, mocked_cursor_time, mocked_auth_time):
+        self.authenticate()
+        created_at = timezone.now()
+        rows = [
+            {
+                "public_id": uuid4(),
+                "kind": "payment.recorded",
+                "state": "UNREAD",
+                "created_at": created_at,
+                "read_at": None,
+                "archived_at": None,
+                "pk": pk,
+            }
+            for pk in range(26, 0, -1)
+        ]
+        fake = _FakeNotificationQuerySet(rows)
+        with patch("api.notification_views.list_notifications", return_value=fake):
+            first = self.client.get("/api/v1/notifications/")
+            second = self.client.get(
+                "/api/v1/notifications/?cursor=" + first.json()["data"]["next_cursor"]
+            )
+
+        first_items = first.json()["data"]["notifications"]
+        second_items = second.json()["data"]["notifications"]
+        self.assertEqual(len(first_items), 25)
+        self.assertEqual(len(second_items), 1)
+        ids = [item["public_id"] for item in first_items + second_items]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(second.json()["data"]["next_cursor"], None)
+
+
+class NotificationCursorStorageTests(TestCase):
+    @patch("api.notification_views.current_time", return_value=100)
+    def test_cursor_store_prunes_expired_entries_and_caps_live_entries(self, mocked_time):
+        from api.notification_views import (
+            AUTH_EXPIRY_SESSION_KEY,
+            CURSOR_MAX_ENTRIES,
+            CURSOR_SESSION_KEY,
+            _new_cursor,
+        )
+
+        request = SimpleNamespace(
+            user=SimpleNamespace(pk=7),
+            session={AUTH_EXPIRY_SESSION_KEY: 1_000},
+        )
+        context = SimpleNamespace(
+            workspace=SimpleNamespace(public_id="workspace"),
+            membership=SimpleNamespace(pk=3),
+        )
+        request.session[CURSOR_SESSION_KEY] = {
+            "expired": {"deadline": 99},
+            **{str(index): {"deadline": 1_000} for index in range(CURSOR_MAX_ENTRIES)},
+        }
+
+        _new_cursor(request, context, {"created_at": timezone.now(), "pk": 999})
+
+        cursors = request.session[CURSOR_SESSION_KEY]
+        self.assertEqual(len(cursors), CURSOR_MAX_ENTRIES)
+        self.assertNotIn("expired", cursors)
+        self.assertNotIn("0", cursors)
