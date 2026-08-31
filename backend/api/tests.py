@@ -8,6 +8,7 @@ from django.test import Client, TestCase
 from django.utils import timezone
 
 from clients.models import Client as ClientModel
+from services.models import Service
 from workspaces.models import Membership, Workspace, allow_membership_writes
 from workspaces.services import remove_membership
 
@@ -672,3 +673,201 @@ class ClientApiTests(TestCase):
         self.assertEqual(response.status_code, 405)
         self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
         self.assertEqual(response["Allow"], "GET, HEAD, OPTIONS")
+
+
+class _FakeServiceQuerySet:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def order_by(self, *fields):
+        return self
+
+    def filter(self, *args, **kwargs):
+        query = args[0]
+        cursor_name = next(value for key, value in query.children if key == "name__gt")
+        same_name = next(child for child in query.children if hasattr(child, "children"))
+        cursor_pk = next(value for key, value in same_name.children if key == "pk__gt")
+        return type(self)([
+            row for row in self.rows
+            if row["name"] > cursor_name or (row["name"] == cursor_name and row["pk"] > cursor_pk)
+        ])
+
+    def values(self, *fields):
+        return self.rows
+
+
+class ServiceApiTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="services-api@example.com", password="correct-horse-battery-staple"
+        )
+        self.workspace = Workspace.objects.create(name="Service Studio", slug="service-studio")
+        self.membership = Membership.objects.create(
+            workspace=self.workspace, user=self.user, role=Membership.Role.OWNER
+        )
+
+    def authenticate(self, *, expires_at=1_000_100, workspace=None):
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["api.auth_expires_at"] = expires_at
+        if workspace is not None:
+            session["workspaces.active_workspace_public_id"] = str(workspace.public_id)
+        session.save()
+
+    def make_service(self, name, *, workspace=None, status=Service.Status.ACTIVE, archived_at=None):
+        return Service.objects.create(
+            workspace=workspace or self.workspace,
+            name=name,
+            description=f"Description for {name}",
+            unit_of_measure=Service.UnitOfMeasure.HOUR,
+            rate="125.50",
+            currency=Service.Currency.USD,
+            status=status,
+            archived_at=archived_at,
+        )
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_requires_auth_deadline_and_active_membership_context(self, mocked_time):
+        self.assertEqual(self.client.get("/api/v1/services/").status_code, 401)
+        self.authenticate(expires_at=999_999, workspace=self.workspace)
+        self.assertEqual(self.client.get("/api/v1/services/").status_code, 401)
+        self.authenticate()
+        self.assertEqual(self.client.get("/api/v1/services/").json(), {"error": {"code": "workspace_required"}})
+        foreign = Workspace.objects.create(name="Foreign", slug="foreign-service-api")
+        self.authenticate(workspace=foreign)
+        self.assertEqual(self.client.get("/api/v1/services/").json(), {"error": {"code": "workspace_required"}})
+        self.authenticate(workspace=self.workspace)
+        with allow_membership_writes():
+            self.membership.delete()
+        self.assertEqual(self.client.get("/api/v1/services/").json(), {"error": {"code": "workspace_required"}})
+        self.user.is_superuser = True
+        self.user.save(update_fields=["is_superuser"])
+        self.authenticate(workspace=self.workspace)
+        self.assertEqual(self.client.get("/api/v1/services/").json(), {"error": {"code": "workspace_required"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_only_owner_and_operational_roles_may_read(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for role, expected in ((Membership.Role.ADMINISTRATIVE, 403), (Membership.Role.OPERATIONAL, 200), (Membership.Role.OWNER, 200)):
+            with allow_membership_writes():
+                Membership.objects.filter(pk=self.membership.pk).update(role=role)
+            self.assertEqual(self.client.get("/api/v1/services/").status_code, expected)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_projects_strict_service_projection_and_no_store(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        archived = self.make_service("Archived Service", status=Service.Status.ARCHIVED, archived_at=timezone.now())
+        self.make_service("Active Service")
+        foreign = Workspace.objects.create(name="Foreign", slug="foreign-service-list")
+        self.make_service("Foreign Service", workspace=foreign)
+        before = list(Service.objects.values_list("pk", "name", "status"))
+        response = self.client.get("/api/v1/services/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Cache-Control"], "no-store")
+        items = response.json()["data"]["items"]
+        self.assertEqual([item["name"] for item in items], ["Active Service", "Archived Service"])
+        self.assertEqual(set(items[0]), {"public_id", "name", "description", "unit_of_measure", "rate", "currency", "status", "archived_at"})
+        self.assertEqual(items[1]["public_id"], str(archived.public_id))
+        self.assertEqual(response.json()["data"]["next_cursor"], None)
+        self.assertNotIn("workspace", items[0])
+        self.assertEqual(list(Service.objects.values_list("pk", "name", "status")), before)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    @patch("api.service_views.current_time", return_value=1_000_000)
+    def test_cursor_pages_twenty_five_and_binds_session(self, mocked_cursor_time, mocked_auth_time):
+        self.authenticate(workspace=self.workspace)
+        for index in range(26, 0, -1):
+            self.make_service(f"Service {index:02d}")
+        first = self.client.get("/api/v1/services/")
+        first_items = first.json()["data"]["items"]
+        second = self.client.get("/api/v1/services/?cursor=" + first.json()["data"]["next_cursor"])
+        second_items = second.json()["data"]["items"]
+        self.assertEqual(len(first_items), 25)
+        self.assertEqual(len(second_items), 1)
+        self.assertEqual(len({item["public_id"] for item in first_items + second_items}), 26)
+        self.assertIsNone(second.json()["data"]["next_cursor"])
+        cursor = first.json()["data"]["next_cursor"]
+        self.assertEqual(self.client.get(f"/api/v1/services/?cursor={cursor}x").status_code, 400)
+        mocked_cursor_time.return_value = 1_000_101
+        self.assertEqual(self.client.get(f"/api/v1/services/?cursor={cursor}").status_code, 400)
+        mocked_auth_time.return_value = 1_000_000
+        foreign = Workspace.objects.create(name="Other", slug="other-service-api")
+        Membership.objects.create(workspace=foreign, user=self.user, role=Membership.Role.OWNER)
+        self.authenticate(workspace=foreign)
+        self.assertEqual(self.client.get(f"/api/v1/services/?cursor={cursor}").status_code, 400)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    @patch("api.service_views.current_time", return_value=1_000_000)
+    def test_keyset_tie_breaker_pages_duplicate_names_without_misses(self, mocked_cursor_time, mocked_auth_time):
+        self.authenticate(workspace=self.workspace)
+        rows = [
+            {
+                "public_id": uuid4(), "name": "Same Name", "description": "Description",
+                "unit_of_measure": "HOUR", "rate": "125.50", "currency": "USD",
+                "status": "ACTIVE", "archived_at": None, "pk": index,
+            }
+            for index in range(1, 27)
+        ]
+        fake = _FakeServiceQuerySet(rows)
+        with patch("api.service_views.Service.objects.for_workspace", return_value=fake):
+            first = self.client.get("/api/v1/services/")
+            second = self.client.get("/api/v1/services/?cursor=" + first.json()["data"]["next_cursor"])
+        first_ids = [item["public_id"] for item in first.json()["data"]["items"]]
+        second_ids = [item["public_id"] for item in second.json()["data"]["items"]]
+        self.assertEqual(len(first_ids), 25)
+        self.assertEqual(second_ids, [str(rows[-1]["public_id"])])
+        self.assertEqual(len(set(first_ids + second_ids)), 26)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    @patch("api.service_views.current_time", return_value=1_000_000)
+    def test_cursor_rejects_tampered_and_wrong_subject_workspace_membership_or_deadline(self, mocked_cursor_time, mocked_auth_time):
+        from api.service_views import CURSOR_SESSION_KEY, CURSOR_SIGNER
+
+        self.authenticate(workspace=self.workspace)
+        for index in range(26):
+            self.make_service(f"Service {index:02d}")
+        cursor = self.client.get("/api/v1/services/").json()["data"]["next_cursor"]
+        nonce = CURSOR_SIGNER.unsign(cursor).split(".", 1)[1]
+        for field, value in (("subject", "foreign"), ("workspace", str(uuid4())), ("membership", 999), ("deadline", 999)):
+            session = self.client.session
+            session[CURSOR_SESSION_KEY][nonce][field] = value
+            session.save()
+            response = self.client.get(f"/api/v1/services/?cursor={cursor}")
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+            session = self.client.session
+            session[CURSOR_SESSION_KEY][nonce][field] = {"subject": str(self.user.pk), "workspace": str(self.workspace.public_id), "membership": self.membership.pk, "deadline": 1_000_100}[field]
+            session.save()
+        self.assertEqual(self.client.get(f"/api/v1/services/?cursor={cursor}x").status_code, 400)
+        mocked_cursor_time.return_value = 1_000_101
+        self.assertEqual(self.client.get(f"/api/v1/services/?cursor={cursor}").status_code, 400)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_query_allowlist_and_methods_are_json(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for path in ("/api/v1/services/?workspace=ignored", "/api/v1/services/?cursor=a&cursor=b"):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+        response = self.client.post("/api/v1/services/")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
+        self.assertEqual(response["Allow"], "GET, HEAD, OPTIONS")
+
+
+class ServiceCursorStorageTests(TestCase):
+    @patch("api.service_views.current_time", return_value=100)
+    def test_cursor_store_prunes_expired_records_and_caps_live_entries(self, mocked_time):
+        from api.service_views import AUTH_EXPIRY_SESSION_KEY, CURSOR_MAX_ENTRIES, CURSOR_SESSION_KEY, _new_cursor
+
+        request = SimpleNamespace(user=SimpleNamespace(pk=7), session={AUTH_EXPIRY_SESSION_KEY: 1_000})
+        context = SimpleNamespace(workspace=SimpleNamespace(public_id="workspace"), membership=SimpleNamespace(pk=3))
+        request.session[CURSOR_SESSION_KEY] = {
+            "expired": {"deadline": 99},
+            **{str(index): {"deadline": 1_000} for index in range(CURSOR_MAX_ENTRIES)},
+        }
+        _new_cursor(request, context, {"name": "Service", "pk": 999})
+        cursors = request.session[CURSOR_SESSION_KEY]
+        self.assertEqual(len(cursors), CURSOR_MAX_ENTRIES)
+        self.assertNotIn("expired", cursors)
+        self.assertNotIn("0", cursors)
