@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 from django.utils import timezone
 
+from clients.models import Client as ClientModel
 from workspaces.models import Membership, Workspace, allow_membership_writes
 from workspaces.services import remove_membership
 
@@ -514,3 +515,160 @@ class NotificationCursorStorageTests(TestCase):
         self.assertEqual(len(cursors), CURSOR_MAX_ENTRIES)
         self.assertNotIn("expired", cursors)
         self.assertNotIn("0", cursors)
+
+
+class ClientApiTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="clients-api@example.com", password="correct-horse-battery-staple"
+        )
+        self.workspace = Workspace.objects.create(name="Client Studio", slug="client-studio")
+        self.membership = Membership.objects.create(
+            workspace=self.workspace, user=self.user, role=Membership.Role.OWNER
+        )
+
+    def authenticate(self, *, expires_at=1_000_100, workspace=None):
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["api.auth_expires_at"] = expires_at
+        if workspace is not None:
+            session["workspaces.active_workspace_public_id"] = str(workspace.public_id)
+        session.save()
+
+    def make_client(self, legal_name, *, workspace=None, status=ClientModel.Status.ACTIVE, archived_at=None, tax_identifier=None):
+        return ClientModel.objects.create(
+            workspace=workspace or self.workspace,
+            legal_name=legal_name,
+            client_type=ClientModel.ClientType.COMPANY,
+            tax_identifier=tax_identifier or legal_name.replace(" ", "-")[:20],
+            primary_contact_name="Primary Contact",
+            primary_contact_email=f"{legal_name.replace(' ', '').lower()}@example.com",
+            primary_contact_phone="0999999999",
+            status=status,
+            archived_at=archived_at,
+        )
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_requires_auth_context(self, mocked_time):
+        self.assertEqual(self.client.get("/api/v1/clients/").status_code, 401)
+        self.authenticate(workspace=self.workspace, expires_at=999_999)
+        self.assertEqual(self.client.get("/api/v1/clients/").status_code, 401)
+        self.authenticate()
+        self.assertEqual(self.client.get("/api/v1/clients/").json(), {"error": {"code": "workspace_required"}})
+        foreign = Workspace.objects.create(name="Foreign", slug="foreign-client-auth")
+        self.authenticate(workspace=foreign)
+        self.assertEqual(self.client.get("/api/v1/clients/").json(), {"error": {"code": "workspace_required"}})
+        revoked_workspace = Workspace.objects.create(name="Revoked", slug="revoked-client-auth")
+        revoked = Membership.objects.create(
+            workspace=revoked_workspace, user=self.user, role=Membership.Role.OWNER
+        )
+        self.authenticate(workspace=revoked_workspace)
+        with allow_membership_writes():
+            revoked.delete()
+        self.assertEqual(self.client.get("/api/v1/clients/").json(), {"error": {"code": "workspace_required"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_administrative_membership_is_denied(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        with allow_membership_writes():
+            Membership.objects.filter(pk=self.membership.pk).update(role=Membership.Role.ADMINISTRATIVE)
+        denied = self.client.get("/api/v1/clients/")
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied.json(), {"error": {"code": "permission_denied"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_projects_scoped_active_and_archived_clients_without_private_fields(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        archived = self.make_client("Archived Client", status=ClientModel.Status.ARCHIVED, archived_at=timezone.now())
+        self.make_client("Active Client")
+        foreign_workspace = Workspace.objects.create(name="Foreign", slug="foreign-client-api")
+        self.make_client("Foreign Client", workspace=foreign_workspace)
+        response = self.client.get("/api/v1/clients/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Cache-Control"], "no-store")
+        items = response.json()["data"]["items"]
+        self.assertEqual([item["legal_name"] for item in items], ["Active Client", "Archived Client"])
+        self.assertEqual(set(items[0]), {"public_id", "legal_name", "client_type", "tax_identifier", "primary_contact_name", "primary_contact_email", "primary_contact_phone", "status", "archived_at"})
+        self.assertEqual(items[1]["public_id"], str(archived.public_id))
+        self.assertEqual(response.json()["data"]["next_cursor"], None)
+        self.assertNotIn("address", items[0])
+        self.assertNotIn("workspace", items[0])
+        with allow_membership_writes():
+            Membership.objects.filter(pk=self.membership.pk).update(role=Membership.Role.OPERATIONAL)
+        self.assertEqual(self.client.get("/api/v1/clients/").status_code, 200)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    @patch("api.client_views.current_time", return_value=1_000_000)
+    def test_cursor_is_bound_and_keyset_pages_twenty_five_without_duplicates(self, mocked_cursor_time, mocked_auth_time):
+        self.authenticate(workspace=self.workspace)
+        for index in range(26, 0, -1):
+            self.make_client(f"Client {index:02d}")
+        first = self.client.get("/api/v1/clients/")
+        self.assertEqual(first.status_code, 200)
+        first_items = first.json()["data"]["items"]
+        self.assertEqual(len(first_items), 25)
+        cursor = first.json()["data"]["next_cursor"]
+        second = self.client.get(f"/api/v1/clients/?cursor={cursor}")
+        second_items = second.json()["data"]["items"]
+        self.assertEqual(len(second_items), 1)
+        self.assertEqual(len({item["public_id"] for item in first_items + second_items}), 26)
+        self.assertIsNone(second.json()["data"]["next_cursor"])
+        self.assertEqual(self.client.get(f"/api/v1/clients/?cursor={cursor}x").status_code, 400)
+        mocked_cursor_time.return_value = 1_000_101
+        self.assertEqual(self.client.get(f"/api/v1/clients/?cursor={cursor}").status_code, 400)
+        foreign = Workspace.objects.create(name="Other", slug="other-client-api")
+        Membership.objects.create(workspace=foreign, user=self.user, role=Membership.Role.OWNER)
+        self.authenticate(workspace=foreign)
+        self.assertEqual(self.client.get(f"/api/v1/clients/?cursor={cursor}").status_code, 400)
+        self.authenticate(workspace=self.workspace, expires_at=999_999)
+        self.assertEqual(self.client.get(f"/api/v1/clients/?cursor={cursor}").status_code, 401)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    @patch("api.client_views.current_time", return_value=1_000_000)
+    def test_keyset_tie_breaker_pages_duplicate_legal_names_without_misses(self, mocked_cursor_time, mocked_auth_time):
+        self.authenticate(workspace=self.workspace)
+        clients = [
+            self.make_client("Same Name", tax_identifier=f"SAME-{index}")
+            for index in range(26)
+        ]
+        first = self.client.get("/api/v1/clients/")
+        second = self.client.get("/api/v1/clients/?cursor=" + first.json()["data"]["next_cursor"])
+        first_ids = [item["public_id"] for item in first.json()["data"]["items"]]
+        second_ids = [item["public_id"] for item in second.json()["data"]["items"]]
+        self.assertEqual(len(first_ids), 25)
+        self.assertEqual(second_ids, [str(clients[-1].public_id)])
+        self.assertEqual(len(set(first_ids + second_ids)), 26)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_client_cursor_state_prunes_expired_records_and_caps_live_entries(self, mocked_time):
+        from api.client_views import AUTH_EXPIRY_SESSION_KEY, CURSOR_MAX_ENTRIES, CURSOR_SESSION_KEY, _new_cursor
+
+        request = SimpleNamespace(
+            user=SimpleNamespace(pk=7), session={AUTH_EXPIRY_SESSION_KEY: 1_000}
+        )
+        context = SimpleNamespace(
+            workspace=SimpleNamespace(public_id="workspace"),
+            membership=SimpleNamespace(pk=3),
+        )
+        request.session[CURSOR_SESSION_KEY] = {
+            "expired": {"deadline": 99},
+            **{str(index): {"deadline": 1_000} for index in range(CURSOR_MAX_ENTRIES)},
+        }
+        with patch("api.client_views.current_time", return_value=100):
+            _new_cursor(request, context, {"legal_name": "Same Name", "pk": 999})
+        cursors = request.session[CURSOR_SESSION_KEY]
+        self.assertEqual(len(cursors), CURSOR_MAX_ENTRIES)
+        self.assertNotIn("expired", cursors)
+        self.assertNotIn("0", cursors)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_query_allowlist_and_methods_are_json(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for path in ("/api/v1/clients/?workspace=ignored", "/api/v1/clients/?cursor=a&cursor=b"):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+        response = self.client.post("/api/v1/clients/")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
+        self.assertEqual(response["Allow"], "GET, HEAD, OPTIONS")
