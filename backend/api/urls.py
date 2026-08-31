@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .auth_views import SessionLoginView, SessionLogoutView, SessionView
+from .client_views import ClientListView
 from .notification_views import NotificationListView
 from .workspace_views import ActiveWorkspaceSelectionView, WorkspaceListView
 
@@ -13,4 +14,5 @@ urlpatterns = [
     path("workspaces/", WorkspaceListView.as_view(), name="workspace-list"),
     path("workspaces/active/", ActiveWorkspaceSelectionView.as_view(), name="workspace-active"),
     path("notifications/", NotificationListView.as_view(), name="notification-list"),
+    path("clients/", ClientListView.as_view(), name="client-list"),
 ]
