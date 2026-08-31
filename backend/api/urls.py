@@ -2,6 +2,7 @@ from django.urls import path
 
 from .auth_views import SessionLoginView, SessionLogoutView, SessionView
 from .client_views import ClientListView
+from .invoice_views import InvoiceListView
 from .notification_views import NotificationListView
 from .proposal_views import ProposalListView
 from .project_views import ProjectListView
@@ -21,4 +22,5 @@ urlpatterns = [
     path("services/", ServiceListView.as_view(), name="service-list"),
     path("proposals/", ProposalListView.as_view(), name="proposal-list"),
     path("projects/", ProjectListView.as_view(), name="project-list"),
+    path("invoices/", InvoiceListView.as_view(), name="invoice-list"),
 ]

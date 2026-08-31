@@ -32,6 +32,11 @@ def _authorize(context: ActiveWorkspaceContext):
     return context.workspace
 
 
+def get_invoices_for_workspace(context: ActiveWorkspaceContext):
+    """Return invoices visible to an authorized active workspace context."""
+    return Invoice.objects.for_workspace(_authorize(context))
+
+
 def _locked_project(workspace, project):
     try:
         return Project.objects.for_workspace(workspace).select_for_update().get(pk=project.pk)
