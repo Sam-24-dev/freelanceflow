@@ -4,6 +4,7 @@ from .auth_views import SessionLoginView, SessionLogoutView, SessionView
 from .client_views import ClientListView
 from .notification_views import NotificationListView
 from .proposal_views import ProposalListView
+from .project_views import ProjectListView
 from .service_views import ServiceListView
 from .workspace_views import ActiveWorkspaceSelectionView, WorkspaceListView
 
@@ -19,4 +20,5 @@ urlpatterns = [
     path("clients/", ClientListView.as_view(), name="client-list"),
     path("services/", ServiceListView.as_view(), name="service-list"),
     path("proposals/", ProposalListView.as_view(), name="proposal-list"),
+    path("projects/", ProjectListView.as_view(), name="project-list"),
 ]

@@ -28,6 +28,11 @@ def _authorize(context: ActiveWorkspaceContext) -> Workspace:
     return context.workspace
 
 
+def get_projects_for_workspace(context: ActiveWorkspaceContext):
+    """Return projects visible to an authorized active workspace context."""
+    return Project.objects.for_workspace(_authorize(context))
+
+
 def _proposal_for_workspace(workspace: Workspace, proposal: Proposal) -> Proposal:
     try:
         return Proposal.objects.for_workspace(workspace).select_for_update().get(pk=proposal.pk)
