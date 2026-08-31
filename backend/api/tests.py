@@ -13,6 +13,9 @@ from clients.models import Client as ClientModel
 from proposals.models import Proposal
 from projects.models import Project
 from projects.services import archive_project, convert_accepted_proposal, transition_project
+from fiscal.services import create_fiscal_configuration
+from invoices.models import Invoice, _invoice_service_write_boundary
+from invoices.services import create_draft_invoice, issue_invoice, void_invoice
 from proposals.services import add_line_item, create_proposal, send_proposal, transition_proposal
 from services.models import Service
 from workspaces.models import Membership, Workspace, allow_membership_writes
@@ -1167,6 +1170,180 @@ class ProjectCursorStorageTests(TestCase):
         context = SimpleNamespace(workspace=SimpleNamespace(public_id="workspace"), membership=SimpleNamespace(pk=3))
         request.session[CURSOR_SESSION_KEY] = {"expired": {"deadline": 99}, **{str(index): {"deadline": 1_000} for index in range(CURSOR_MAX_ENTRIES)}}
         _new_cursor(request, context, {"proposal_title": "Project", "pk": 999})
+        cursors = request.session[CURSOR_SESSION_KEY]
+        self.assertEqual(len(cursors), CURSOR_MAX_ENTRIES)
+        self.assertNotIn("expired", cursors)
+        self.assertNotIn("0", cursors)
+
+
+class InvoiceApiTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="invoices-api@example.com", password="correct-horse-battery-staple"
+        )
+        self.workspace = Workspace.objects.create(name="Invoice Studio", slug="invoice-studio")
+        self.membership = Membership.objects.create(
+            workspace=self.workspace, user=self.user, role=Membership.Role.OWNER
+        )
+        self.client_record = ClientModel.objects.create(
+            workspace=self.workspace, legal_name="Invoice Client", client_type="COMPANY",
+            tax_identifier="INV-1", primary_contact_name="Ada Lovelace",
+            primary_contact_email="ada@example.com",
+        )
+        self.context = ActiveWorkspaceContext(self.workspace, self.membership)
+
+    def authenticate(self, *, expires_at=1_000_100, workspace=None):
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["api.auth_expires_at"] = expires_at
+        if workspace is not None:
+            session["workspaces.active_workspace_public_id"] = str(workspace.public_id)
+        session.save()
+
+    def make_invoice(self, title, *, context=None, client=None):
+        context = context or self.context
+        client = client or self.client_record
+        proposal = create_proposal(context, client, title, date.today(), date.today())
+        add_line_item(
+            context, proposal, position=1, service_name="Manual", unit_of_measure="HOUR",
+            quantity=Decimal("1"), unit_rate=Decimal("10"),
+        )
+        proposal = send_proposal(context, proposal)
+        proposal = transition_proposal(context, proposal, Proposal.Status.ACCEPTED)
+        project = convert_accepted_proposal(context, proposal)
+        return create_draft_invoice(context, project)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_requires_auth_deadline_context_and_fresh_owner_or_operational_membership(self, mocked_time):
+        self.assertEqual(self.client.get("/api/v1/invoices/").status_code, 401)
+        self.authenticate(expires_at=999_999, workspace=self.workspace)
+        self.assertEqual(self.client.get("/api/v1/invoices/").status_code, 401)
+        self.authenticate()
+        self.assertEqual(self.client.get("/api/v1/invoices/").json(), {"error": {"code": "workspace_required"}})
+        self.authenticate(workspace=self.workspace)
+        with allow_membership_writes():
+            self.membership.role = Membership.Role.ADMINISTRATIVE
+            self.membership.save(update_fields=["role"])
+        self.assertEqual(self.client.get("/api/v1/invoices/").status_code, 403)
+        with allow_membership_writes():
+            self.membership.role = Membership.Role.OPERATIONAL
+            self.membership.save(update_fields=["role"])
+        self.assertEqual(self.client.get("/api/v1/invoices/").status_code, 200)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_projection_is_tenant_scoped_strict_and_read_only(self, mocked_time):
+        invoice = self.make_invoice("Visible Project")
+        foreign_workspace = Workspace.objects.create(name="Foreign Invoice", slug="foreign-invoice")
+        foreign_membership = Membership.objects.create(workspace=foreign_workspace, user=self.user, role=Membership.Role.OWNER)
+        foreign_client = ClientModel.objects.create(
+            workspace=foreign_workspace, legal_name="Foreign Legal", client_type="COMPANY",
+            tax_identifier="FOREIGN-1", primary_contact_name="Grace Hopper",
+            primary_contact_email="grace@example.com",
+        )
+        self.make_invoice("Foreign Project", context=ActiveWorkspaceContext(foreign_workspace, foreign_membership), client=foreign_client)
+        before = list(Invoice.objects.values_list("pk", "status", "number"))
+        self.authenticate(workspace=self.workspace)
+        response = self.client.get("/api/v1/invoices/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Cache-Control"], "no-store")
+        items = response.json()["data"]["items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["public_id"], str(invoice.public_id))
+        self.assertEqual(set(items[0]), {
+            "public_id", "client_public_id", "client_legal_name", "project_public_id",
+            "proposal_public_id", "proposal_title", "number", "status", "issued_at", "voided_at",
+        })
+        for forbidden in ("subtotal", "total", "fiscal_legal_name", "fiscal_tax_regime", "void_reason", "pk", "created_at", "updated_at"):
+            self.assertNotIn(forbidden, items[0])
+        self.assertEqual(list(Invoice.objects.values_list("pk", "status", "number")), before)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_issuing_invoices_are_hidden_but_draft_issued_and_void_are_listed(self, mocked_time):
+        self.make_invoice("Draft")
+        issued = self.make_invoice("Issued")
+        void = self.make_invoice("Void")
+        issuing = self.make_invoice("Issuing")
+        fiscal = create_fiscal_configuration(
+            self.context, legal_name="Invoice Studio", tax_identifier="INV-1",
+            tax_regime="GENERAL", applies_vat=True, vat_rate=Decimal("15.00"),
+            withholding_rate=Decimal("0.00"),
+        )
+        now = timezone.now()
+        issued = issue_invoice(self.context, issued)
+        void = void_invoice(self.context, issue_invoice(self.context, void), reason="test")
+        with _invoice_service_write_boundary():
+            Invoice.objects.filter(pk=issuing.pk).update(
+                status=Invoice.Status.ISSUING, number="INV-000003",
+                fiscal_configuration_id=fiscal.pk, fiscal_version=fiscal.version,
+                fiscal_legal_name=fiscal.legal_name, fiscal_tax_identifier=fiscal.tax_identifier,
+                fiscal_tax_regime=fiscal.tax_regime, fiscal_applies_vat=fiscal.applies_vat,
+                fiscal_vat_rate=fiscal.vat_rate, fiscal_withholding_rate=fiscal.withholding_rate,
+                issued_at=now,
+            )
+        self.authenticate(workspace=self.workspace)
+        response = self.client.get("/api/v1/invoices/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["proposal_title"] for item in response.json()["data"]["items"]], ["Draft", "Issued", "Void"])
+        self.assertEqual({item["status"] for item in response.json()["data"]["items"]}, {Invoice.Status.DRAFT, Invoice.Status.ISSUED, Invoice.Status.VOID})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_query_allowlist_and_methods_are_json(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for path in ("/api/v1/invoices/?workspace=ignored", "/api/v1/invoices/?cursor=a&cursor=b"):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+        response = self.client.post("/api/v1/invoices/")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
+        self.assertEqual(response["Allow"], "GET, HEAD, OPTIONS")
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    @patch("api.invoice_views.current_time", return_value=1_000_000)
+    def test_pages_twenty_five_duplicate_titles_and_rejects_tampered_or_expired_cursor(self, mocked_cursor_time, mocked_auth_time):
+        for _ in range(26):
+            self.make_invoice("Same title")
+        self.authenticate(workspace=self.workspace)
+        first = self.client.get("/api/v1/invoices/")
+        cursor = first.json()["data"]["next_cursor"]
+        second = self.client.get(f"/api/v1/invoices/?cursor={cursor}")
+        ids = [x["public_id"] for x in first.json()["data"]["items"] + second.json()["data"]["items"]]
+        self.assertEqual(len(first.json()["data"]["items"]), 25)
+        self.assertEqual(len(second.json()["data"]["items"]), 1)
+        self.assertEqual(len(set(ids)), 26)
+        self.assertEqual(self.client.get(f"/api/v1/invoices/?cursor={cursor}x").status_code, 400)
+        mocked_cursor_time.return_value = 1_000_101
+        self.assertEqual(self.client.get(f"/api/v1/invoices/?cursor={cursor}").status_code, 400)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_cursor_rejects_wrong_bindings(self, mocked_time):
+        from api.invoice_views import CURSOR_SESSION_KEY, CURSOR_SIGNER
+
+        for index in range(26):
+            self.make_invoice(f"Invoice {index:02d}")
+        self.authenticate(workspace=self.workspace)
+        cursor = self.client.get("/api/v1/invoices/").json()["data"]["next_cursor"]
+        nonce = CURSOR_SIGNER.unsign(cursor).split(".", 1)[1]
+        original = {"subject": str(self.user.pk), "workspace": str(self.workspace.public_id), "membership": self.membership.pk, "deadline": 1_000_100}
+        for field, value in (("subject", "foreign"), ("workspace", str(uuid4())), ("membership", 999), ("deadline", 999)):
+            session = self.client.session
+            session[CURSOR_SESSION_KEY][nonce][field] = value
+            session.save()
+            self.assertEqual(self.client.get(f"/api/v1/invoices/?cursor={cursor}").status_code, 400)
+            session = self.client.session
+            session[CURSOR_SESSION_KEY][nonce][field] = original[field]
+            session.save()
+
+
+class InvoiceCursorStorageTests(TestCase):
+    @patch("api.invoice_views.current_time", return_value=100)
+    def test_cursor_store_prunes_expired_records_and_caps_live_entries(self, mocked_time):
+        from api.invoice_views import AUTH_EXPIRY_SESSION_KEY, CURSOR_MAX_ENTRIES, CURSOR_SESSION_KEY, _new_cursor
+
+        request = SimpleNamespace(user=SimpleNamespace(pk=7), session={AUTH_EXPIRY_SESSION_KEY: 1_000})
+        context = SimpleNamespace(workspace=SimpleNamespace(public_id="workspace"), membership=SimpleNamespace(pk=3))
+        request.session[CURSOR_SESSION_KEY] = {"expired": {"deadline": 99}, **{str(index): {"deadline": 1_000} for index in range(CURSOR_MAX_ENTRIES)}}
+        _new_cursor(request, context, {"proposal_title": "Invoice", "pk": 999})
         cursors = request.session[CURSOR_SESSION_KEY]
         self.assertEqual(len(cursors), CURSOR_MAX_ENTRIES)
         self.assertNotIn("expired", cursors)
