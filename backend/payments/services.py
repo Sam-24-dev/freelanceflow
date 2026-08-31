@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from django.db import IntegrityError, transaction
-from django.db.models import Exists, OuterRef, Sum
+from django.db.models import Exists, F, OuterRef, Subquery, Sum
 from django.utils import timezone
 
 from invoices.models import Invoice
@@ -38,6 +38,18 @@ def _authorize(context: ActiveWorkspaceContext):
     if not can_perform_operational_work(membership):
         raise PaymentAccessDenied("Payment access requires an owner or operational membership.")
     return context.workspace, membership
+
+
+def get_payments_for_workspace(context: ActiveWorkspaceContext):
+    """Return the active workspace's payment ledger with optional reversal time."""
+    workspace, _ = _authorize(context)
+    reversal = PaymentReversal.objects.filter(
+        payment_id=OuterRef("pk"), workspace=workspace
+    ).values("reversed_at")[:1]
+    return Payment.objects.for_workspace(workspace).annotate(
+        invoice_public_id=F("invoice__public_id"),
+        reversed_at=Subquery(reversal),
+    )
 
 
 def _locked_invoice(workspace, invoice: Invoice) -> Invoice:
