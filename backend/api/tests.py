@@ -8,6 +8,7 @@ from django.test import Client, TestCase
 from django.utils import timezone
 
 from clients.models import Client as ClientModel
+from proposals.models import Proposal
 from services.models import Service
 from workspaces.models import Membership, Workspace, allow_membership_writes
 from workspaces.services import remove_membership
@@ -867,6 +868,142 @@ class ServiceCursorStorageTests(TestCase):
             **{str(index): {"deadline": 1_000} for index in range(CURSOR_MAX_ENTRIES)},
         }
         _new_cursor(request, context, {"name": "Service", "pk": 999})
+        cursors = request.session[CURSOR_SESSION_KEY]
+        self.assertEqual(len(cursors), CURSOR_MAX_ENTRIES)
+        self.assertNotIn("expired", cursors)
+        self.assertNotIn("0", cursors)
+
+
+class ProposalApiTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="proposals-api@example.com", password="correct-horse-battery-staple"
+        )
+        self.workspace = Workspace.objects.create(name="Proposal Studio", slug="proposal-studio")
+        self.membership = Membership.objects.create(
+            workspace=self.workspace, user=self.user, role=Membership.Role.OWNER
+        )
+        self.client_record = ClientModel.objects.create(
+            workspace=self.workspace, legal_name="Acme Legal", client_type="COMPANY",
+            tax_identifier="1234567890", primary_contact_name="Ada Lovelace",
+            primary_contact_email="ada@example.com",
+        )
+
+    def authenticate(self, *, expires_at=1_000_100, workspace=None):
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["api.auth_expires_at"] = expires_at
+        if workspace is not None:
+            session["workspaces.active_workspace_public_id"] = str(workspace.public_id)
+        session.save()
+
+    def make_proposal(self, title, *, workspace=None, client=None, status=Proposal.Status.DRAFT, archived_at=None):
+        sent_at = timezone.now() if status != Proposal.Status.DRAFT else None
+        rejected_at = timezone.now() if status == Proposal.Status.REJECTED else None
+        return Proposal.objects.create(
+            workspace=workspace or self.workspace, client=client or self.client_record,
+            title=title, notes="private", issued_on="2026-01-01", valid_until="2026-12-31",
+            status=status, sent_at=sent_at, rejected_at=rejected_at, archived_at=archived_at,
+        )
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_requires_auth_deadline_context_and_fresh_owner_or_operational_membership(self, mocked_time):
+        self.assertEqual(self.client.get("/api/v1/proposals/").status_code, 401)
+        self.authenticate(expires_at=999_999, workspace=self.workspace)
+        self.assertEqual(self.client.get("/api/v1/proposals/").status_code, 401)
+        self.authenticate()
+        self.assertEqual(self.client.get("/api/v1/proposals/").json(), {"error": {"code": "workspace_required"}})
+        self.authenticate(workspace=self.workspace)
+        self.membership.role = Membership.Role.ADMINISTRATIVE
+        with allow_membership_writes():
+            self.membership.save(update_fields=["role"])
+        self.assertEqual(self.client.get("/api/v1/proposals/").status_code, 403)
+        self.membership.role = Membership.Role.OPERATIONAL
+        with allow_membership_writes():
+            self.membership.save(update_fields=["role"])
+        self.assertEqual(self.client.get("/api/v1/proposals/").status_code, 200)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_projection_tenant_archived_no_store_and_no_business_writes(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        archived = self.make_proposal("Archived", status=Proposal.Status.REJECTED, archived_at=timezone.now())
+        self.make_proposal("Active")
+        foreign_workspace = Workspace.objects.create(name="Foreign Proposal", slug="foreign-proposal")
+        foreign_client = ClientModel.objects.create(
+            workspace=foreign_workspace, legal_name="Foreign Legal", client_type="COMPANY",
+            tax_identifier="9876543210", primary_contact_name="Grace Hopper",
+            primary_contact_email="grace@example.com",
+        )
+        self.make_proposal("Foreign", workspace=foreign_workspace, client=foreign_client)
+        before = list(Proposal.objects.values_list("pk", "title", "status"))
+        response = self.client.get("/api/v1/proposals/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Cache-Control"], "no-store")
+        items = response.json()["data"]["items"]
+        self.assertEqual([item["title"] for item in items], ["Active", "Archived"])
+        self.assertEqual(set(items[0]), {"public_id", "client_public_id", "client_legal_name", "title", "issued_on", "valid_until", "status", "archived_at"})
+        self.assertEqual(items[1]["public_id"], str(archived.public_id))
+        self.assertEqual(items[0]["client_public_id"], str(self.client_record.public_id))
+        self.assertEqual(list(Proposal.objects.values_list("pk", "title", "status")), before)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    @patch("api.proposal_views.current_time", return_value=1_000_000)
+    def test_pages_twenty_five_keyset_ties_and_cursor_bindings(self, mocked_cursor_time, mocked_auth_time):
+        self.authenticate(workspace=self.workspace)
+        for index in range(26):
+            self.make_proposal("Same title")
+        first = self.client.get("/api/v1/proposals/")
+        cursor = first.json()["data"]["next_cursor"]
+        second = self.client.get(f"/api/v1/proposals/?cursor={cursor}")
+        self.assertEqual(len(first.json()["data"]["items"]), 25)
+        self.assertEqual(len(second.json()["data"]["items"]), 1)
+        self.assertEqual(len({x["public_id"] for x in first.json()["data"]["items"] + second.json()["data"]["items"]}), 26)
+        self.assertEqual(self.client.get(f"/api/v1/proposals/?cursor={cursor}x").status_code, 400)
+        mocked_cursor_time.return_value = 1_000_101
+        self.assertEqual(self.client.get(f"/api/v1/proposals/?cursor={cursor}").status_code, 400)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    @patch("api.proposal_views.current_time", return_value=1_000_000)
+    def test_cursor_rejects_wrong_subject_workspace_membership_or_deadline(self, mocked_cursor_time, mocked_auth_time):
+        from api.proposal_views import CURSOR_SESSION_KEY, CURSOR_SIGNER
+
+        self.authenticate(workspace=self.workspace)
+        for index in range(26):
+            self.make_proposal(f"Proposal {index:02d}")
+        cursor = self.client.get("/api/v1/proposals/").json()["data"]["next_cursor"]
+        nonce = CURSOR_SIGNER.unsign(cursor).split(".", 1)[1]
+        original = {"subject": str(self.user.pk), "workspace": str(self.workspace.public_id), "membership": self.membership.pk, "deadline": 1_000_100}
+        for field, value in (("subject", "foreign"), ("workspace", str(uuid4())), ("membership", 999), ("deadline", 999)):
+            session = self.client.session
+            session[CURSOR_SESSION_KEY][nonce][field] = value
+            session.save()
+            self.assertEqual(self.client.get(f"/api/v1/proposals/?cursor={cursor}").status_code, 400)
+            session = self.client.session
+            session[CURSOR_SESSION_KEY][nonce][field] = original[field]
+            session.save()
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_query_allowlist_and_methods_are_json(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for path in ("/api/v1/proposals/?workspace=ignored", "/api/v1/proposals/?cursor=a&cursor=b"):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+        response = self.client.post("/api/v1/proposals/")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
+        self.assertEqual(response["Allow"], "GET, HEAD, OPTIONS")
+
+
+class ProposalCursorStorageTests(TestCase):
+    @patch("api.proposal_views.current_time", return_value=100)
+    def test_cursor_store_prunes_expired_records_and_caps_live_entries(self, mocked_time):
+        from api.proposal_views import AUTH_EXPIRY_SESSION_KEY, CURSOR_MAX_ENTRIES, CURSOR_SESSION_KEY, _new_cursor
+
+        request = SimpleNamespace(user=SimpleNamespace(pk=7), session={AUTH_EXPIRY_SESSION_KEY: 1_000})
+        context = SimpleNamespace(workspace=SimpleNamespace(public_id="workspace"), membership=SimpleNamespace(pk=3))
+        request.session[CURSOR_SESSION_KEY] = {"expired": {"deadline": 99}, **{str(index): {"deadline": 1_000} for index in range(CURSOR_MAX_ENTRIES)}}
+        _new_cursor(request, context, {"title": "Proposal", "pk": 999})
         cursors = request.session[CURSOR_SESSION_KEY]
         self.assertEqual(len(cursors), CURSOR_MAX_ENTRIES)
         self.assertNotIn("expired", cursors)
