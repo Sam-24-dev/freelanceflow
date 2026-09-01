@@ -2339,3 +2339,162 @@ class CashActivityReportApiTests(TestCase):
         self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
         self.assertEqual(response["Allow"], "GET, HEAD, OPTIONS")
         self.assertEqual(response["Cache-Control"], "no-store")
+
+
+class AuditEventApiTests(TestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_user(
+            email="audit-api-admin@example.com", password="correct-horse-battery-staple"
+        )
+        self.owner = get_user_model().objects.create_user(
+            email="audit-api-owner@example.com", password="correct-horse-battery-staple"
+        )
+        self.workspace = Workspace.objects.create(name="Audit API", slug="audit-api")
+        self.admin_membership = Membership.objects.create(
+            workspace=self.workspace, user=self.admin, role=Membership.Role.ADMINISTRATIVE
+        )
+        self.owner_membership = Membership.objects.create(
+            workspace=self.workspace, user=self.owner, role=Membership.Role.OWNER
+        )
+
+    def authenticate(self, user=None, workspace=None):
+        self.client.force_login(user or self.admin)
+        session = self.client.session
+        session["api.auth_expires_at"] = 1_000_100
+        if workspace is not None:
+            session["workspaces.active_workspace_public_id"] = str(workspace.public_id)
+        session.save()
+
+    def append_event(self, *, actor=None):
+        from audit.models import AuditEvent
+        from audit.services import record_audit_event
+
+        return record_audit_event(
+            workspace=self.workspace,
+            actor=actor or self.owner,
+            event_type=AuditEvent.EventType.MEMBERSHIP_ROLE_CHANGED,
+            target_membership_id=self.admin_membership.pk,
+            role_before=Membership.Role.OPERATIONAL,
+            role_after=Membership.Role.ADMINISTRATIVE,
+        )
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_requires_live_session_active_workspace_and_administrative_membership(self, mocked_time):
+        self.assertEqual(self.client.get("/api/v1/audit-events/").status_code, 401)
+        self.authenticate()
+        self.assertEqual(self.client.get("/api/v1/audit-events/").json(), {"error": {"code": "workspace_required"}})
+        self.authenticate(user=self.owner, workspace=self.workspace)
+        self.assertEqual(self.client.get("/api/v1/audit-events/").json(), {"error": {"code": "permission_denied"}})
+        foreign_workspace = Workspace.objects.create(name="Foreign selected audit", slug="foreign-selected-audit")
+        self.authenticate(workspace=foreign_workspace)
+        self.assertEqual(self.client.get("/api/v1/audit-events/").json(), {"error": {"code": "workspace_required"}})
+        with allow_membership_writes():
+            self.admin_membership.role = Membership.Role.OPERATIONAL
+            self.admin_membership.save(update_fields=["role"])
+        self.authenticate(workspace=self.workspace)
+        self.assertEqual(self.client.get("/api/v1/audit-events/").json(), {"error": {"code": "permission_denied"}})
+
+        superuser = get_user_model().objects.create_superuser(
+            email="audit-api-superuser@example.com", password="correct-horse-battery-staple"
+        )
+        self.authenticate(user=superuser, workspace=self.workspace)
+        self.assertEqual(self.client.get("/api/v1/audit-events/").json(), {"error": {"code": "workspace_required"}})
+
+        self.authenticate(workspace=self.workspace)
+        with allow_membership_writes():
+            self.admin_membership.delete()
+        self.assertEqual(self.client.get("/api/v1/audit-events/").json(), {"error": {"code": "workspace_required"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_returns_only_tenant_events_with_exact_accountability_projection_and_no_writes(self, mocked_time):
+        self.append_event()
+        foreign_workspace = Workspace.objects.create(name="Foreign Audit API", slug="foreign-audit-api")
+        foreign_admin = get_user_model().objects.create_user(email="foreign-audit@example.com", password="correct-horse-battery-staple")
+        foreign_membership = Membership.objects.create(
+            workspace=foreign_workspace, user=foreign_admin, role=Membership.Role.ADMINISTRATIVE
+        )
+        from audit.models import AuditEvent
+        from audit.services import record_audit_event
+        record_audit_event(
+            workspace=foreign_workspace, actor=foreign_admin,
+            event_type=AuditEvent.EventType.MEMBERSHIP_ROLE_CHANGED,
+            target_membership_id=foreign_membership.pk, role_before=Membership.Role.OPERATIONAL,
+            role_after=Membership.Role.ADMINISTRATIVE,
+        )
+        before = list(AuditEvent._base_objects.values_list("pk", "created_at"))
+        self.authenticate(workspace=self.workspace)
+
+        response = self.client.get("/api/v1/audit-events/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Cache-Control"], "no-store")
+        item = response.json()["data"]["items"][0]
+        self.assertEqual(set(item), {"event_type", "actor_email", "role_before", "role_after", "created_at"})
+        self.assertEqual(item["event_type"], "membership.role_changed")
+        self.assertEqual(item["actor_email"], self.owner.email)
+        self.assertNotIn("pk", item)
+        self.assertNotIn("target_membership_id", item)
+        self.assertNotIn(foreign_admin.email, str(response.json()))
+        self.assertEqual(list(AuditEvent._base_objects.values_list("pk", "created_at")), before)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_rejects_invalid_query_shapes_and_non_get_methods_as_json(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for path in (
+            "/api/v1/audit-events/?workspace=ignored", "/api/v1/audit-events/?cursor=",
+            "/api/v1/audit-events/?cursor=one&cursor=two", "/api/v1/audit-events/?cursor=malformed",
+        ):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+        response = self.client.post("/api/v1/audit-events/")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
+        self.assertEqual(response["Allow"], "GET, HEAD, OPTIONS")
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    @patch("api.audit_views.current_time", return_value=1_000_000)
+    def test_keyset_pagination_is_descending_and_cursor_is_session_bound(self, mocked_cursor_time, mocked_auth_time):
+        for _ in range(26):
+            self.append_event()
+        self.authenticate(workspace=self.workspace)
+
+        first = self.client.get("/api/v1/audit-events/")
+        cursor = first.json()["data"]["next_cursor"]
+        second = self.client.get(f"/api/v1/audit-events/?cursor={cursor}")
+
+        items = first.json()["data"]["items"] + second.json()["data"]["items"]
+        self.assertEqual(len(first.json()["data"]["items"]), 25)
+        self.assertEqual(len(second.json()["data"]["items"]), 1)
+        self.assertEqual(second.json()["data"]["next_cursor"], None)
+        self.assertEqual(len({item["created_at"] for item in items}), 26)
+        self.assertEqual([item["created_at"] for item in items], sorted((item["created_at"] for item in items), reverse=True))
+        self.assertEqual(self.client.get(f"/api/v1/audit-events/?cursor={cursor}x").status_code, 400)
+        from api.audit_views import CURSOR_SESSION_KEY, CURSOR_SIGNER
+        nonce = CURSOR_SIGNER.unsign(cursor).split(".", 1)[1]
+        original = {"subject": str(self.admin.pk), "workspace": str(self.workspace.public_id), "membership": self.admin_membership.pk, "deadline": 1_000_100}
+        for field, value in (("subject", "foreign"), ("workspace", str(uuid4())), ("membership", 999), ("deadline", 999)):
+            session = self.client.session
+            session[CURSOR_SESSION_KEY][nonce][field] = value
+            session.save()
+            self.assertEqual(self.client.get(f"/api/v1/audit-events/?cursor={cursor}").status_code, 400)
+            session = self.client.session
+            session[CURSOR_SESSION_KEY][nonce][field] = original[field]
+            session.save()
+        mocked_cursor_time.return_value = 1_000_101
+        self.assertEqual(self.client.get(f"/api/v1/audit-events/?cursor={cursor}").status_code, 400)
+
+
+class AuditEventCursorStorageTests(TestCase):
+    @patch("api.audit_views.current_time", return_value=100)
+    def test_cursor_store_prunes_expired_entries_and_caps_live_entries(self, mocked_time):
+        from api.audit_views import AUTH_EXPIRY_SESSION_KEY, CURSOR_MAX_ENTRIES, CURSOR_SESSION_KEY, _new_cursor
+
+        request = SimpleNamespace(user=SimpleNamespace(pk=7), session={AUTH_EXPIRY_SESSION_KEY: 1_000})
+        context = SimpleNamespace(workspace=SimpleNamespace(public_id="workspace"), membership=SimpleNamespace(pk=3))
+        request.session[CURSOR_SESSION_KEY] = {"expired": {"deadline": 99}, **{str(index): {"deadline": 1_000} for index in range(CURSOR_MAX_ENTRIES)}}
+        _new_cursor(request, context, {"created_at": timezone.now(), "pk": 999})
+        cursors = request.session[CURSOR_SESSION_KEY]
+        self.assertEqual(len(cursors), CURSOR_MAX_ENTRIES)
+        self.assertNotIn("expired", cursors)
+        self.assertNotIn("0", cursors)
