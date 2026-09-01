@@ -1817,3 +1817,205 @@ class CategoryApiTests(TestCase):
         self.assertEqual(response.status_code, 405)
         self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
         self.assertEqual(response["Allow"], "GET, HEAD, OPTIONS")
+
+
+class LedgerEntryApiTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="ledger-api@example.com", password="correct-horse-battery-staple"
+        )
+        self.other_user = get_user_model().objects.create_user(
+            email="ledger-other-api@example.com", password="correct-horse-battery-staple"
+        )
+        self.workspace = Workspace.objects.create(name="Ledger API Studio", slug="ledger-api-studio")
+        self.membership = Membership.objects.create(
+            workspace=self.workspace, user=self.user, role=Membership.Role.OWNER
+        )
+        self.context = ActiveWorkspaceContext(self.workspace, self.membership)
+        self.category = create_category(
+            self.context, name="Travel", description="Travel expenses",
+            default_deductible=True, monthly_budget=Decimal("50.00"), status=Category.Status.ACTIVE,
+        )
+
+    def authenticate(self, *, expires_at=1_000_100, workspace=None, user=None):
+        self.client.force_login(user or self.user)
+        session = self.client.session
+        session["api.auth_expires_at"] = expires_at
+        if workspace is not None:
+            session["workspaces.active_workspace_public_id"] = str(workspace.public_id)
+        session.save()
+
+    def make_entry(self, *, occurred_on=date(2024, 1, 1), context=None, category=None, client=None, project=None):
+        from ledger.models import LedgerEntry
+        from ledger.services import record_manual_entry
+
+        return record_manual_entry(
+            context or self.context, idempotency_key=uuid4(), direction=LedgerEntry.Direction.EXPENSE,
+            amount=Decimal("12.50"), occurred_on=occurred_on, description="Taxi ride",
+            category=category or self.category, client=client, project=project,
+        )
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_requires_live_session_fresh_context_and_operational_membership(self, mocked_time):
+        self.assertEqual(self.client.get("/api/v1/ledger-entries/").status_code, 401)
+        self.authenticate(expires_at=999_999, workspace=self.workspace)
+        self.assertEqual(self.client.get("/api/v1/ledger-entries/").status_code, 401)
+        self.authenticate()
+        self.assertEqual(self.client.get("/api/v1/ledger-entries/").json(), {"error": {"code": "workspace_required"}})
+        self.authenticate(workspace=self.workspace)
+        with allow_membership_writes():
+            Membership.objects.filter(pk=self.membership.pk).update(role=Membership.Role.ADMINISTRATIVE)
+        self.assertEqual(self.client.get("/api/v1/ledger-entries/").status_code, 403)
+        with allow_membership_writes():
+            Membership.objects.filter(pk=self.membership.pk).update(role=Membership.Role.OPERATIONAL)
+        self.assertEqual(self.client.get("/api/v1/ledger-entries/").status_code, 200)
+        with allow_membership_writes():
+            self.membership.delete()
+        self.assertEqual(self.client.get("/api/v1/ledger-entries/").json(), {"error": {"code": "workspace_required"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_superuser_without_membership_cannot_read_foreign_or_unknown_workspace(self, mocked_time):
+        superuser = get_user_model().objects.create_superuser(
+            email="ledger-superuser-api@example.com", password="correct-horse-battery-staple"
+        )
+        self.client.force_login(superuser)
+        for workspace_public_id in (str(self.workspace.public_id), str(uuid4())):
+            session = self.client.session
+            session["api.auth_expires_at"] = 1_000_100
+            session["workspaces.active_workspace_public_id"] = workspace_public_id
+            session.save()
+
+            response = self.client.get("/api/v1/ledger-entries/")
+
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json(), {"error": {"code": "workspace_required"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_returns_exact_public_projection_tenant_scoped_and_without_database_writes(self, mocked_time):
+        client = ClientModel.objects.create(
+            workspace=self.workspace, legal_name="Ledger Client", client_type="COMPANY",
+            tax_identifier="LEDGER-CLIENT", primary_contact_name="Ada Lovelace",
+            primary_contact_email="ada@example.com",
+        )
+        entry = self.make_entry(client=client)
+        foreign_workspace = Workspace.objects.create(name="Foreign Ledger", slug="foreign-ledger-api")
+        foreign_membership = Membership.objects.create(
+            workspace=foreign_workspace, user=self.other_user, role=Membership.Role.OWNER
+        )
+        foreign_category = create_category(
+            ActiveWorkspaceContext(foreign_workspace, foreign_membership), name="Foreign", description="Foreign",
+            default_deductible=False, monthly_budget=None, status=Category.Status.ACTIVE,
+        )
+        foreign_entry = self.make_entry(
+            context=ActiveWorkspaceContext(foreign_workspace, foreign_membership), category=foreign_category,
+        )
+        from ledger.models import LedgerEntry
+        before = list(LedgerEntry.objects.values_list("pk", "public_id", "created_at"))
+        self.authenticate(workspace=self.workspace)
+
+        response = self.client.get("/api/v1/ledger-entries/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Cache-Control"], "no-store")
+        item = response.json()["data"]["items"][0]
+        self.assertEqual(set(item), {
+            "public_id", "direction", "source", "amount", "currency", "occurred_on", "description",
+            "category_name_snapshot", "category_deductible_snapshot", "client_public_id", "project_public_id", "created_at",
+        })
+        self.assertEqual(item["public_id"], str(entry.public_id))
+        self.assertEqual(item["amount"], "12.50")
+        self.assertEqual(item["currency"], "USD")
+        self.assertEqual(item["direction"], "EXPENSE")
+        self.assertEqual(item["source"], "MANUAL")
+        self.assertEqual(item["description"], "Taxi ride")
+        self.assertEqual(item["category_name_snapshot"], "Travel")
+        self.assertIs(item["category_deductible_snapshot"], True)
+        self.assertEqual(item["occurred_on"], "2024-01-01")
+        self.assertEqual(item["client_public_id"], str(client.public_id))
+        self.assertIsNone(item["project_public_id"])
+        for forbidden in ("pk", "idempotency_key", "fingerprint", "request_fingerprint", "created_by", "workspace", "category", "client", "project", "reversal_of"):
+            self.assertNotIn(forbidden, item)
+        self.assertNotIn(str(foreign_entry.public_id), {value["public_id"] for value in response.json()["data"]["items"]})
+        self.assertEqual(list(LedgerEntry.objects.values_list("pk", "public_id", "created_at")), before)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_rejects_every_query_shape_except_one_nonempty_cursor_and_returns_json_405(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for path in (
+            "/api/v1/ledger-entries/?workspace=ignored", "/api/v1/ledger-entries/?cursor=",
+            "/api/v1/ledger-entries/?cursor=one&cursor=two", "/api/v1/ledger-entries/?cursor=malformed",
+        ):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+        from api.ledger_views import CURSOR_SIGNER
+        unknown = CURSOR_SIGNER.sign("v1.unknown")
+        self.assertEqual(self.client.get(f"/api/v1/ledger-entries/?cursor={unknown}").status_code, 400)
+        response = self.client.post("/api/v1/ledger-entries/")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
+        self.assertEqual(response["Allow"], "GET, HEAD, OPTIONS")
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    @patch("api.ledger_views.current_time", return_value=1_000_000)
+    def test_cursor_is_keyset_ordered_without_duplicates_or_misses_and_rejects_tampering_and_expiry(self, mocked_cursor_time, mocked_auth_time):
+        entries = [self.make_entry() for _ in range(26)]
+        self.authenticate(workspace=self.workspace)
+
+        first = self.client.get("/api/v1/ledger-entries/")
+        cursor = first.json()["data"]["next_cursor"]
+        second = self.client.get(f"/api/v1/ledger-entries/?cursor={cursor}")
+        items = first.json()["data"]["items"] + second.json()["data"]["items"]
+
+        self.assertEqual(len(first.json()["data"]["items"]), 25)
+        self.assertEqual(len(second.json()["data"]["items"]), 1)
+        self.assertEqual(len({item["public_id"] for item in items}), 26)
+        self.assertEqual([item["public_id"] for item in items], [str(entry.public_id) for entry in reversed(entries)])
+        self.assertEqual(self.client.get(f"/api/v1/ledger-entries/?cursor={cursor}x").status_code, 400)
+        mocked_cursor_time.return_value = 1_000_101
+        self.assertEqual(self.client.get(f"/api/v1/ledger-entries/?cursor={cursor}").status_code, 400)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    @patch("api.ledger_views.current_time", return_value=1_000_000)
+    def test_cursor_is_bound_to_session_subject_workspace_membership_and_deadline(self, mocked_cursor_time, mocked_auth_time):
+        for _ in range(26):
+            self.make_entry()
+        self.authenticate(workspace=self.workspace)
+        cursor = self.client.get("/api/v1/ledger-entries/").json()["data"]["next_cursor"]
+        from api.ledger_views import CURSOR_SESSION_KEY, CURSOR_SIGNER
+
+        nonce = CURSOR_SIGNER.unsign(cursor).split(".", 1)[1]
+        original = {"subject": str(self.user.pk), "workspace": str(self.workspace.public_id), "membership": self.membership.pk, "deadline": 1_000_100}
+        for field, value in (("subject", "foreign"), ("workspace", str(uuid4())), ("membership", 999), ("deadline", 999)):
+            session = self.client.session
+            session[CURSOR_SESSION_KEY][nonce][field] = value
+            session.save()
+            self.assertEqual(self.client.get(f"/api/v1/ledger-entries/?cursor={cursor}").status_code, 400)
+            session = self.client.session
+            session[CURSOR_SESSION_KEY][nonce][field] = original[field]
+            session.save()
+
+        other_client = Client()
+        other_client.force_login(self.user)
+        session = other_client.session
+        session["api.auth_expires_at"] = 1_000_100
+        session["workspaces.active_workspace_public_id"] = str(self.workspace.public_id)
+        session.save()
+        response = other_client.get(f"/api/v1/ledger-entries/?cursor={cursor}")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+
+
+class LedgerEntryCursorStorageTests(TestCase):
+    @patch("api.ledger_views.current_time", return_value=100)
+    def test_cursor_store_prunes_expired_records_and_caps_live_entries(self, mocked_time):
+        from api.ledger_views import AUTH_EXPIRY_SESSION_KEY, CURSOR_MAX_ENTRIES, CURSOR_SESSION_KEY, _new_cursor
+
+        request = SimpleNamespace(user=SimpleNamespace(pk=7), session={AUTH_EXPIRY_SESSION_KEY: 1_000})
+        context = SimpleNamespace(workspace=SimpleNamespace(public_id="workspace"), membership=SimpleNamespace(pk=3))
+        request.session[CURSOR_SESSION_KEY] = {"expired": {"deadline": 99}, **{str(index): {"deadline": 1_000} for index in range(CURSOR_MAX_ENTRIES)}}
+        _new_cursor(request, context, {"occurred_on": date(2024, 1, 1), "pk": 999})
+        cursors = request.session[CURSOR_SESSION_KEY]
+        self.assertEqual(len(cursors), CURSOR_MAX_ENTRIES)
+        self.assertNotIn("expired", cursors)
+        self.assertNotIn("0", cursors)
