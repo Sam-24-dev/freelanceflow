@@ -120,6 +120,146 @@ class SessionApiTests(TestCase):
         self.assertEqual(dict(csrf_client.session.items()), {})
 
 
+class FiscalConfigurationApiTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="fiscal-api@example.com", password="correct-horse-battery-staple"
+        )
+        self.other_user = get_user_model().objects.create_user(
+            email="fiscal-other-api@example.com", password="correct-horse-battery-staple"
+        )
+        self.workspace = Workspace.objects.create(name="Fiscal API Studio", slug="fiscal-api-studio")
+        self.membership = Membership.objects.create(
+            workspace=self.workspace, user=self.user, role=Membership.Role.OWNER
+        )
+        self.foreign_workspace = Workspace.objects.create(
+            name="Foreign Fiscal API Studio", slug="foreign-fiscal-api-studio"
+        )
+        Membership.objects.create(
+            workspace=self.foreign_workspace, user=self.other_user, role=Membership.Role.OWNER
+        )
+
+    def authenticate(self, *, expires_at=1_000_100, workspace=None, user=None):
+        self.client.force_login(user or self.user)
+        session = self.client.session
+        session["api.auth_expires_at"] = expires_at
+        if workspace is not None:
+            session["workspaces.active_workspace_public_id"] = str(workspace.public_id)
+        session.save()
+
+    def create_configuration(self, context=None, **overrides):
+        context = context or ActiveWorkspaceContext(self.workspace, self.membership)
+        payload = {
+            "legal_name": "Fiscal API Studio",
+            "tax_identifier": "EC-FISCAL-1",
+            "tax_regime": "GENERAL",
+            "applies_vat": True,
+            "vat_rate": Decimal("15.00"),
+            "withholding_rate": Decimal("2.00"),
+        }
+        payload.update(overrides)
+        return create_fiscal_configuration(context, **payload)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_requires_authenticated_live_session_and_active_workspace_context(self, mocked_time):
+        self.assertEqual(self.client.get("/api/v1/fiscal-configuration/").status_code, 401)
+        self.authenticate(expires_at=999_999, workspace=self.workspace)
+        self.assertEqual(self.client.get("/api/v1/fiscal-configuration/").status_code, 401)
+        self.authenticate()
+        response = self.client.get("/api/v1/fiscal-configuration/")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": {"code": "workspace_required"}})
+        self.authenticate(workspace=self.foreign_workspace)
+        response = self.client.get("/api/v1/fiscal-configuration/")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": {"code": "workspace_required"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_allows_only_owner_and_operational_memberships_with_fresh_role(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        self.create_configuration()
+        for role, status in (
+            (Membership.Role.OWNER, 200),
+            (Membership.Role.OPERATIONAL, 200),
+            (Membership.Role.ADMINISTRATIVE, 403),
+        ):
+            with allow_membership_writes():
+                Membership.objects.filter(pk=self.membership.pk).update(role=role)
+            response = self.client.get("/api/v1/fiscal-configuration/")
+            self.assertEqual(response.status_code, status)
+        superuser = get_user_model().objects.create_superuser(
+            email="fiscal-superuser-api@example.com", password="correct-horse-battery-staple"
+        )
+        self.authenticate(workspace=self.workspace, user=superuser)
+        response = self.client.get("/api/v1/fiscal-configuration/")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": {"code": "workspace_required"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_returns_only_current_configuration_for_active_tenant(self, mocked_time):
+        first = self.create_configuration(legal_name="Old Name")
+        current = self.create_configuration(legal_name="Current Name")
+        foreign_context = ActiveWorkspaceContext(
+            self.foreign_workspace,
+            Membership.objects.get(workspace=self.foreign_workspace, user=self.other_user),
+        )
+        foreign = self.create_configuration(foreign_context, legal_name="Foreign Name")
+        self.authenticate(workspace=self.workspace)
+
+        response = self.client.get("/api/v1/fiscal-configuration/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Cache-Control"], "no-store")
+        item = response.json()["data"]
+        self.assertEqual(set(item), {
+            "public_id", "version", "legal_name", "tax_identifier", "tax_regime",
+            "applies_vat", "vat_rate", "withholding_rate",
+        })
+        self.assertEqual(item["public_id"], str(current.public_id))
+        self.assertEqual(item["version"], current.version)
+        self.assertEqual(item["legal_name"], "Current Name")
+        self.assertEqual(item["vat_rate"], "15.00")
+        self.assertEqual(item["withholding_rate"], "2.00")
+        for forbidden in (
+            "pk", "id", "workspace", "workspace_id", "created_at", "updated_at",
+            "historical_versions", "invoice_data",
+        ):
+            self.assertNotIn(forbidden, item)
+        self.assertNotEqual(first.public_id, current.public_id)
+        self.assertNotEqual(foreign.public_id, current.public_id)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_decimal_rates_are_json_strings_without_float_coercion(self, mocked_time):
+        self.create_configuration(vat_rate=Decimal("12.34"), withholding_rate=Decimal("0.01"))
+        self.authenticate(workspace=self.workspace)
+
+        item = self.client.get("/api/v1/fiscal-configuration/").json()["data"]
+
+        self.assertIsInstance(item["vat_rate"], str)
+        self.assertIsInstance(item["withholding_rate"], str)
+        self.assertEqual(item["vat_rate"], "12.34")
+        self.assertEqual(item["withholding_rate"], "0.01")
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_authorized_workspace_without_configuration_returns_contract_404(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        response = self.client.get("/api/v1/fiscal-configuration/")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {"error": {"code": "fiscal_configuration_not_configured"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_rejects_query_parameters_and_non_get_methods_as_json(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        response = self.client.get("/api/v1/fiscal-configuration/?workspace=ignored")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+        response = self.client.post("/api/v1/fiscal-configuration/")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
+        self.assertEqual(response["Allow"], "GET, HEAD, OPTIONS")
+        self.assertEqual(response["Cache-Control"], "no-store")
+
+
 class WorkspaceApiTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(
