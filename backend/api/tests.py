@@ -2019,3 +2019,104 @@ class LedgerEntryCursorStorageTests(TestCase):
         self.assertEqual(len(cursors), CURSOR_MAX_ENTRIES)
         self.assertNotIn("expired", cursors)
         self.assertNotIn("0", cursors)
+
+
+class InterfacePreferencesApiTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="preferences-api@example.com", password="correct-horse-battery-staple"
+        )
+        self.workspace = Workspace.objects.create(name="Preferences API Studio", slug="preferences-api-studio")
+        self.membership = Membership.objects.create(
+            workspace=self.workspace, user=self.user, role=Membership.Role.OWNER
+        )
+
+    def authenticate(self, *, user=None, workspace=None):
+        self.client.force_login(user or self.user)
+        session = self.client.session
+        session["api.auth_expires_at"] = 1_000_100
+        if workspace is not None:
+            session["workspaces.active_workspace_public_id"] = str(workspace.public_id)
+        session.save()
+
+    def patch_json(self, client, payload, **extra):
+        return client.patch(
+            "/api/v1/preferences/",
+            data=json.dumps(payload),
+            content_type="application/json",
+            **extra,
+        )
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_requires_live_session_and_trusted_active_workspace_membership(self, mocked_time):
+        self.assertEqual(self.client.get("/api/v1/preferences/").status_code, 401)
+        self.authenticate()
+        self.assertEqual(self.client.get("/api/v1/preferences/").status_code, 400)
+        self.authenticate(workspace=self.workspace)
+        self.assertEqual(self.client.get("/api/v1/preferences/").status_code, 200)
+        superuser = get_user_model().objects.create_superuser(
+            email="preferences-superuser@example.com", password="correct-horse-battery-staple"
+        )
+        self.authenticate(user=superuser, workspace=self.workspace)
+        response = self.client.get("/api/v1/preferences/")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": {"code": "workspace_required"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_get_allows_every_valid_role_and_returns_only_own_active_membership_preferences(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for role in (Membership.Role.OWNER, Membership.Role.OPERATIONAL, Membership.Role.ADMINISTRATIVE):
+            with allow_membership_writes():
+                Membership.objects.filter(pk=self.membership.pk).update(role=role)
+            self.patch_json(self.client, {"sidebar_collapsed": False})
+            response = self.client.get("/api/v1/preferences/")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(set(response.json()["data"]), {"sidebar_collapsed", "created_at", "updated_at"})
+            self.assertFalse(response.json()["data"]["sidebar_collapsed"])
+            updated = self.patch_json(self.client, {"sidebar_collapsed": True})
+            self.assertEqual(updated.status_code, 200)
+            self.assertTrue(updated.json()["data"]["sidebar_collapsed"])
+            self.assertEqual(response["Cache-Control"], "no-store")
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_patch_updates_only_boolean_sidebar_collapsed_for_current_membership(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.force_login(self.user)
+        session = csrf_client.session
+        session["api.auth_expires_at"] = 1_000_100
+        session["workspaces.active_workspace_public_id"] = str(self.workspace.public_id)
+        session.save()
+        token = csrf_client.get("/api/v1/session/").cookies["csrftoken"].value
+        response = self.patch_json(csrf_client, {"sidebar_collapsed": True}, HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"]["sidebar_collapsed"], True)
+        self.assertEqual(self.client.get("/api/v1/preferences/").json()["data"]["sidebar_collapsed"], True)
+        self.assertEqual(response["Cache-Control"], "no-store")
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_rejects_query_parameters_and_invalid_patch_payloads(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        self.assertEqual(self.client.get("/api/v1/preferences/?workspace=ignored").json(), {"error": {"code": "invalid_request"}})
+        invalid_json = self.client.patch("/api/v1/preferences/", data="{", content_type="application/json")
+        self.assertEqual(invalid_json.status_code, 400)
+        self.assertEqual(invalid_json.json(), {"error": {"code": "invalid_json"}})
+        for payload in ([], {}, {"sidebar_collapsed": "true"}, {"sidebar_collapsed": 1}, {"sidebar_collapsed": None}, {"sidebar_collapsed": True, "workspace": "ignored"}):
+            with self.subTest(payload=payload):
+                response = self.patch_json(self.client, payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+        response = self.patch_json(self.client, {"sidebar_collapsed": True}, QUERY_STRING="workspace=ignored")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_uses_json_405_and_rejects_non_json_patch_media_type(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        response = self.client.post("/api/v1/preferences/")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
+        self.assertEqual(response["Allow"], "GET, PATCH, HEAD, OPTIONS")
+        response = self.client.patch("/api/v1/preferences/", data="sidebar_collapsed=true", content_type="text/plain")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
