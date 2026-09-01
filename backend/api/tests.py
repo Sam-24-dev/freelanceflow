@@ -10,6 +10,8 @@ from django.test import Client, TestCase
 from django.utils import timezone
 
 from clients.models import Client as ClientModel
+from categories.models import Category
+from categories.services import create_category
 from proposals.models import Proposal
 from projects.models import Project
 from projects.services import archive_project, convert_accepted_proposal, transition_project
@@ -1710,3 +1712,108 @@ class PaymentCursorStorageTests(TestCase):
         self.assertEqual(len(cursors), CURSOR_MAX_ENTRIES)
         self.assertNotIn("expired", cursors)
         self.assertNotIn("0", cursors)
+
+
+class CategoryApiTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="categories-api@example.com", password="correct-horse-battery-staple"
+        )
+        self.workspace = Workspace.objects.create(name="Category Studio", slug="category-api-studio")
+        self.membership = Membership.objects.create(
+            workspace=self.workspace, user=self.user, role=Membership.Role.OWNER
+        )
+        self.context = ActiveWorkspaceContext(self.workspace, self.membership)
+
+    def authenticate(self, *, expires_at=1_000_100, workspace=None):
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["api.auth_expires_at"] = expires_at
+        if workspace is not None:
+            session["workspaces.active_workspace_public_id"] = str(workspace.public_id)
+        session.save()
+
+    def make_category(self, name, *, context=None, status=Category.Status.ACTIVE, monthly_budget=Decimal("12.50")):
+        return create_category(
+            context or self.context, name=name, description=f"Description for {name}",
+            default_deductible=True, monthly_budget=monthly_budget, status=status,
+        )
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_requires_live_session_and_current_active_membership_context(self, mocked_time):
+        self.assertEqual(self.client.get("/api/v1/categories/").status_code, 401)
+        self.authenticate(expires_at=999_999, workspace=self.workspace)
+        self.assertEqual(self.client.get("/api/v1/categories/").status_code, 401)
+        self.authenticate()
+        self.assertEqual(self.client.get("/api/v1/categories/").json(), {"error": {"code": "workspace_required"}})
+        foreign = Workspace.objects.create(name="Foreign Category", slug="foreign-category-api")
+        self.authenticate(workspace=foreign)
+        self.assertEqual(self.client.get("/api/v1/categories/").json(), {"error": {"code": "workspace_required"}})
+        self.authenticate(workspace=self.workspace)
+        with allow_membership_writes():
+            self.membership.delete()
+        self.assertEqual(self.client.get("/api/v1/categories/").json(), {"error": {"code": "workspace_required"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_only_owner_and_operational_roles_may_read(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for role, expected in ((Membership.Role.ADMINISTRATIVE, 403), (Membership.Role.OPERATIONAL, 200), (Membership.Role.OWNER, 200)):
+            with allow_membership_writes():
+                Membership.objects.filter(pk=self.membership.pk).update(role=role)
+            self.assertEqual(self.client.get("/api/v1/categories/").status_code, expected)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_projection_is_ordered_tenant_scoped_and_does_not_write(self, mocked_time):
+        self.make_category("Zeta", monthly_budget=None)
+        first = self.make_category("Alpha", monthly_budget=Decimal("125.50"))
+        foreign_workspace = Workspace.objects.create(name="Foreign Category", slug="foreign-category-list")
+        foreign_membership = Membership.objects.create(workspace=foreign_workspace, user=self.user, role=Membership.Role.OWNER)
+        foreign = self.make_category("Foreign", context=ActiveWorkspaceContext(foreign_workspace, foreign_membership))
+        before = list(Category.objects.values_list("pk", "name", "status", "monthly_budget"))
+        self.authenticate(workspace=self.workspace)
+
+        response = self.client.get("/api/v1/categories/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Cache-Control"], "no-store")
+        items = response.json()["data"]["items"]
+        self.assertEqual([item["name"] for item in items], ["Alpha", "Zeta"])
+        self.assertEqual(items[0]["public_id"], str(first.public_id))
+        self.assertNotIn(str(foreign.public_id), {item["public_id"] for item in items})
+        self.assertEqual(set(items[0]), {"public_id", "name", "description", "default_deductible", "monthly_budget", "status"})
+        self.assertEqual(items[0]["monthly_budget"], "125.50")
+        self.assertIsNone(items[1]["monthly_budget"])
+        self.assertEqual(list(Category.objects.values_list("pk", "name", "status", "monthly_budget")), before)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_selectable_only_exact_values_follow_domain_filter(self, mocked_time):
+        active = self.make_category("Active")
+        inactive = self.make_category("Inactive", status=Category.Status.INACTIVE)
+        self.authenticate(workspace=self.workspace)
+
+        default = self.client.get("/api/v1/categories/")
+        unfiltered = self.client.get("/api/v1/categories/?selectable_only=false")
+        selectable = self.client.get("/api/v1/categories/?selectable_only=true")
+
+        self.assertEqual({item["public_id"] for item in default.json()["data"]["items"]}, {str(active.public_id), str(inactive.public_id)})
+        self.assertEqual({item["public_id"] for item in unfiltered.json()["data"]["items"]}, {str(active.public_id), str(inactive.public_id)})
+        self.assertEqual(selectable.json()["data"]["items"], [
+            {"public_id": str(active.public_id), "name": "Active", "description": "Description for Active", "default_deductible": True, "monthly_budget": "12.50", "status": "ACTIVE"}
+        ])
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_rejects_invalid_query_contract_and_non_get_methods_as_json(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for path in (
+            "/api/v1/categories/?workspace=ignored",
+            "/api/v1/categories/?selectable_only=yes",
+            "/api/v1/categories/?selectable_only=true&selectable_only=false",
+            "/api/v1/categories/?selectable_only=true&extra=value",
+        ):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+        response = self.client.post("/api/v1/categories/")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
+        self.assertEqual(response["Allow"], "GET, HEAD, OPTIONS")
