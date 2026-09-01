@@ -2120,3 +2120,222 @@ class InterfacePreferencesApiTests(TestCase):
         response = self.client.patch("/api/v1/preferences/", data="sidebar_collapsed=true", content_type="text/plain")
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+
+
+class CashActivityReportApiTests(TestCase):
+    path = "/api/v1/reports/cash-activity/"
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="cash-activity-api@example.com", password="correct-horse-battery-staple"
+        )
+        self.other_user = get_user_model().objects.create_user(
+            email="cash-activity-other-api@example.com", password="correct-horse-battery-staple"
+        )
+        self.workspace = Workspace.objects.create(name="Cash Activity API", slug="cash-activity-api")
+        self.membership = Membership.objects.create(
+            workspace=self.workspace, user=self.user, role=Membership.Role.OWNER
+        )
+        self.context = ActiveWorkspaceContext(self.workspace, self.membership)
+        self.category = create_category(
+            self.context,
+            name="Cash Activity",
+            description="Cash activity category",
+            default_deductible=True,
+            monthly_budget=None,
+            status=Category.Status.ACTIVE,
+        )
+
+    def authenticate(self, *, expires_at=1_000_100, workspace=None, user=None):
+        self.client.force_login(user or self.user)
+        session = self.client.session
+        session["api.auth_expires_at"] = expires_at
+        if workspace is not None:
+            session["workspaces.active_workspace_public_id"] = str(workspace.public_id)
+        session.save()
+
+    def make_expense(self, *, context=None, category=None, amount=Decimal("12.50"), occurred_on=date(2026, 5, 1)):
+        from ledger.models import LedgerEntry
+        from ledger.services import record_manual_entry
+
+        return record_manual_entry(
+            context or self.context,
+            idempotency_key=uuid4(),
+            direction=LedgerEntry.Direction.EXPENSE,
+            amount=amount,
+            occurred_on=occurred_on,
+            description="Cash activity expense",
+            category=category or self.category,
+        )
+
+    def issued_invoice(self):
+        proposal = create_proposal(self.context, ClientModel.objects.create(
+            workspace=self.workspace,
+            legal_name="Cash Activity Client",
+            client_type=ClientModel.ClientType.COMPANY,
+            tax_identifier="CASH-ACTIVITY-CLIENT",
+            primary_contact_name="Cash Activity Contact",
+            primary_contact_email="cash-activity-client@example.com",
+        ), "Cash activity proposal", date(2026, 5, 1), date(2026, 5, 1))
+        add_line_item(
+            self.context,
+            proposal,
+            position=1,
+            service_name="Cash activity service",
+            description="Cash activity service",
+            unit_of_measure="HOUR",
+            quantity=Decimal("1.00"),
+            unit_rate=Decimal("10.00"),
+        )
+        proposal = transition_proposal(
+            self.context,
+            send_proposal(self.context, proposal),
+            Proposal.Status.ACCEPTED,
+        )
+        project = convert_accepted_proposal(self.context, proposal)
+        create_fiscal_configuration(
+            self.context,
+            legal_name="Cash Activity LLC",
+            tax_identifier="CASH-ACTIVITY-TAX",
+            tax_regime="GENERAL",
+            applies_vat=False,
+            vat_rate=Decimal("0.00"),
+            withholding_rate=Decimal("0.00"),
+        )
+        return issue_invoice(self.context, create_draft_invoice(self.context, project))
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_requires_live_session_trusted_context_and_fresh_operational_membership(self, mocked_time):
+        query = "?start_date=2026-05-01&end_date=2026-05-01"
+        self.assertEqual(self.client.get(self.path + query).status_code, 401)
+        self.authenticate(expires_at=999_999, workspace=self.workspace)
+        self.assertEqual(self.client.get(self.path + query).status_code, 401)
+        self.authenticate()
+        self.assertEqual(self.client.get(self.path + query).json(), {"error": {"code": "workspace_required"}})
+        self.authenticate(workspace=self.workspace)
+        for role, status in (
+            (Membership.Role.OWNER, 200),
+            (Membership.Role.OPERATIONAL, 200),
+            (Membership.Role.ADMINISTRATIVE, 403),
+        ):
+            with allow_membership_writes():
+                Membership.objects.filter(pk=self.membership.pk).update(role=role)
+            self.assertEqual(self.client.get(self.path + query).status_code, status)
+        superuser = get_user_model().objects.create_superuser(
+            email="cash-activity-superuser@example.com", password="correct-horse-battery-staple"
+        )
+        self.authenticate(workspace=self.workspace, user=superuser)
+        response = self.client.get(self.path + query)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": {"code": "workspace_required"}})
+        self.authenticate(workspace=self.workspace)
+        with allow_membership_writes():
+            Membership.objects.filter(pk=self.membership.pk).delete()
+        self.assertEqual(self.client.get(self.path + query).json(), {"error": {"code": "workspace_required"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_projects_only_public_totals_decimal_strings_and_current_tenant(self, mocked_time):
+        from ledger.models import LedgerEntry
+
+        entry = self.make_expense(amount=Decimal("12.50"))
+        foreign_workspace = Workspace.objects.create(name="Foreign Cash Activity", slug="foreign-cash-activity")
+        foreign_membership = Membership.objects.create(
+            workspace=foreign_workspace, user=self.other_user, role=Membership.Role.OWNER
+        )
+        foreign_context = ActiveWorkspaceContext(foreign_workspace, foreign_membership)
+        foreign_category = create_category(
+            foreign_context,
+            name="Foreign Cash Activity",
+            description="Foreign cash activity category",
+            default_deductible=True,
+            monthly_budget=None,
+            status=Category.Status.ACTIVE,
+        )
+        foreign_entry = self.make_expense(
+            context=foreign_context, category=foreign_category, amount=Decimal("99.99")
+        )
+        before = list(LedgerEntry.objects.values_list("pk", "amount", "created_at"))
+        self.authenticate(workspace=self.workspace)
+
+        response = self.client.get(self.path + "?start_date=2026-05-01&end_date=2026-05-01")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Cache-Control"], "no-store")
+        data = response.json()["data"]
+        self.assertEqual(set(data), {
+            "start_date", "end_date", "timezone", "as_of", "cash_in", "cash_out", "net",
+            "by_client", "by_project", "by_category",
+        })
+        self.assertEqual(data["start_date"], "2026-05-01")
+        self.assertEqual(data["end_date"], "2026-05-01")
+        self.assertEqual(data["timezone"], "America/Guayaquil")
+        self.assertIsInstance(data["as_of"], str)
+        self.assertEqual((data["cash_in"], data["cash_out"], data["net"]), ("0.00", "12.50", "-12.50"))
+        self.assertEqual(data["by_client"], [])
+        self.assertEqual(data["by_project"], [])
+        self.assertEqual(data["by_category"], [{"cash_in": "0.00", "cash_out": "12.50", "net": "-12.50"}])
+        self.assertNotIn(str(entry.public_id), response.content.decode())
+        self.assertNotIn(str(foreign_entry.public_id), response.content.decode())
+        self.assertEqual(list(LedgerEntry.objects.values_list("pk", "amount", "created_at")), before)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_accepts_only_exact_date_query_with_inclusive_366_day_limit(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        self.assertEqual(
+            self.client.get(self.path + "?start_date=2024-01-01&end_date=2024-12-31").status_code,
+            200,
+        )
+        for query in (
+            "",
+            "?start_date=2026-05-01",
+            "?end_date=2026-05-01",
+            "?start_date=&end_date=2026-05-01",
+            "?start_date=2026-05-01&end_date=",
+            "?start_date=20260501&end_date=2026-05-01",
+            "?start_date=2026-02-30&end_date=2026-05-01",
+            "?start_date=2026-05-02&end_date=2026-05-01",
+            "?start_date=2024-01-01&end_date=2025-01-01",
+            "?start_date=9999-12-31&end_date=9999-12-31",
+            "?start_date=2026-05-01&end_date=2026-05-01&workspace=ignored",
+            "?start_date=2026-05-01&start_date=2026-05-01&end_date=2026-05-01",
+        ):
+            response = self.client.get(self.path + query)
+            self.assertEqual(response.status_code, 400, query)
+            self.assertEqual(response.json(), {"error": {"code": "invalid_request"}}, query)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_uses_guayaquil_dates_and_keeps_reversals_as_separate_events(self, mocked_time):
+        invoice = self.issued_invoice()
+        payment = record_payment(
+            self.context,
+            invoice,
+            amount=Decimal("10.00"),
+            idempotency_key=uuid4(),
+            source_type="CASH",
+            source_reference=uuid4().hex,
+            received_at=datetime(2026, 5, 2, 2, 30, tzinfo=datetime_timezone.utc),
+        )
+        reverse_payment(
+            self.context,
+            invoice,
+            payment,
+            idempotency_key=uuid4(),
+            reason="Returned",
+            reversed_at=datetime(2026, 5, 3, 5, 30, tzinfo=datetime_timezone.utc),
+        )
+        self.authenticate(workspace=self.workspace)
+
+        receipt = self.client.get(self.path + "?start_date=2026-05-01&end_date=2026-05-01")
+        reversal = self.client.get(self.path + "?start_date=2026-05-03&end_date=2026-05-03")
+
+        self.assertEqual((receipt.json()["data"]["cash_in"], receipt.json()["data"]["cash_out"]), ("10.00", "0.00"))
+        self.assertEqual((reversal.json()["data"]["cash_in"], reversal.json()["data"]["cash_out"]), ("0.00", "10.00"))
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_rejects_non_get_methods_as_json(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        response = self.client.post(self.path + "?start_date=2026-05-01&end_date=2026-05-01")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
+        self.assertEqual(response["Allow"], "GET, HEAD, OPTIONS")
+        self.assertEqual(response["Cache-Control"], "no-store")

@@ -11,6 +11,7 @@ from .payment_views import PaymentListView
 from .preference_views import InterfacePreferencesView
 from .proposal_views import ProposalListView
 from .project_views import ProjectListView
+from .report_views import CashActivityReportView
 from .service_views import ServiceListView
 from .workspace_views import ActiveWorkspaceSelectionView, WorkspaceListView
 
@@ -33,4 +34,5 @@ urlpatterns = [
     path("invoices/", InvoiceListView.as_view(), name="invoice-list"),
     path("fiscal-configuration/", FiscalConfigurationView.as_view(), name="fiscal-configuration"),
     path("preferences/", InterfacePreferencesView.as_view(), name="interface-preferences"),
+    path("reports/cash-activity/", CashActivityReportView.as_view(), name="cash-activity-report"),
 ]
