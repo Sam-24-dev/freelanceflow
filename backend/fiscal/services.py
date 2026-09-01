@@ -13,6 +13,10 @@ class FiscalAccessDenied(PermissionError):
     """Raised when a caller lacks Fiscal Configuration business access."""
 
 
+class FiscalConfigurationNotConfigured(LookupError):
+    """Raised when an authorized workspace has no fiscal configuration."""
+
+
 def _authorize(context: ActiveWorkspaceContext) -> Workspace:
     try:
         membership = Membership.objects.get(pk=context.membership.pk, workspace=context.workspace)
@@ -67,4 +71,6 @@ def get_current_fiscal_configuration(context: ActiveWorkspaceContext) -> FiscalC
     try:
         return FiscalConfiguration.objects.for_workspace(workspace).latest("version")
     except FiscalConfiguration.DoesNotExist as error:
-        raise FiscalAccessDenied("No fiscal configuration exists in the active workspace.") from error
+        raise FiscalConfigurationNotConfigured(
+            "No fiscal configuration exists in the active workspace."
+        ) from error
