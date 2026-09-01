@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .audit_views import AuditEventListView
 from .auth_views import SessionLoginView, SessionLogoutView, SessionView
 from .client_views import ClientListView
 from .category_views import CategoryListView
@@ -23,6 +24,7 @@ urlpatterns = [
     path("session/logout/", SessionLogoutView.as_view(), name="session-logout"),
     path("workspaces/", WorkspaceListView.as_view(), name="workspace-list"),
     path("workspaces/active/", ActiveWorkspaceSelectionView.as_view(), name="workspace-active"),
+    path("audit-events/", AuditEventListView.as_view(), name="audit-event-list"),
     path("notifications/", NotificationListView.as_view(), name="notification-list"),
     path("payments/", PaymentListView.as_view(), name="payment-list"),
     path("ledger-entries/", LedgerEntryListView.as_view(), name="ledger-entry-list"),
