@@ -4,7 +4,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const shell = require('../assets/js/app-shell.js');
-const acceso = require('../assets/js/acceso.js');
 const activity = require('../assets/js/activity-log.js');
 const bitacora = require('../assets/js/bitacora.js');
 
@@ -24,17 +23,14 @@ test('shell owns the exact membership catalog and unknown navigation fails close
   assert.deepEqual(shell.getNavigationGroupsForMembership({ role: 'unknown' }), []);
 });
 
-test('activation does not persist a membership when legacy cleanup fails', () => {
-  let writes = 0;
-  const session = {
-    getItem: () => null,
-    setItem() { writes += 1; },
-    removeItem() { throw new Error('blocked'); }
-  };
-  assert.equal(acceso.activateAccessMembership('ff-operational-v1', { storage: session }), null);
-  assert.equal(writes, 0);
+test('Access delegates session and workspace authority to the server', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../assets/js/acceso.js'), 'utf8');
+  assert.match(source, /FreelanceFlowApi/);
+  assert.match(source, /api\(\)\.login/);
+  assert.match(source, /api\(\)\.workspaces/);
+  assert.match(source, /api\(\)\.selectWorkspace/);
+  assert.doesNotMatch(source, /(?:FreelanceFlowMembershipContext|localStorage|sessionStorage|activateAccessMembership)/);
 });
-
 test('all protected routes fail closed when membership storage is unavailable', () => {
   const unavailable = shell.readActiveMembership({
     getItem() { throw new Error('blocked'); }
@@ -136,7 +132,7 @@ test('shell keeps expected operational mobile exclusions', () => {
   assert.equal(shell.escapeHTML('<Admin & Co>'), '&lt;Admin &amp; Co&gt;');
 });
 
-test('Access preserves the public shell and renders scoped membership UI', () => {
+test('Access preserves the public shell and renders server-provided workspace UI', () => {
   const html = fs.readFileSync(path.join(__dirname, '../pages/acceso.html'), 'utf8');
   const script = fs.readFileSync(path.join(__dirname, '../assets/js/acceso.js'), 'utf8');
   assert.match(html, /class="skip-link"/);
@@ -145,32 +141,15 @@ test('Access preserves the public shell and renders scoped membership UI', () =>
   assert.match(html, /Volver al inicio/);
   assert.match(html, /class="landing-footer"/);
   assert.equal((html.match(/<h1/g) || []).length, 1);
-  assert.match(script, /membership\.description/);
+  assert.match(script, /workspace_public_id/);
+  assert.match(script, /workspace_name/);
 });
-
-test('Access gives each allowed membership button a distinct accessible name', () => {
-  const createElement = () => ({
-    dataset: {},
-    attributes: {},
-    children: [],
-    append(...children) { this.children.push(...children); },
-    replaceChildren(...children) { this.children = children; },
-    setAttribute(name, value) { this.attributes[name] = value; }
-  });
-  const previousDocument = global.document;
-  global.document = { createElement };
-  try {
-    const container = createElement();
-    acceso.renderMemberships(container, shell.MEMBERSHIPS);
-    const buttons = container.children.map((card) => card.children.at(-1));
-    assert.deepEqual(buttons.map((button) => button.dataset.membershipId), shell.MEMBERSHIPS.map((membership) => membership.id));
-    assert.deepEqual(buttons.map((button) => button.attributes['aria-label']), shell.MEMBERSHIPS.map((membership) => `Continuar en este espacio: ${membership.name}`));
-    assert.notEqual(buttons[0].attributes['aria-label'], buttons[1].attributes['aria-label']);
-  } finally {
-    global.document = previousDocument;
-  }
+test('Access builds accessible names from server-provided workspace names', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../assets/js/acceso.js'), 'utf8');
+  assert.match(source, /button\.dataset\.workspaceId = workspace\.workspace_public_id/);
+  assert.match(source, /Continuar en este espacio: \$\{workspace\.workspace_name\}/);
+  assert.doesNotMatch(source, /dataset\.membershipId/);
 });
-
 test('Access responsive CSS presents real cards without hiding return navigation or footer', () => {
   const html = fs.readFileSync(path.join(__dirname, '../pages/acceso.html'), 'utf8');
   const css = fs.readFileSync(path.join(__dirname, '../assets/css/app.css'), 'utf8');

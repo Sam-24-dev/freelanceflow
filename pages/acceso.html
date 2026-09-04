@@ -31,10 +31,22 @@
       <div class="hero-copy reveal-up">
         <p class="eyebrow">Contexto de trabajo</p>
         <h1 id="access-title">Eleg&#237; d&#243;nde trabajar</h1>
-        <p class="hero-subtitle">Estos espacios y roles ya est&#225;n asignados. Elegir un espacio no modifica tus permisos.</p>
-        <p data-access-error class="access-error" role="alert" aria-live="assertive" tabindex="-1" hidden>No pudimos cargar tus accesos. Volv&#233; a intentarlo.</p>
-        <p data-access-empty class="access-empty" hidden>No hay espacios disponibles para esta identidad. Contact&#225; al administrador.</p>
-        <div class="access-memberships" data-access-memberships aria-label="Espacios disponibles"></div>
+        <p class="hero-subtitle">Inici&#225; sesi&#243;n y eleg&#237; un espacio asignado. La selecci&#243;n no modifica tus permisos.</p>
+        <p data-access-status role="status" aria-live="polite" aria-atomic="true">Preparando acceso&#8230;</p>
+        <p data-access-error class="access-error" role="alert" aria-live="assertive" tabindex="-1" hidden></p>
+        <form data-access-login class="access-membership">
+          <label for="access-email">Correo electr&#243;nico</label>
+          <input id="access-email" name="email" type="email" autocomplete="email" required disabled>
+          <label for="access-password">Contrase&#241;a</label>
+          <input id="access-password" name="password" type="password" autocomplete="current-password" required disabled>
+          <button class="primary-cta" type="submit" disabled>Iniciar sesi&#243;n</button>
+        </form>
+        <button data-access-retry class="secondary-cta" type="button" hidden disabled>Reintentar preparaci&#243;n</button>
+        <section data-access-workspace-section aria-labelledby="workspace-title" hidden>
+          <h2 id="workspace-title">Espacios disponibles</h2>
+          <p data-access-empty class="access-empty" hidden>No hay espacios disponibles para esta identidad. Contact&#225; al administrador.</p>
+          <div class="access-memberships" data-access-memberships aria-label="Espacios disponibles"></div>
+        </section>
       </div>
 
       <div class="hero-visual reveal-up" aria-label="Resumen de contextos de trabajo de FreelanceFlow">
@@ -57,6 +69,7 @@
 
   <script src="../assets/js/app-shell.js"></script>
   <script src="../assets/js/activity-log.js"></script>
+  <script src="../assets/js/api-client.js"></script>
   <script src="../assets/js/acceso.js"></script>
 </body>
 </html>
