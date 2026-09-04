@@ -5,7 +5,7 @@ from uuid import uuid4
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from django.contrib.auth import get_user_model
+from django.contrib.auth import SESSION_KEY, get_user_model
 from django.test import Client, TestCase
 from django.utils import timezone
 
@@ -105,6 +105,127 @@ class SessionApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"data": {"authenticated": False, "active_workspace": None}})
         self.assertEqual(dict(self.client.session.items()), {})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_session_returns_the_revalidated_active_workspace_membership(self, mocked_time):
+        user = get_user_model().objects.get(email=self.email)
+        workspace = Workspace.objects.create(name="Session Studio", slug="session-studio")
+        Membership.objects.create(
+            workspace=workspace,
+            user=user,
+            role=Membership.Role.OPERATIONAL,
+        )
+        self.client.force_login(user)
+        session = self.client.session
+        session["api.auth_expires_at"] = 1_000_100
+        session["workspaces.active_workspace_public_id"] = str(workspace.public_id)
+        session.save()
+
+        response = self.client.get("/api/v1/session/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.content), {"data": {
+            "authenticated": True,
+            "active_workspace": {
+                "workspace_public_id": str(workspace.public_id),
+                "workspace_name": "Session Studio",
+                "workspace_slug": "session-studio",
+                "role": Membership.Role.OPERATIONAL,
+            },
+        }})
+        self.assertEqual(response["Cache-Control"], "no-store")
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_session_clears_invalid_active_workspace_selections_without_fallback(self, mocked_time):
+        user = get_user_model().objects.get(email=self.email)
+        fallback_workspace = Workspace.objects.create(name="Fallback Studio", slug="fallback-studio")
+        Membership.objects.create(
+            workspace=fallback_workspace,
+            user=user,
+            role=Membership.Role.OPERATIONAL,
+        )
+        foreign_workspace = Workspace.objects.create(name="Foreign Session Studio", slug="foreign-session-studio")
+        Membership.objects.create(
+            workspace=foreign_workspace,
+            user=get_user_model().objects.create_user(
+                email="foreign-session@example.com",
+                password="correct-horse-battery-staple",
+            ),
+            role=Membership.Role.OWNER,
+        )
+        revoked_workspace = Workspace.objects.create(name="Revoked Session Studio", slug="revoked-session-studio")
+        revoked_membership = Membership.objects.create(
+            workspace=revoked_workspace,
+            user=user,
+            role=Membership.Role.OPERATIONAL,
+        )
+        revoked_owner = get_user_model().objects.create_user(
+            email="revoked-owner@example.com",
+            password="correct-horse-battery-staple",
+        )
+        Membership.objects.create(
+            workspace=revoked_workspace,
+            user=revoked_owner,
+            role=Membership.Role.OWNER,
+        )
+        remove_membership(
+            workspace_id=revoked_workspace.id,
+            membership_id=revoked_membership.id,
+            actor=revoked_owner,
+        )
+        deleted_workspace = Workspace.objects.create(name="Deleted Session Studio", slug="deleted-session-studio")
+        deleted_public_id = str(deleted_workspace.public_id)
+        deleted_workspace.delete()
+
+        self.client.force_login(user)
+        for selection in (
+            "not-a-workspace-id",
+            str(foreign_workspace.public_id),
+            str(revoked_workspace.public_id),
+            deleted_public_id,
+        ):
+            with self.subTest(selection=selection):
+                session = self.client.session
+                session["api.auth_expires_at"] = 1_000_100
+                session["workspaces.active_workspace_public_id"] = selection
+                session.save()
+
+                response = self.client.get("/api/v1/session/")
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json(), {"data": {
+                    "authenticated": True,
+                    "active_workspace": None,
+                }})
+                self.assertNotIn("workspaces.active_workspace_public_id", self.client.session)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_session_flushes_an_inactive_authenticated_user(self, mocked_time):
+        user = get_user_model().objects.get(email=self.email)
+        workspace = Workspace.objects.create(name="Inactive Session Studio", slug="inactive-session-studio")
+        Membership.objects.create(
+            workspace=workspace,
+            user=user,
+            role=Membership.Role.OPERATIONAL,
+        )
+        self.client.force_login(user)
+        session = self.client.session
+        session["api.auth_expires_at"] = 1_000_100
+        session["workspaces.active_workspace_public_id"] = str(workspace.public_id)
+        session.save()
+        user.is_active = False
+        user.save()
+
+        response = self.client.get("/api/v1/session/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"data": {
+            "authenticated": False,
+            "active_workspace": None,
+        }})
+        self.assertNotIn(SESSION_KEY, self.client.session)
+        self.assertNotIn("api.auth_expires_at", self.client.session)
+        self.assertNotIn("workspaces.active_workspace_public_id", self.client.session)
 
     def test_logout_is_csrf_protected_and_flushes_session(self):
         csrf_client = Client(enforce_csrf_checks=True)
