@@ -2455,8 +2455,25 @@ class AuditEventApiTests(TestCase):
     @patch("api.auth_views.time.time", return_value=1_000_000)
     @patch("api.audit_views.current_time", return_value=1_000_000)
     def test_keyset_pagination_is_descending_and_cursor_is_session_bound(self, mocked_cursor_time, mocked_auth_time):
-        for _ in range(26):
-            self.append_event()
+        from audit.models import AuditEvent
+
+        tied_at = datetime(2025, 1, 1, tzinfo=datetime_timezone.utc)
+        tied_at_json = tied_at.isoformat().replace("+00:00", "Z")
+        actors = []
+        for index in range(26):
+            actor = get_user_model().objects.create_user(
+                email=f"audit-api-event-{index}@example.com",
+                password="correct-horse-battery-staple",
+            )
+            Membership.objects.create(
+                workspace=self.workspace,
+                user=actor,
+                role=Membership.Role.OPERATIONAL,
+            )
+            actors.append(actor)
+        with patch("django.utils.timezone.now", return_value=tied_at):
+            for actor in actors:
+                self.append_event(actor=actor)
         self.authenticate(workspace=self.workspace)
 
         first = self.client.get("/api/v1/audit-events/")
@@ -2464,12 +2481,31 @@ class AuditEventApiTests(TestCase):
         second = self.client.get(f"/api/v1/audit-events/?cursor={cursor}")
 
         items = first.json()["data"]["items"] + second.json()["data"]["items"]
+        expected_events = AuditEvent._base_objects.filter(workspace=self.workspace).select_related("actor").order_by("-created_at", "-pk")
+        expected_items = [
+            {
+                "event_type": event.event_type,
+                "actor_email": event.actor.email,
+                "role_before": event.role_before,
+                "role_after": event.role_after,
+                "created_at": event.created_at.isoformat().replace("+00:00", "Z"),
+            }
+            for event in expected_events
+        ]
         self.assertEqual(len(first.json()["data"]["items"]), 25)
         self.assertEqual(len(second.json()["data"]["items"]), 1)
         self.assertEqual(second.json()["data"]["next_cursor"], None)
-        self.assertEqual(len({item["created_at"] for item in items}), 26)
-        self.assertEqual([item["created_at"] for item in items], sorted((item["created_at"] for item in items), reverse=True))
+        self.assertEqual(items, expected_items)
+        self.assertEqual(len({item["actor_email"] for item in items}), 26)
+        self.assertEqual({item["created_at"] for item in items}, {tied_at_json})
         self.assertEqual(self.client.get(f"/api/v1/audit-events/?cursor={cursor}x").status_code, 400)
+        other_client = Client()
+        other_client.force_login(self.admin)
+        other_session = other_client.session
+        other_session["api.auth_expires_at"] = 1_000_100
+        other_session["workspaces.active_workspace_public_id"] = str(self.workspace.public_id)
+        other_session.save()
+        self.assertEqual(other_client.get(f"/api/v1/audit-events/?cursor={cursor}").status_code, 400)
         from api.audit_views import CURSOR_SESSION_KEY, CURSOR_SIGNER
         nonce = CURSOR_SIGNER.unsign(cursor).split(".", 1)[1]
         original = {"subject": str(self.admin.pk), "workspace": str(self.workspace.public_id), "membership": self.admin_membership.pk, "deadline": 1_000_100}
