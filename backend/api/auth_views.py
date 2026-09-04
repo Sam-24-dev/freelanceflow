@@ -2,12 +2,14 @@ import json
 import time
 from functools import wraps
 
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import SESSION_KEY, authenticate, login, logout
 from django.core.exceptions import RequestDataTooBig
 from django.http import HttpResponse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import ensure_csrf_cookie
+from workspaces.context import WorkspaceContextError, resolve_active_workspace_context
+from workspaces.permissions import WorkspacePermissionDenied
 
 from .http import json_data, json_error
 
@@ -20,6 +22,11 @@ MAX_LOGIN_BODY_BYTES = 16 * 1024
 def authenticated_api_user(request):
     """Return the API user, flushing expired or malformed authenticated sessions."""
     if not request.user.is_authenticated:
+        if SESSION_KEY in request.session:
+            logout(request)
+        return None
+    if not request.user.is_active:
+        logout(request)
         return None
     expires_at = request.session.get(AUTH_EXPIRY_SESSION_KEY)
     if not isinstance(expires_at, (int, float)) or expires_at <= time.time():
@@ -74,7 +81,21 @@ class JsonMethodView(View):
 class SessionView(JsonMethodView):
     def get(self, request):
         authenticated = authenticated_api_user(request) is not None
-        return json_data({"authenticated": authenticated, "active_workspace": None})
+        active_workspace = None
+        if authenticated:
+            try:
+                context = resolve_active_workspace_context(request)
+            except (WorkspaceContextError, WorkspacePermissionDenied):
+                pass
+            else:
+                workspace = context.workspace
+                active_workspace = {
+                    "workspace_public_id": str(workspace.public_id),
+                    "workspace_name": workspace.name,
+                    "workspace_slug": workspace.slug,
+                    "role": context.membership.role,
+                }
+        return json_data({"authenticated": authenticated, "active_workspace": active_workspace})
 
 
 class SessionLoginView(JsonMethodView):
