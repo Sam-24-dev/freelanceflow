@@ -1,4 +1,4 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -16,9 +16,9 @@ function storage(initial = {}) {
 }
 
 test('normalizes valid profile values without mutating the input', () => {
-  const input = { fullName: '  Ana María  ', email: '  ANA@example.com ', country: ' Ecuador ' };
-  assert.deepEqual(model.normalizeProfile(input), { fullName: 'Ana María', email: 'ANA@example.com', country: 'Ecuador' });
-  assert.equal(input.fullName, '  Ana María  ');
+  const input = { fullName: '  Ana MarÃ­a  ', email: '  ANA@example.com ', country: ' Ecuador ' };
+  assert.deepEqual(model.normalizeProfile(input), { fullName: 'Ana MarÃ­a', email: 'ANA@example.com', country: 'Ecuador' });
+  assert.equal(input.fullName, '  Ana MarÃ­a  ');
 });
 
 test('requires every profile field and enforces valid lengths and email shape', () => {
@@ -97,7 +97,7 @@ test('records each successful Cuenta save without weakening the default activity
     getItem: (key) => data.has(key) ? data.get(key) : null,
     setItem: (key, value) => data.set(key, String(value))
   };
-  const log = activity.createActivityLog({ storage, getContext: () => ({ status: 'valid', membership: require('../assets/js/app-shell.js').MEMBERSHIPS[0] }) });
+  const log = activity.createActivityLog({ storage,  });
   const save = { module: 'Cuenta', action: 'Perfil actualizado', description: 'Informaci?n b?sica del perfil actualizada.', deduplicate: false };
 
   log.record(save);

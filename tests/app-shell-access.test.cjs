@@ -1,83 +1,56 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
-
-const shell = require('../assets/js/app-shell.js');
-const operational = () => shell.MEMBERSHIPS[0];
-const administrative = () => shell.MEMBERSHIPS[1];
-const operationalContext = () => ({ status: 'valid', membership: operational() });
-const administrativeContext = () => ({ status: 'valid', membership: administrative() });
-
-test('app shell exposes Bitácora only for administrative profile', () => {
-  const flatten = (groups) => groups.flatMap((group) => group.items.map((item) => item[0]));
-
-  assert.deepEqual(flatten(shell.getNavigationGroupsForMembership(operational())), [
-    'dashboard.html',
-    'transacciones.html',
-    'clientes.html',
-    'proyectos.html',
-    'propuestas.html',
-    'facturas.html',
-    'reportes.html',
-    'notificaciones.html',
-    'categorias.html',
-    'servicios.html',
-    'configuracion-fiscal.html',
-    'ajustes.html',
-    'cuenta.html'
-  ]);
-  assert.deepEqual(flatten(shell.getNavigationGroupsForMembership(administrative())), ['bitacora.html']);
-});
-
-test('app shell redirects profiles away from unauthorized modules', () => {
-  assert.equal(shell.getProtectedRedirect('dashboard.html', ''), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('dashboard.html', 'corrupt'), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('bitacora.html', operationalContext()), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('bitacora.html', administrativeContext()), '');
-  assert.equal(shell.getProtectedRedirect('dashboard.html', administrativeContext()), 'bitacora.html');
-  assert.equal(shell.getProtectedRedirect('transacciones.html', administrativeContext()), 'bitacora.html');
-  assert.equal(shell.getProtectedRedirect('categorias.html', administrativeContext()), 'bitacora.html');
-  assert.equal(shell.getProtectedRedirect('servicios.html', administrativeContext()), 'bitacora.html');
-  assert.equal(shell.getProtectedRedirect('servicios.html', ''), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('servicios.html', operationalContext()), '');
-  assert.equal(shell.getProtectedRedirect('configuracion-fiscal.html', administrativeContext()), 'bitacora.html');
-  assert.equal(shell.getProtectedRedirect('configuracion-fiscal.html', ''), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('configuracion-fiscal.html', operationalContext()), '');
-  assert.equal(shell.getProtectedRedirect('ajustes.html', administrativeContext()), 'bitacora.html');
-  assert.equal(shell.getProtectedRedirect('ajustes.html', ''), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('ajustes.html', operationalContext()), '');
-  assert.equal(shell.getProtectedRedirect('cuenta.html', administrativeContext()), 'bitacora.html');
-  assert.equal(shell.getProtectedRedirect('cuenta.html', ''), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('cuenta.html', operationalContext()), '');
-  assert.equal(shell.getProtectedRedirect('notificaciones.html', administrativeContext()), 'bitacora.html');
-  assert.equal(shell.getProtectedRedirect('notificaciones.html', ''), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('notificaciones.html', operationalContext()), '');
-  assert.equal(shell.getProtectedRedirect('categorias.html', ''), 'acceso.html');
-  assert.equal(shell.getProtectedRedirect('categorias.html', operationalContext()), '');
-  assert.equal(shell.getProtectedRedirect('dashboard.html', operationalContext()), '');
-});
-
-test('bottom navigation is operational-only', () => {
-  assert.deepEqual(shell.getBottomNavigationForMembership(administrative()), []);
-  const operationalBottomNav = shell.getBottomNavigationForMembership(operational());
-  assert.equal(operationalBottomNav.length, 5);
-  assert.equal(operationalBottomNav.some(([href]) => href === 'categorias.html'), false);
-  assert.equal(operationalBottomNav.some(([href]) => href === 'ajustes.html'), false);
-  assert.equal(operationalBottomNav.some(([href]) => href === 'notificaciones.html'), false);
-});
-
-test('app shell escapes stored actor copy before injecting it', () => {
-  assert.equal(shell.escapeHTML('<Admin & Co>'), '&lt;Admin &amp; Co&gt;');
-});
-
-
-test('sidebar brand points from pages to landing root', () => {
-  assert.equal(shell.LANDING_HREF, '../index.html');
-});
-
 const fs = require('node:fs');
 const path = require('node:path');
+const shell = require('../assets/js/app-shell.js');
 
-test('mobile brand also points from pages to landing root', () => {
+test('app shell derives protected-page access only from the server session', async () => {
+  const calls = [];
+  const context = await shell.resolveSessionContext({
+    session: async () => {
+      calls.push('/api/v1/session/');
+      return {
+        authenticated: true,
+        active_workspace: {
+          workspace_public_id: 'workspace-a',
+          workspace_name: 'Studio A',
+          workspace_slug: 'studio-a',
+          role: 'OPERATIONAL'
+        }
+      };
+    }
+  });
+
+  assert.deepEqual(calls, ['/api/v1/session/']);
+  assert.equal(context.status, 'valid');
+  assert.equal(shell.getProtectedRedirect('dashboard.html', context), '');
+  assert.equal(shell.getProtectedRedirect('bitacora.html', context), 'acceso.html');
+  assert.equal(shell.getProtectedRedirect('dashboard.html', { status: 'anonymous' }), 'acceso.html');
+  assert.equal(shell.getProtectedRedirect('dashboard.html', { status: 'workspace_required' }), 'acceso.html');
+});
+
+test('app shell routes exact server workspace roles without an access-dashboard bounce', () => {
+  for (const role of ['OWNER', 'OPERATIONAL']) {
+    const context = shell.sessionContext({
+      authenticated: true,
+      active_workspace: { workspace_public_id: 'workspace-a', workspace_name: 'Studio A', role }
+    });
+    assert.equal(context.status, 'valid');
+    assert.equal(shell.getProtectedRedirect('dashboard.html', context), '');
+    assert.equal(shell.getNavigationGroupsForWorkspace(context.workspace)[0].label, 'Operaci\u00f3n');
+  }
+
+  const administrative = shell.sessionContext({
+    authenticated: true,
+    active_workspace: { workspace_public_id: 'workspace-b', workspace_name: 'Studio B', role: 'ADMINISTRATIVE' }
+  });
+  assert.equal(administrative.status, 'valid');
+  assert.equal(shell.getProtectedRedirect('bitacora.html', administrative), '');
+  assert.equal(shell.getProtectedRedirect('dashboard.html', administrative), 'bitacora.html');
+  assert.equal(shell.getNavigationGroupsForWorkspace(administrative.workspace)[0].label, 'Administraci\u00f3n');
+});
+
+test('app shell does not derive authorization from browser storage', () => {
   const source = fs.readFileSync(path.join(__dirname, '../assets/js/app-shell.js'), 'utf8');
-  assert.match(source, /class="app-mobile-brand" href="\$\{LANDING_HREF\}"/);
+  assert.doesNotMatch(source, /sessionStorage|ACTIVE_MEMBERSHIP|readActiveMembership|activateMembership|MEMBERSHIPS/);
 });
