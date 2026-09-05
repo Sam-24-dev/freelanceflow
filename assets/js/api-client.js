@@ -43,7 +43,9 @@
     login: (email, password) => post('/api/v1/session/login/', { email, password }),
     logout: () => post('/api/v1/session/logout/'),
     workspaces: () => request('/api/v1/workspaces/'),
-    selectWorkspace: (workspacePublicId) => post('/api/v1/workspaces/active/', { workspace_public_id: workspacePublicId })
+    selectWorkspace: (workspacePublicId) => post('/api/v1/workspaces/active/', { workspace_public_id: workspacePublicId }),
+    clients: (cursor) => request(`/api/v1/clients/${cursor == null ? '' : `?cursor=${encodeURIComponent(cursor)}`}`),
+    createClient: (payload) => post('/api/v1/clients/', payload)
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
