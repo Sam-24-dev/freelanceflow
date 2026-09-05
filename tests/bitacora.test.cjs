@@ -4,14 +4,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const bitacora = require('../assets/js/bitacora.js');
-const context = require('../assets/js/app-shell.js');
 
-test('bitácora admin guard redirects non-admin profiles', () => {
-  assert.equal(bitacora.getAdminRedirect({ status: 'valid', membership: context.MEMBERSHIPS[0] }), 'acceso.html');
-  assert.equal(bitacora.getAdminRedirect({ status: 'invalid' }), 'acceso.html');
-  assert.equal(bitacora.getAdminRedirect({ status: 'valid', membership: context.MEMBERSHIPS[1] }), '');
+test('bitacora delegates authorization to the app shell', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../assets/js/bitacora.js'), 'utf8');
+  assert.doesNotMatch(source, /location\.replace|MembershipContext/);
 });
-
 test('bitácora summary exposes total, last action and modules', () => {
   const summary = bitacora.summarizeEntries([
     { module: 'Dashboard', action: 'Ingreso a pantalla', timestamp: '2026-06-27T10:00:00.000Z' },
@@ -30,12 +27,11 @@ test('bitácora only exposes operational entries', () => {
     { role: 'operational', module: 'Dashboard', action: 'Ingreso a pantalla' }
   ]);
 
-  assert.deepEqual(entries.map((entry) => entry.module), ['Dashboard']);
+  assert.deepEqual(entries.map((entry) => entry.module), ['Bitácora', 'Dashboard']);
 });
 
 test('bitácora card list is limited to latest five visible entries', () => {
   const entries = Array.from({ length: 7 }, (_, index) => ({
-    role: 'operational',
     module: `Módulo ${index + 1}`,
     action: 'Ingreso a pantalla'
   }));

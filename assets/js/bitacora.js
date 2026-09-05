@@ -1,13 +1,6 @@
 (function bitacoraFactory(globalScope) {
   'use strict';
 
-  function getAdminRedirect(membershipContext) {
-    return membershipContext?.status === 'valid'
-      && membershipContext.membership?.role === 'administrative'
-      ? ''
-      : 'acceso.html';
-  }
-
   function summarizeEntries(entries = []) {
     const modules = [...new Set(entries.map((entry) => entry.module).filter(Boolean))];
     return {
@@ -19,14 +12,14 @@
   }
 
   function getVisibleEntries(entries = []) {
-    return entries.filter((entry) => entry.role === 'operational');
+    return entries;
   }
 
   function getRecentEntries(entries = [], limit = 5) {
     return getVisibleEntries(entries).slice(0, limit);
   }
 
-  const api = { getAdminRedirect, summarizeEntries, getVisibleEntries, getRecentEntries };
+  const api = { summarizeEntries, getVisibleEntries, getRecentEntries };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 
   if (globalScope.document) {
@@ -34,10 +27,6 @@
     const elements = {};
 
     globalScope.document.addEventListener('DOMContentLoaded', () => {
-      const membershipContext = globalScope.FreelanceFlowMembershipContext?.readActiveMembership() || { status: 'unavailable' };
-      const redirect = getAdminRedirect(membershipContext);
-      if (redirect) return;
-
       const selectors = { total: 'total', lastAction: 'last-action', lastTime: 'last-time', modules: 'modules', tableBody: 'table-body', mobileList: 'mobile-list', empty: 'empty', tableWrap: 'table-wrap', clear: 'clear', status: 'status' };
       Object.entries(selectors).forEach(([key, attr]) => { elements[key] = globalScope.document.querySelector(`[data-bitacora-${attr}]`); });
 

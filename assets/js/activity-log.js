@@ -20,7 +20,6 @@
     'cuenta.html': 'Cuenta',
     'bitacora.html': 'Bitácora'
   });
-  const context = () => globalScope.FreelanceFlowMembershipContext;
   const producerKey = (module, action) => `${module}\u0000${action}`;
   const typeSegment = (value) => value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '-');
   const catalogEntry = (type, module, action, description) => Object.freeze({ type, module, action, description });
@@ -82,25 +81,17 @@
     return !Number.isNaN(date.getTime()) && date.toISOString() === value;
   }
 
-  function trustedOperationalMembership(id) {
-    const membership = context()?.MEMBERSHIPS?.find((item) => item.id === id) || null;
-    return membership?.role === 'operational' ? membership : null;
-  }
-
   function normalizeStoredEntry(entry) {
     if (!entry || entry.version !== SCHEMA_VERSION || !EVENT_BY_TYPE[entry.type] || !isValidTimestamp(entry.timestamp)) return null;
-    if (!trustedOperationalMembership(entry.membershipId)) return null;
-    return { version: SCHEMA_VERSION, type: entry.type, timestamp: entry.timestamp, membershipId: entry.membershipId };
+    if (Object.keys(entry).length !== 3 || !['version', 'type', 'timestamp'].every((key) => Object.hasOwn(entry, key))) return null;
+    return { version: SCHEMA_VERSION, type: entry.type, timestamp: entry.timestamp };
   }
 
   function deriveEntry(entry) {
     const event = EVENT_BY_TYPE[entry.type];
-    const membership = trustedOperationalMembership(entry.membershipId);
-    return event && membership ? {
+    return event ? {
       timestamp: entry.timestamp,
-      actor: membership.actor,
-      role: membership.role,
-      membershipId: membership.id,
+      actor: 'Actividad local',
       module: event.module,
       action: event.action,
       description: event.description
@@ -112,7 +103,6 @@
     const key = options.key || STORAGE_KEY;
     const limit = options.limit || DEFAULT_LIMIT;
     const now = options.now || (() => new Date().toISOString());
-    const getContext = options.getContext || (() => context()?.readActiveMembership(storage) || { status: 'unavailable' });
     let memory = [];
     let storageFailed = false;
 
@@ -151,19 +141,15 @@
 
     function record(entry = {}) {
       try {
-        const membershipContext = getContext();
-        const membership = membershipContext?.status === 'valid'
-          ? trustedOperationalMembership(membershipContext.membership?.id)
-          : null;
         const event = EVENT_BY_PRODUCER[producerKey(entry.module, entry.action)];
         const timestamp = now();
-        if (!membership || !event || !isValidTimestamp(timestamp)) return null;
+        if (!event || !isValidTimestamp(timestamp)) return null;
 
         const existing = validStored();
         const previous = existing[0];
-        if (entry.deduplicate !== false && previous?.membershipId === membership.id && previous.type === event.type) return null;
+        if (entry.deduplicate !== false && previous?.type === event.type) return null;
 
-        const item = { version: SCHEMA_VERSION, type: event.type, timestamp, membershipId: membership.id };
+        const item = { version: SCHEMA_VERSION, type: event.type, timestamp };
         write([item, ...existing]);
         return deriveEntry(item);
       } catch {
@@ -174,10 +160,8 @@
     return { read, record, clear: () => write([]) };
   }
 
-  function shouldRecordPageVisit(file, membershipContext) {
-    return membershipContext?.status === 'valid'
-      && membershipContext.membership?.role === 'operational'
-      && file !== 'bitacora.html';
+  function shouldRecordPageVisit(file) {
+    return file !== 'bitacora.html';
   }
 
   const api = { createActivityLog, shouldRecordPageVisit, pageModules, STORAGE_KEY, SCHEMA_VERSION, EVENT_CATALOG };
@@ -199,8 +183,7 @@
       recordPageVisit() {
         const file = globalScope.location?.pathname?.split('/').pop() || 'dashboard.html';
         const module = pageModules[file];
-        const membershipContext = context()?.readActiveMembership();
-        if (!module || !shouldRecordPageVisit(file, membershipContext)) return null;
+        if (!module || !shouldRecordPageVisit(file)) return null;
         return browserApi.record({ module, action: 'Ingreso a pantalla' });
       },
       recordSearch(module, query) {

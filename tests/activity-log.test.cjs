@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 
 const shell = require('../assets/js/app-shell.js');
 const activity = require('../assets/js/activity-log.js');
-const operational = () => ({ status: 'valid', membership: shell.MEMBERSHIPS[0] });
-const administrative = () => ({ status: 'valid', membership: shell.MEMBERSHIPS[1] });
+const operational = () => ({ status: 'valid', workspace: { role: 'operational' } });
+const administrative = () => ({ status: 'valid', workspace: { role: 'administrative' } });
 
 function storage(initial = {}) {
   const data = new Map(Object.entries(initial));
@@ -35,14 +35,11 @@ test('activity log persists only its closed event contract and derives trusted d
   assert.deepEqual(JSON.parse(session.getItem(activity.STORAGE_KEY)), [{
     version: 1,
     type: 'movements.recorded',
-    timestamp: '2026-06-27T10:00:00.000Z',
-    membershipId: 'ff-operational-v1'
+    timestamp: '2026-06-27T10:00:00.000Z'
   }]);
   assert.deepEqual(api.read()[0], {
     timestamp: '2026-06-27T10:00:00.000Z',
-    actor: 'Equipo operativo',
-    role: 'operational',
-    membershipId: 'ff-operational-v1',
+    actor: 'Actividad local',
     module: 'Movimientos',
     action: 'Movimiento registrado',
     description: 'Se registró un movimiento.'
@@ -57,7 +54,7 @@ test('activity log clears session entries', () => {
   assert.deepEqual(api.read(), []);
 });
 
-test('activity log skips all administrative activity', () => {
+test('activity log remains a local event log for administrative workspaces', () => {
   const api = activity.createActivityLog({
     storage: storage(),
     getContext: administrative
@@ -67,19 +64,20 @@ test('activity log skips all administrative activity', () => {
   assert.deepEqual(api.read(), []);
 });
 
-test('activity log skips activity until a profile is selected', () => {
+test('activity log rejects producers outside its closed catalog', () => {
   const api = activity.createActivityLog({ storage: storage() });
 
-  assert.equal(api.record({ module: 'Dashboard', action: 'Ingreso a pantalla', description: 'Ingreso al módulo Dashboard.' }), null);
+  assert.equal(api.record({ module: 'Unknown', action: 'Unknown' }), null);
   assert.deepEqual(api.read(), []);
 });
 
 test('activity log discards forged, unknown, malformed, and legacy storage entries', () => {
   const session = storage({
     [activity.STORAGE_KEY]: JSON.stringify([
-      { version: 1, type: 'movements.recorded', timestamp: '2026-06-27T10:00:00.000Z', membershipId: 'ff-operational-v1', actor: 'Actor falso' },
-      { version: 1, type: 'unknown.event', timestamp: '2026-06-27T10:00:00.000Z', membershipId: 'ff-operational-v1' },
-      { version: 1, type: 'movements.recorded', timestamp: 'not-a-date', membershipId: 'ff-operational-v1' },
+      { version: 1, type: 'clients.registered', timestamp: '2026-06-27T10:00:00.000Z' },
+      { version: 1, type: 'movements.recorded', timestamp: '2026-06-27T10:00:00.000Z', actor: 'Actor falso' },
+      { version: 1, type: 'unknown.event', timestamp: '2026-06-27T10:00:00.000Z' },
+      { version: 1, type: 'movements.recorded', timestamp: 'not-a-date' },
       { version: 1, type: 'movements.recorded', timestamp: '2026-06-27T10:00:00.000Z', membershipId: 'unknown-membership' },
       { actor: 'Equipo operativo', module: 'Movimientos', action: 'Movimiento registrado', description: 'RUC 0999999999001' }
     ])
@@ -87,16 +85,16 @@ test('activity log discards forged, unknown, malformed, and legacy storage entri
   const api = activity.createActivityLog({ storage: session, getContext: operational });
 
   assert.equal(api.read().length, 1);
-  assert.equal(api.read()[0].actor, 'Equipo operativo');
+  assert.equal(api.read()[0].actor, 'Actividad local');
   assert.doesNotMatch(JSON.stringify(api.read()), /Actor falso|0999999999001|RUC/);
 });
 
 test('activity log reads valid adversarial storage newest first before applying the limit', () => {
   const session = storage({
     [activity.STORAGE_KEY]: JSON.stringify([
-      { version: 1, type: 'movements.recorded', timestamp: '2026-06-27T10:00:00.000Z', membershipId: 'ff-operational-v1' },
-      { version: 1, type: 'clients.registered', timestamp: '2026-06-27T12:00:00.000Z', membershipId: 'ff-operational-v1' },
-      { version: 1, type: 'projects.created', timestamp: '2026-06-27T11:00:00.000Z', membershipId: 'ff-operational-v1' }
+      { version: 1, type: 'movements.recorded', timestamp: '2026-06-27T10:00:00.000Z' },
+      { version: 1, type: 'clients.registered', timestamp: '2026-06-27T12:00:00.000Z' },
+      { version: 1, type: 'projects.created', timestamp: '2026-06-27T11:00:00.000Z' }
     ])
   });
   const api = activity.createActivityLog({ storage: session, limit: 2, getContext: operational });
@@ -153,14 +151,11 @@ test('activity log records the redacted project-status event through its closed 
   assert.deepEqual(JSON.parse(session.getItem(activity.STORAGE_KEY)), [{
     version: 1,
     type: 'projects.status-updated',
-    timestamp: '2026-08-08T12:00:00.000Z',
-    membershipId: 'ff-operational-v1'
+    timestamp: '2026-08-08T12:00:00.000Z'
   }]);
   assert.deepEqual(entry, {
     timestamp: '2026-08-08T12:00:00.000Z',
-    actor: 'Equipo operativo',
-    role: 'operational',
-    membershipId: 'ff-operational-v1',
+    actor: 'Actividad local',
     module: 'Proyectos',
     action: 'Estado de proyecto actualizado',
     description: 'Se actualizó el estado del proyecto.'
@@ -195,18 +190,17 @@ test('activity log stays nonblocking when storage or optional logging dependenci
 });
 
 test('activity log only records operational page visits', () => {
-  assert.equal(activity.shouldRecordPageVisit('bitacora.html', operational()), false);
-  assert.equal(activity.shouldRecordPageVisit('bitacora.html', administrative()), false);
-  assert.equal(activity.shouldRecordPageVisit('dashboard.html', operational()), true);
-  assert.equal(activity.shouldRecordPageVisit('categorias.html', operational()), true);
-  assert.equal(activity.shouldRecordPageVisit('servicios.html', operational()), true);
-  assert.equal(activity.shouldRecordPageVisit('configuracion-fiscal.html', operational()), true);
-  assert.equal(activity.shouldRecordPageVisit('notificaciones.html', operational()), true);
+  assert.equal(activity.shouldRecordPageVisit('bitacora.html'), false);
+  assert.equal(activity.shouldRecordPageVisit('dashboard.html'), true);
+  assert.equal(activity.shouldRecordPageVisit('categorias.html'), true);
+  assert.equal(activity.shouldRecordPageVisit('servicios.html'), true);
+  assert.equal(activity.shouldRecordPageVisit('configuracion-fiscal.html'), true);
+  assert.equal(activity.shouldRecordPageVisit('notificaciones.html'), true);
   assert.equal(activity.pageModules['categorias.html'], 'Categor\u00edas');
   assert.equal(activity.pageModules['servicios.html'], 'Servicios');
   assert.equal(activity.pageModules['configuracion-fiscal.html'], 'Configuraci\u00f3n fiscal');
   assert.equal(activity.pageModules['notificaciones.html'], 'Notificaciones');
-  assert.equal(activity.shouldRecordPageVisit('dashboard.html', administrative()), false);
+  assert.equal(activity.shouldRecordPageVisit('dashboard.html'), true);
 });
 
 test('activity log records meaningful Categories search and actions for operational profile only', () => {
