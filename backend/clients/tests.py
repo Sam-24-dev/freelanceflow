@@ -59,6 +59,18 @@ class ClientModelTests(TestCase):
         self.assertEqual(client.primary_contact_email, "ada@example.com")
         self.assertEqual(client.address, "42 Example Street")
 
+    def test_legacy_client_keeps_new_contact_fields_optional(self):
+        client = self.create_client()
+
+        self.assertIsNone(client.civil_status)
+        self.assertEqual(client.telephone, "")
+
+    def test_client_persists_civil_status_and_telephone(self):
+        client = self.create_client(civil_status="MARRIED", telephone="0225551234")
+
+        self.assertEqual(client.civil_status, "MARRIED")
+        self.assertEqual(client.telephone, "0225551234")
+
     def test_client_rejects_invalid_email(self):
         client = Client(**self.client_data(primary_contact_email="not-an-email"))
 

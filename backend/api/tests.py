@@ -810,6 +810,27 @@ class ClientApiTests(TestCase):
             session["workspaces.active_workspace_public_id"] = str(workspace.public_id)
         session.save()
 
+    def post_json(self, payload, *, client=None):
+        return (client or self.client).post(
+            "/api/v1/clients/", data=json.dumps(payload), content_type="application/json"
+        )
+
+    def client_payload(self, **overrides):
+        payload = {
+            "legal_name": "  Acme   Corporation ",
+            "client_type": "COMPANY",
+            "tax_identifier": "AB- 12.34",
+            "primary_contact_name": " Ada   Lovelace ",
+            "primary_contact_email": "ADA@EXAMPLE.COM ",
+            "primary_contact_phone": " 0999999999 ",
+            "telephone": "0225551234",
+            "address": " 42   Example Street ",
+            "civil_status": "MARRIED",
+            "status": "ACTIVE",
+        }
+        payload.update(overrides)
+        return payload
+
     def make_client(self, legal_name, *, workspace=None, status=ClientModel.Status.ACTIVE, archived_at=None, tax_identifier=None):
         return ClientModel.objects.create(
             workspace=workspace or self.workspace,
@@ -852,6 +873,187 @@ class ClientApiTests(TestCase):
         self.assertEqual(denied.json(), {"error": {"code": "permission_denied"}})
 
     @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_post_creates_session_workspace_client_and_get_returns_refreshable_projection(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        response = self.post_json(self.client_payload())
+
+        self.assertEqual(response.status_code, 201)
+        item = response.json()["data"]
+        self.assertEqual(item["legal_name"], "Acme Corporation")
+        self.assertEqual(item["tax_identifier"], "AB- 12.34")
+        self.assertEqual(item["primary_contact_name"], "Ada Lovelace")
+        self.assertEqual(item["primary_contact_email"], "ada@example.com")
+        self.assertEqual(item["primary_contact_phone"], "0999999999")
+        self.assertEqual(item["telephone"], "0225551234")
+        self.assertEqual(item["address"], "42 Example Street")
+        self.assertEqual(item["civil_status"], "MARRIED")
+        self.assertEqual(item["status"], "ACTIVE")
+        self.assertIsNone(item["archived_at"])
+        self.assertNotIn("workspace", item)
+        self.assertNotIn("workspace_id", item)
+
+        stored = ClientModel.objects.get(public_id=item["public_id"])
+        self.assertEqual(stored.workspace_id, self.workspace.pk)
+        refreshed = self.client.get("/api/v1/clients/").json()["data"]["items"]
+        self.assertIn(item, refreshed)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_post_allows_owner_and_operational_but_denies_administrative_membership(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for role, expected_status in (
+            (Membership.Role.OWNER, 201),
+            (Membership.Role.OPERATIONAL, 201),
+            (Membership.Role.ADMINISTRATIVE, 403),
+        ):
+            with self.subTest(role=role):
+                with allow_membership_writes():
+                    Membership.objects.filter(pk=self.membership.pk).update(role=role)
+                response = self.post_json(
+                    self.client_payload(
+                        legal_name=f"{role} Client", tax_identifier=f"ROLE-{role}"
+                    )
+                )
+                self.assertEqual(response.status_code, expected_status)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_post_requires_authenticated_live_active_workspace_membership(self, mocked_time):
+        payload = self.client_payload()
+        self.assertEqual(self.post_json(payload).status_code, 401)
+        self.authenticate(workspace=self.workspace, expires_at=999_999)
+        self.assertEqual(self.post_json(payload).status_code, 401)
+        self.authenticate()
+        self.assertEqual(self.post_json(payload).json(), {"error": {"code": "workspace_required"}})
+        foreign = Workspace.objects.create(name="Foreign", slug="foreign-client-post")
+        self.authenticate(workspace=foreign)
+        self.assertEqual(self.post_json(payload).json(), {"error": {"code": "workspace_required"}})
+
+        self.authenticate(workspace=self.workspace)
+        with allow_membership_writes():
+            self.membership.delete()
+        self.assertEqual(self.post_json(payload).json(), {"error": {"code": "workspace_required"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_post_requires_csrf_and_accepts_valid_token(self, mocked_time):
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.force_login(self.user)
+        session = csrf_client.session
+        session["api.auth_expires_at"] = 1_000_100
+        session["workspaces.active_workspace_public_id"] = str(self.workspace.public_id)
+        session.save()
+
+        response = self.post_json(self.client_payload(), client=csrf_client)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json(), {"error": {"code": "csrf_failed"}})
+
+        token = csrf_client.get("/api/v1/session/").cookies["csrftoken"].value
+        response = csrf_client.post(
+            "/api/v1/clients/",
+            data=json.dumps(self.client_payload(tax_identifier="CSRF-CLIENT")),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=token,
+        )
+        self.assertEqual(response.status_code, 201)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_post_rejects_unknown_and_workspace_fields_without_creating(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for field, value in (("workspace_id", self.workspace.pk), ("unexpected", True)):
+            with self.subTest(field=field):
+                before = ClientModel.objects.count()
+                response = self.post_json(self.client_payload(**{field: value}))
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+                self.assertEqual(ClientModel.objects.count(), before)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_post_rejects_invalid_json_and_media_type_without_creating(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for body, content_type, status, code in (
+            ("{", "application/json", 400, "invalid_json"),
+            (json.dumps(self.client_payload()), "text/plain", 415, "unsupported_media_type"),
+        ):
+            with self.subTest(content_type=content_type):
+                before = ClientModel.objects.count()
+                response = self.client.post("/api/v1/clients/", data=body, content_type=content_type)
+                self.assertEqual(response.status_code, status)
+                self.assertEqual(response.json(), {"error": {"code": code}})
+                self.assertEqual(ClientModel.objects.count(), before)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_post_rejects_non_object_and_missing_required_fields_without_creating(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        incomplete = self.client_payload()
+        incomplete.pop("legal_name")
+        for payload in ([], incomplete):
+            with self.subTest(payload=payload):
+                before = ClientModel.objects.count()
+                response = self.post_json(payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+                self.assertEqual(ClientModel.objects.count(), before)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_post_rejects_non_string_field_values_without_creating(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for field, value in (("legal_name", 7), ("status", True), ("telephone", 7)):
+            with self.subTest(field=field):
+                before = ClientModel.objects.count()
+                response = self.post_json(self.client_payload(**{field: value}))
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+                self.assertEqual(ClientModel.objects.count(), before)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_post_rejects_whitespace_required_mobile_without_creating(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        for phone in ("   ", "\t\n"):
+            with self.subTest(phone=repr(phone)):
+                before = ClientModel.objects.count()
+                response = self.post_json(self.client_payload(primary_contact_phone=phone))
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+                self.assertEqual(ClientModel.objects.count(), before)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_post_keeps_telephone_optional_and_maps_inactive_to_archived(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        response = self.post_json(
+            self.client_payload(
+                legal_name="No Telephone Client",
+                tax_identifier="NO-TELEPHONE",
+                telephone=None,
+            )
+        )
+        self.assertEqual(response.status_code, 201)
+        client = ClientModel.objects.get(public_id=response.json()["data"]["public_id"])
+        self.assertEqual(client.telephone, "")
+
+        response = self.post_json(
+            self.client_payload(
+                legal_name="Inactive Client",
+                tax_identifier="INACTIVE-CLIENT",
+                status="INACTIVE",
+            )
+        )
+        self.assertEqual(response.status_code, 201)
+        client = ClientModel.objects.get(public_id=response.json()["data"]["public_id"])
+        self.assertEqual(client.status, ClientModel.Status.ARCHIVED)
+        self.assertIsNotNone(client.archived_at)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_post_rejects_duplicate_normalized_tax_identifier_without_creating(self, mocked_time):
+        self.make_client("Existing Client", tax_identifier="AB-12.34")
+        self.authenticate(workspace=self.workspace)
+        before = ClientModel.objects.count()
+
+        response = self.post_json(self.client_payload(tax_identifier="AB 1234"))
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
+        self.assertEqual(ClientModel.objects.count(), before)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
     def test_projects_scoped_active_and_archived_clients_without_private_fields(self, mocked_time):
         self.authenticate(workspace=self.workspace)
         archived = self.make_client("Archived Client", status=ClientModel.Status.ARCHIVED, archived_at=timezone.now())
@@ -863,10 +1065,10 @@ class ClientApiTests(TestCase):
         self.assertEqual(response["Cache-Control"], "no-store")
         items = response.json()["data"]["items"]
         self.assertEqual([item["legal_name"] for item in items], ["Active Client", "Archived Client"])
-        self.assertEqual(set(items[0]), {"public_id", "legal_name", "client_type", "tax_identifier", "primary_contact_name", "primary_contact_email", "primary_contact_phone", "status", "archived_at"})
+        self.assertEqual(set(items[0]), {"public_id", "legal_name", "client_type", "tax_identifier", "primary_contact_name", "primary_contact_email", "primary_contact_phone", "telephone", "address", "civil_status", "status", "archived_at"})
         self.assertEqual(items[1]["public_id"], str(archived.public_id))
         self.assertEqual(response.json()["data"]["next_cursor"], None)
-        self.assertNotIn("address", items[0])
+        self.assertEqual(items[0]["address"], "")
         self.assertNotIn("workspace", items[0])
         with allow_membership_writes():
             Membership.objects.filter(pk=self.membership.pk).update(role=Membership.Role.OPERATIONAL)
@@ -943,10 +1145,10 @@ class ClientApiTests(TestCase):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 400)
             self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
-        response = self.client.post("/api/v1/clients/")
+        response = self.client.put("/api/v1/clients/")
         self.assertEqual(response.status_code, 405)
         self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
-        self.assertEqual(response["Allow"], "GET, HEAD, OPTIONS")
+        self.assertEqual(response["Allow"], "GET, POST, HEAD, OPTIONS")
 
 
 class _FakeServiceQuerySet:
