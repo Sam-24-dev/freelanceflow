@@ -51,9 +51,9 @@ The frontend asks the user to choose a Workspace. It never silently chooses the 
   "data": {
     "authenticated": true,
     "active_workspace": {
-      "public_id": "<workspace-public-id>",
-      "name": "<workspace-name>",
-      "slug": "<workspace-slug>",
+      "workspace_public_id": "<workspace-public-id>",
+      "workspace_name": "<workspace-name>",
+      "workspace_slug": "<workspace-slug>",
       "role": "OWNER | OPERATIONAL | ADMINISTRATIVE"
     }
   }
@@ -88,6 +88,7 @@ This fixed the discovered redirect-loop defect: lowercase client literals treate
 | Django full suite receipt after same-origin integration | 346 passed, 14 expected skips; all 26 MySQL child processes completed. |
 | Django checks and migration drift on the integrated backend baseline | Passed. |
 | Disposable MySQL test database | Confirmed absent after the completed Django suites. |
+| Authenticated local harness supporting Django tests | 27/27 passed; disposable test database absent after teardown. |
 
 PR #169 changes only static frontend JavaScript, HTML, and Node tests; it makes no backend, migration, dependency-manifest, or database change.
 
@@ -101,6 +102,7 @@ PR #169 changes only static frontend JavaScript, HTML, and Node tests; it makes 
 | `npm ci --ignore-scripts` | Passed using only the committed lockfile; restored declared `jspdf` without changing source or manifests. |
 | `npm test` | 327/327 passed. |
 | `git diff --check` | Passed; Windows LF/CRLF notices were non-blocking. |
+| Authenticated-flow frontend checks | `npm run validate` passed; 14/14 relevant frontend tests passed. |
 
 ### Anonymous browser smoke
 
@@ -115,7 +117,22 @@ Observed:
 - Anonymous navigation to `/pages/dashboard.html` returned to `/pages/acceso.html`; no browser storage granted protected access.
 - The temporary harness and browser tab were closed; the local port was confirmed closed.
 
-Login and Workspace selection are proven by the Django API contract tests and focused frontend tests. The smoke intentionally did not create a persistent user, submit credentials, or mutate the database.
+Login and Workspace selection are also covered by the authenticated local harness below. Neither smoke uses persistent production data.
+
+### Authenticated local HTTP harness smoke
+
+A disposable Django/MySQL test environment created only a temporary User, Workspace, and valid Membership. The harness exercised the real HTTP, cookie, CSRF, session, and active-Workspace contract, then removed all temporary state.
+
+Observed:
+
+- `/pages/acceso.html` began unauthenticated.
+- Valid login returned permitted Workspaces; selecting the permitted Workspace reached the appropriate Dashboard/shell.
+- Refresh revalidated `active_workspace` through the backend rather than browser state.
+- Logout returned protected access to its unauthenticated response.
+- Selecting an unauthorized Workspace returned `404` and never granted access.
+- The disposable test database, temporary records, and local server were absent after teardown.
+
+No browser-automation dependency was installed: the evidence is an authenticated HTTP harness over the real Django CSRF/session boundary, not a claim of Playwright browser automation.
 
 ## Security and Deployment Boundary
 
@@ -147,11 +164,11 @@ The browser harness above is development-only evidence, not deployment proof. Th
 | Logout returns to unauthenticated state | PASS |
 | Cross-workspace or stale browser state does not authorize access | PASS |
 | Backend remains authoritative | PASS |
-| Browser/API evidence exists | PASS, bounded to anonymous smoke plus authenticated contract/frontend tests |
+| Browser/API evidence exists | PASS, including anonymous browser smoke and authenticated real HTTP/CSRF harness evidence |
 | Phase 2 modules remain untouched | PASS |
 
 ## Next Step
 
-**STOP. Request explicit approval before Phase 2 — Core Operational Integration: Clients, Services, Categories.**
+**STOP. Request explicit approval before Phase 2 - Core Operational Integration: Clients, Services, Categories.**
 
 FREELANCEFLOW PHASE 1 READY FOR REVIEW
