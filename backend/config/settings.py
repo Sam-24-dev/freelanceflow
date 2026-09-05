@@ -6,6 +6,7 @@ from pathlib import Path
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+FRONTEND_DIR = BASE_DIR.parent
 
 
 def required_env(name: str) -> str:
@@ -60,7 +61,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [FRONTEND_DIR],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -107,7 +108,12 @@ TIME_ZONE = "America/Guayaquil"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_DIRS = [
+    ("assets", FRONTEND_DIR / "assets"),
+    ("img", FRONTEND_DIR / "img"),
+]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"
 TEST_RUNNER = "config.test_runner.ImmutableTriggerSafeDiscoverRunner"
