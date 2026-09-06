@@ -2,7 +2,7 @@ from django.urls import path
 
 from .audit_views import AuditEventListView
 from .auth_views import SessionLoginView, SessionLogoutView, SessionView
-from .client_views import ClientListView
+from .client_views import ClientDetailView, ClientListView
 from .category_views import CategoryListView
 from .fiscal_views import FiscalConfigurationView
 from .invoice_views import InvoiceListView
@@ -29,6 +29,7 @@ urlpatterns = [
     path("payments/", PaymentListView.as_view(), name="payment-list"),
     path("ledger-entries/", LedgerEntryListView.as_view(), name="ledger-entry-list"),
     path("clients/", ClientListView.as_view(), name="client-list"),
+    path("clients/<uuid:public_id>/", ClientDetailView.as_view(), name="client-detail"),
     path("categories/", CategoryListView.as_view(), name="category-list"),
     path("services/", ServiceListView.as_view(), name="service-list"),
     path("proposals/", ProposalListView.as_view(), name="proposal-list"),

@@ -62,7 +62,8 @@
       correo: record.primary_contact_email,
       direccion: record.address,
       estadoCivil: civilStatusMap[civilStatus] ?? '',
-      estado: record.status === 'ARCHIVED' ? 'inactivo' : 'activo'
+      estado: record.status === 'ARCHIVED' ? 'inactivo' : 'activo',
+      fecha_registro: record.created_at
     });
     client.estadoCivil = civilStatusMap[civilStatus] ?? '';
     return client;

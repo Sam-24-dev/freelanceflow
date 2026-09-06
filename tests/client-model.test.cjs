@@ -32,7 +32,8 @@ test('mapApiClientRecord maps the public API record into the directory view mode
     address: '42 Example Street',
     civil_status: 'MARRIED',
     status: 'ACTIVE',
-    archived_at: null
+    archived_at: null,
+    created_at: '2026-09-05T14:30:00Z'
   });
 
   assert.deepEqual(client, {
@@ -50,7 +51,7 @@ test('mapApiClientRecord maps the public API record into the directory view mode
     direccion: '42 Example Street',
     estadoCivil: 'casado',
     estado: 'activo',
-    fecha_registro: ''
+    fecha_registro: '2026-09-05T14:30:00Z'
   });
 });
 
@@ -420,9 +421,11 @@ function createActivity() {
     now: () => new Date(Date.UTC(2026, 6, 1, 0, 0, tick++)).toISOString()
   });
 }
-function bootController({ clientStorage, formValues = {}, api = {} }) {
+function bootController({ clientStorage, formValues = {}, api = {}, disabledEstado = false }) {
   const activity = createActivity();
   const form = fakeElement({ hidden: false });
+  form.querySelector = (selector) => selector === '[name="estado"]:checked' && disabledEstado ? { value: 'activo', checked: true, disabled: true } : null;
+  form.elements = { namedItem() { return null; } };
   const elements = {
     appLayout: fakeElement(),
     backdrop: fakeElement(),
@@ -450,8 +453,9 @@ function bootController({ clientStorage, formValues = {}, api = {} }) {
     Intl,
     Date,
     URLSearchParams,
+    RadioNodeList: class {},
     FormData: class {
-      get(name) { return currentValues[name] ?? ''; }
+      get(name) { return name === 'estado' && disabledEstado ? '' : currentValues[name] ?? ''; }
     },
     requestAnimationFrame: (callback) => callback(),
     setTimeout: () => 1,
@@ -475,7 +479,8 @@ function bootController({ clientStorage, formValues = {}, api = {} }) {
         loadAndRenderClients,
         renderDirectory,
         handleFormSubmit,
-        applyClientFieldChange
+        applyClientFieldChange,
+        handleInlineChange
       };
     }());`);
   vm.runInNewContext(source, context, { filename: 'clientes.js' });
@@ -611,7 +616,7 @@ test('B2.1 blocks form submission without local persistence or fake success', ()
   assert.deepEqual(harness.controller.state.clients.map((client) => client.id), ['cli_base']);
   assert.equal(harness.controller.state.drawerMode, 'form');
   assert.equal(harness.elements.formSummary.hidden, false);
-  assert.match(harness.elements.formSummary.textContent, /servidor/i);
+  assert.match(harness.elements.formSummary.textContent, /lifecycle/i);
   assert.equal(harness.elements.toast.dataset.type, 'error');
   assert.equal(harness.activity.read().length, 0);
 });
@@ -688,6 +693,52 @@ test('B2.3 does not claim success when the post-create refresh fails', async () 
   assert.equal(harness.activity.read().length, 0);
 });
 
+test('B2.4 PATCHes edit with a checked but disabled lifecycle status radio omitted from FormData', async () => {
+  const calls = []; let writes = 0;
+  const harness = bootController({
+    disabledEstado: true, clientStorage: { getItem() { return null; }, setItem() { writes += 1; } },
+    api: {
+      async updateClient(id, payload) { calls.push(['patch', id, payload]); return { public_id: id }; },
+      async clients() {
+        calls.push(['clients', null]);
+        return { items: [{ public_id: 'cli_base', legal_name: 'Server Confirmed', client_type: 'COMPANY', tax_identifier: 'RUC-100',
+          primary_contact_name: 'Ana P?rez', primary_contact_email: 'ana@example.com', primary_contact_phone: '0991234567',
+          telephone: '', address: '', civil_status: 'MARRIED', status: 'ACTIVE', archived_at: null,
+          created_at: '2026-07-01T00:00:00Z' }], next_cursor: null };
+      }
+    }, formValues: validForm({ id: 'cli_base', nombre_razon_social: 'Edited Client', estadoCivil: 'casado' })
+  });
+  await harness.controller.handleFormSubmit({ preventDefault() {} });
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    ['patch', 'cli_base', { legal_name: 'Edited Client', client_type: 'COMPANY', tax_identifier: 'RUC-200',
+      primary_contact_name: 'Nora Vega', primary_contact_email: 'nora@example.com', primary_contact_phone: '0997654321', civil_status: 'MARRIED', telephone: '', address: '' }],
+    ['clients', null]
+  ]);
+  assert.equal(harness.controller.state.clients[0].nombre_razon_social, 'Server Confirmed');
+  assert.equal(harness.controller.state.clients[0].estadoCivil, 'casado');
+  assert.equal(writes, 0); assert.equal(harness.elements.toast.dataset.type, 'success');
+});
+
+test('B2.4 restores confirmed inline civil status on direct PATCH rejection without local persistence', async () => {
+  let writes = 0;
+  const harness = bootController({ clientStorage: { getItem() { return null; }, setItem() { writes += 1; } }, api: { async updateClient() { throw new Error('invalid_request'); } } });
+  const select = { value: 'divorciado', dataset: { clientField: 'estadoCivil', clientId: 'cli_base' }, closest: () => select };
+  await harness.controller.handleInlineChange({ target: select });
+  assert.equal(select.value, 'soltero');
+  assert.equal(harness.controller.state.clients[0].estadoCivil, 'soltero');
+  assert.equal(writes, 0); assert.equal(harness.elements.toast.dataset.type, 'error');
+});
+
+test('B2.4 keeps confirmed server state and reports no success after a refresh error', async () => {
+  const harness = bootController({
+    api: { async updateClient() { return {}; }, async clients() { throw new Error('refresh failed'); } },
+    formValues: validForm({ id: 'cli_base', nombre_razon_social: 'Rejected Client' })
+  });
+  await harness.controller.handleFormSubmit({ preventDefault() {} });
+  assert.equal(harness.controller.state.clients[0].nombre_razon_social, 'Baseline Client');
+  assert.equal(harness.controller.state.drawerMode, 'form');
+  assert.equal(harness.elements.toast.dataset.type, 'error');
+});
 test('B2.1 blocks inline mutations without local persistence or success feedback', () => {
   let writes = 0;
   const storage = memoryStorage();
@@ -709,23 +760,23 @@ test('B2.1 exposes disabled mutation controls while preserving directory and dra
   const source = fs.readFileSync(path.join(__dirname, '../assets/js/clientes.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../pages/clientes.html'), 'utf8');
 
-  assert.match(source, /MUTATIONS_ENABLED\s*=\s*false/);
+  assert.match(source, /LIFECYCLE_ENABLED\s*=\s*false/);
   assert.match(source, /mutationControlAttributes\(\)/);
   assert.match(source, /return MUTATIONS_ENABLED \? '' : '[^']*disabled/);
   assert.doesNotMatch(html, /id="client-submit-button"[^>]*disabled/);
-  assert.match(html, /id="client-detail-edit"[^>]*disabled/);
+  assert.doesNotMatch(html, /id="client-detail-edit"[^>]*disabled/);
   ['client-search', 'data-client-status', 'client-drawer', 'client-form'].forEach((hook) => assert.match(html, new RegExp(hook)));
 });
 
-test('B2.3 enables create while keeping edit and inline mutations disabled', () => {
+test('B2.4 enables edit and civil status PATCH while lifecycle controls remain disabled', () => {
   const source = fs.readFileSync(path.join(__dirname, '../assets/js/clientes.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../pages/clientes.html'), 'utf8');
 
-  assert.match(source, /CREATE_ENABLED\s*=\s*true/);
-  assert.match(source, /window\.FreelanceFlowApi\.createClient\(/);
-  assert.match(source, /if \(draft\.id\)\s*\{\s*showMutationUnavailable\(\);/s);
-  assert.match(source, /mutationControlAttributes\(\)/);
-  assert.match(html, /id="client-submit-button"[^>]*type="submit"(?![^>]*disabled)/);
-  assert.match(html, /id="client-detail-edit"[^>]*disabled[^>]*aria-disabled="true"/);
+  assert.match(source, /EDIT_ENABLED\s*=\s*true/);
+  assert.match(source, /window\.FreelanceFlowApi\.updateClient\(/);
+  assert.match(source, /field === 'estadoCivil'/);
+  assert.match(source, /LIFECYCLE_ENABLED\s*=\s*false/);
+  assert.match(html, /id="client-detail-edit"[^>]*type="button"(?![^>]*disabled)/);
+  assert.match(html, /archive and restore remain pending lifecycle/i);
 });
 }());

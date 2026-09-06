@@ -133,3 +133,31 @@ test('createClient preserves API error status and error code', async () => {
     harness.restore();
   }
 });
+
+
+test('updateClient sends a narrow PATCH with CSRF to one public client URL', async () => {
+  const calls = [];
+  const payload = { legal_name: 'Updated Acme', civil_status: 'MARRIED' };
+  const responseData = { public_id: 'client-1', legal_name: 'Updated Acme' };
+  const harness = loadClient({
+    cookie: 'csrftoken=csrf%20token',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200, json: async () => ({ data: responseData }) };
+    }
+  });
+
+  try {
+    assert.deepEqual(await harness.api.updateClient('client-1', payload), responseData);
+    assert.deepEqual(calls, [{
+      url: '/api/v1/clients/client-1/',
+      options: {
+        credentials: 'same-origin', method: 'PATCH',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRFToken': 'csrf token' },
+        body: JSON.stringify(payload)
+      }
+    }]);
+  } finally {
+    harness.restore();
+  }
+});

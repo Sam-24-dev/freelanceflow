@@ -4,7 +4,10 @@
   const model = window.FreelanceFlowClientModel;
   const MUTATIONS_ENABLED = false;
   const CREATE_ENABLED = true;
-  const MUTATION_UNAVAILABLE_MESSAGE = 'Los cambios de clientes estarán disponibles cuando finalice la migración al servidor.';
+  const EDIT_ENABLED = true;
+  const INLINE_CIVIL_STATUS_ENABLED = true;
+  const LIFECYCLE_ENABLED = false;
+  const MUTATION_UNAVAILABLE_MESSAGE = 'Archive and restore remain pending lifecycle.';
 
   const state = {
     clients: [],
@@ -80,7 +83,7 @@
   }
 
   function syncMutationControls() {
-    [[elements.detailEdit, !MUTATIONS_ENABLED], [elements.submitButton, !CREATE_ENABLED]].forEach(([control, disabled]) => {
+    [[elements.detailEdit, !EDIT_ENABLED], [elements.submitButton, !CREATE_ENABLED]].forEach(([control, disabled]) => {
       if (!control) return;
       control.disabled = disabled;
       if (disabled) {
@@ -134,7 +137,8 @@
     });
   }
 
-  async function loadAndRenderClients() {
+  async function loadAndRenderClients({ preserveOnError = false } = {}) {
+    const confirmedClients = state.clients;
     setLoading(true);
     elements.dataError.hidden = true;
     state.clients = [];
@@ -160,8 +164,11 @@
       setLoading(false);
       return true;
     } catch (error) {
-      state.clients = [];
-      showFatalError(error);
+      state.clients = preserveOnError ? confirmedClients : [];
+      if (preserveOnError) {
+        setLoading(false);
+        elements.dataError.hidden = false;
+      } else showFatalError(error);
       return false;
     }
   }
@@ -225,7 +232,7 @@
         <td><a href="mailto:${escapeAttribute(client.correo)}">${escapeHtml(client.correo)}</a><small>${escapeHtml(client.celular)}</small></td>
         <td>${renderInlineSelect(client, 'estadoCivil')}</td>
         <td>${renderInlineSelect(client, 'estado')}</td>
-        <td><div class="client-row-actions"><button type="button" data-action="view-client" data-client-id="${escapeAttribute(client.id)}">Ver detalle</button><button class="client-icon-action" type="button" data-action="edit-client" data-client-id="${escapeAttribute(client.id)}" aria-label="Editar ${escapeAttribute(client.nombre_razon_social)}"${mutationControlAttributes()}><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg></button></div></td>
+        <td><div class="client-row-actions"><button type="button" data-action="view-client" data-client-id="${escapeAttribute(client.id)}">Ver detalle</button><button class="client-icon-action" type="button" data-action="edit-client" data-client-id="${escapeAttribute(client.id)}" aria-label="Editar ${escapeAttribute(client.nombre_razon_social)}"${editControlAttributes()}><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg></button></div></td>
       </tr>`;
   }
 
@@ -248,7 +255,7 @@
         </div>
         <footer>
           <button type="button" class="clients-secondary-action" data-action="view-client" data-client-id="${escapeAttribute(client.id)}">Ver detalle</button>
-          <button type="button" class="client-icon-action" data-action="edit-client" data-client-id="${escapeAttribute(client.id)}" aria-label="Editar ${escapeAttribute(client.nombre_razon_social)}"${mutationControlAttributes()}><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg></button>
+          <button type="button" class="client-icon-action" data-action="edit-client" data-client-id="${escapeAttribute(client.id)}" aria-label="Editar ${escapeAttribute(client.nombre_razon_social)}"${editControlAttributes()}><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg></button>
         </footer>
       </li>`;
   }
@@ -260,11 +267,19 @@
     const className = isCivil ? '' : ` client-status-select client-status-${client.estado}`;
     const hasValue = options.includes(client[field]);
     const fallback = isCivil && !hasValue ? '<option value="" selected disabled>No registrado</option>' : '';
-    return `<select class="client-inline-select${className}" name="client-${field}-${escapeAttribute(client.id)}" data-client-field="${field}" data-client-id="${escapeAttribute(client.id)}" aria-label="Cambiar ${label} de ${escapeAttribute(client.nombre_razon_social)}"${mutationControlAttributes()}>${fallback}${options.map((option) => `<option value="${escapeAttribute(option)}"${option === client[field] ? ' selected' : ''}>${escapeHtml(titleCase(option))}</option>`).join('')}</select>`;
+    return `<select class="client-inline-select${className}" name="client-${field}-${escapeAttribute(client.id)}" data-client-field="${field}" data-client-id="${escapeAttribute(client.id)}" aria-label="Cambiar ${label} de ${escapeAttribute(client.nombre_razon_social)}"${isCivil ? inlineCivilControlAttributes() : mutationControlAttributes()}>${fallback}${options.map((option) => `<option value="${escapeAttribute(option)}"${option === client[field] ? ' selected' : ''}>${escapeHtml(titleCase(option))}</option>`).join('')}</select>`;
   }
 
   function mutationControlAttributes() {
-    return MUTATIONS_ENABLED ? '' : ' disabled aria-disabled="true" aria-describedby="client-mutations-disabled" title="Cambios no disponibles durante la migración al servidor"';
+    return MUTATIONS_ENABLED ? '' : ' disabled aria-disabled="true" aria-describedby="client-mutations-disabled" title="Archive and restore remain pending lifecycle"';
+  }
+
+  function editControlAttributes() {
+    return EDIT_ENABLED ? '' : mutationControlAttributes();
+  }
+
+  function inlineCivilControlAttributes() {
+    return INLINE_CIVIL_STATUS_ENABLED ? '' : mutationControlAttributes();
   }
 
   function handleActionClick(event) {
@@ -287,7 +302,8 @@
   function handleInlineChange(event) {
     const select = event.target.closest('[data-client-field]');
     if (!select) return;
-    if (!MUTATIONS_ENABLED) {
+    const field = select.dataset.clientField;
+    if (field !== 'estadoCivil' || !INLINE_CIVIL_STATUS_ENABLED) {
       showMutationUnavailable();
       renderDirectory();
       return;
@@ -295,7 +311,6 @@
 
     const client = findClient(select.dataset.clientId);
     if (!client) return;
-    const field = select.dataset.clientField;
     const nextValue = select.value;
 
     if (field === 'estado' && nextValue === 'inactivo' && client.estado !== 'inactivo') {
@@ -304,7 +319,8 @@
       return;
     }
 
-    applyClientFieldChange(client.id, field, nextValue);
+    select.value = client[field];
+    return applyClientFieldChange(client.id, field, nextValue);
   }
 
   function resolveStatusDialog() {
@@ -325,28 +341,33 @@
     }
   }
 
+  function civilStatusCode(value) {
+    return { soltero: 'SINGLE', casado: 'MARRIED', divorciado: 'DIVORCED', separado: 'SEPARATED' }[value]
+      || (value ? 'COMMONLAW' : '');
+  }
+
   function applyClientFieldChange(clientId, field, value) {
-    if (!MUTATIONS_ENABLED) return showMutationUnavailable();
-    const allowed = field === 'estadoCivil' ? model.CIVIL_STATUS_OPTIONS : model.CLIENT_STATUS_OPTIONS;
-    if (!allowed.includes(value)) return;
-
-    const candidateClients = state.clients.map((client) => client.id === clientId ? { ...client, [field]: value } : client);
-    if (!saveClients(candidateClients)) {
-      renderAll();
-      showToast('No se pudo guardar el cambio. El cliente conserva su información anterior.', 'error');
-      return false;
-    }
-
-    state.clients = candidateClients;
-    renderAll();
-    recordActivity('Cliente actualizado');
-    const message = field === 'estadoCivil'
-      ? 'Estado civil actualizado.'
-      : value === 'inactivo'
-        ? 'Cliente inactivado. Su historial se mantiene disponible.'
-        : 'Estado del cliente actualizado.';
-    showToast(message, 'success');
-    return true;
+    if (field !== 'estadoCivil' || !INLINE_CIVIL_STATUS_ENABLED || !model.CIVIL_STATUS_OPTIONS.includes(value)
+      || !window.FreelanceFlowApi?.updateClient) return showMutationUnavailable();
+    const confirmedClients = state.clients;
+    return window.FreelanceFlowApi.updateClient(clientId, { civil_status: civilStatusCode(value) })
+      .then(async () => {
+        if (!await loadAndRenderClients({ preserveOnError: true })) {
+          state.clients = confirmedClients;
+          renderAll();
+          showToast('No se pudo actualizar el directorio. El cliente conserva su informacion confirmada.', 'error');
+          return false;
+        }
+        showToast('Estado civil actualizado.', 'success');
+        return true;
+      })
+      .catch((error) => {
+        console.error(error);
+        state.clients = confirmedClients;
+        renderAll();
+        showToast('No se pudo guardar el cambio. El cliente conserva su informacion confirmada.', 'error');
+        return false;
+      });
   }
 
   function openDetail(client, trigger) {
@@ -391,7 +412,7 @@
   }
 
   function openEditForm(client, trigger) {
-    if (!MUTATIONS_ENABLED) return showMutationUnavailable();
+    if (!EDIT_ENABLED) return showMutationUnavailable();
     prepareForm(client);
     elements.drawerEyebrow.textContent = 'Actualizar ficha comercial';
     elements.drawerTitle.textContent = 'Editar cliente';
@@ -423,6 +444,9 @@
     setFormValue('address', values.direccion);
     const status = elements.form.querySelector(`[name="estado"][value="${values.estado || 'activo'}"]`);
     if (status) status.checked = true;
+    elements.form.querySelectorAll('[name="estado"]').forEach((control) => {
+      control.disabled = Boolean(client) && !LIFECYCLE_ENABLED;
+    });
     state.formDirty = false;
   }
 
@@ -496,50 +520,46 @@
 
   async function handleFormSubmit(event) {
     event.preventDefault();
-    if (!CREATE_ENABLED || !window.FreelanceFlowApi?.createClient) {
-      showMutationUnavailable();
-      return;
-    }
     const draft = readForm();
+    const isEdit = Boolean(draft.id);
+    if ((isEdit && (!EDIT_ENABLED || !window.FreelanceFlowApi?.updateClient))
+      || (!isEdit && (!CREATE_ENABLED || !window.FreelanceFlowApi?.createClient))) return showMutationUnavailable();
     const validation = model.validateClient(draft, state.clients);
     clearFormErrors();
 
     if (!validation.valid) {
       Object.entries(validation.errors).forEach(([field, message]) => setFieldError(field, message));
-      elements.formSummary.textContent = 'Revisa los campos señalados antes de guardar.';
+      elements.formSummary.textContent = 'Revisa los campos indicados antes de guardar.';
       elements.formSummary.hidden = false;
-      const firstInvalid = elements.form.querySelector('[aria-invalid="true"]');
-      firstInvalid?.focus();
-      return;
-    }
-
-    if (draft.id) {
-      showMutationUnavailable();
-      elements.submitButton.disabled = false;
-      elements.submitButton.textContent = 'Registrar cliente';
+      elements.form.querySelector('[aria-invalid="true"]')?.focus();
       return;
     }
 
     elements.submitButton.disabled = true;
-    elements.submitButton.textContent = 'Registrando…';
-
+    elements.submitButton.textContent = isEdit ? 'Guardando...' : 'Registrando...';
+    const confirmedClients = state.clients;
     try {
-      await window.FreelanceFlowApi.createClient(buildCreatePayload(draft));
-      if (!await loadAndRenderClients()) {
-        showFormError('No se pudo actualizar el directorio después de registrar. Mantén el formulario abierto e inténtalo nuevamente.');
+      if (isEdit) await window.FreelanceFlowApi.updateClient(draft.id, buildUpdatePayload(draft));
+      else await window.FreelanceFlowApi.createClient(buildCreatePayload(draft));
+      if (!await loadAndRenderClients({ preserveOnError: true })) {
+        state.clients = confirmedClients;
+        renderAll();
+        showFormError('No se pudo actualizar el directorio. El cliente conserva su informacion confirmada.');
         showToast('No se pudo actualizar el directorio.', 'error');
         return;
       }
       state.formDirty = false;
       closeDrawer();
-      showToast('Cliente registrado exitosamente.', 'success');
+      showToast(isEdit ? 'Cliente actualizado exitosamente.' : 'Cliente registrado exitosamente.', 'success');
     } catch (error) {
       console.error(error);
-      showFormError('No se pudo registrar el cliente. Revisa los datos e inténtalo nuevamente.');
-      showToast('No se pudo registrar el cliente.', 'error');
+      state.clients = confirmedClients;
+      renderAll();
+      showFormError(isEdit ? 'No se pudo actualizar el cliente. Revisa los datos e intentalo nuevamente.' : 'No se pudo registrar el cliente. Revisa los datos e intentalo nuevamente.');
+      showToast(isEdit ? 'No se pudo actualizar el cliente.' : 'No se pudo registrar el cliente.', 'error');
     } finally {
       elements.submitButton.disabled = false;
-      elements.submitButton.textContent = 'Registrar cliente';
+      elements.submitButton.textContent = isEdit ? 'Guardar cambios' : 'Registrar cliente';
     }
   }
 
@@ -559,6 +579,14 @@
     };
     if (draft.telefono) payload.telephone = draft.telefono;
     if (draft.direccion) payload.address = draft.direccion;
+    return payload;
+  }
+
+  function buildUpdatePayload(draft) {
+    const payload = buildCreatePayload(draft);
+    delete payload.status;
+    payload.telephone = draft.telefono;
+    payload.address = draft.direccion;
     return payload;
   }
 
@@ -586,7 +614,7 @@
       celular: String(data.get('celular') ?? '').trim(),
       telefono: String(data.get('telefono') ?? '').trim(),
       direccion: String(data.get('direccion') ?? '').trim(),
-      estado: String(data.get('estado') ?? '').trim()
+      estado: String(data.get('estado') || elements.form.querySelector('[name="estado"]:checked')?.value || '').trim()
     };
   }
 
@@ -696,7 +724,7 @@
 
   function formatDate(value) {
     if (!value) return 'Fecha no disponible';
-    const date = new Date(`${value}T00:00:00`);
+    const date = new Date(value.length === 10 ? `${value}T00:00:00` : value);
     return Number.isNaN(date.getTime()) ? 'Fecha no disponible' : dateFormatter.format(date);
   }
 

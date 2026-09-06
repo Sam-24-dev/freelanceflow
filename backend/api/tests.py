@@ -815,6 +815,11 @@ class ClientApiTests(TestCase):
             "/api/v1/clients/", data=json.dumps(payload), content_type="application/json"
         )
 
+    def patch_json(self, public_id, payload, *, client=None):
+        return (client or self.client).patch(
+            f"/api/v1/clients/{public_id}/", data=json.dumps(payload), content_type="application/json"
+        )
+
     def client_payload(self, **overrides):
         payload = {
             "legal_name": "  Acme   Corporation ",
@@ -1065,7 +1070,7 @@ class ClientApiTests(TestCase):
         self.assertEqual(response["Cache-Control"], "no-store")
         items = response.json()["data"]["items"]
         self.assertEqual([item["legal_name"] for item in items], ["Active Client", "Archived Client"])
-        self.assertEqual(set(items[0]), {"public_id", "legal_name", "client_type", "tax_identifier", "primary_contact_name", "primary_contact_email", "primary_contact_phone", "telephone", "address", "civil_status", "status", "archived_at"})
+        self.assertEqual(set(items[0]), {"public_id", "legal_name", "client_type", "tax_identifier", "primary_contact_name", "primary_contact_email", "primary_contact_phone", "telephone", "address", "civil_status", "status", "archived_at", "created_at"})
         self.assertEqual(items[1]["public_id"], str(archived.public_id))
         self.assertEqual(response.json()["data"]["next_cursor"], None)
         self.assertEqual(items[0]["address"], "")
@@ -1139,6 +1144,59 @@ class ClientApiTests(TestCase):
         self.assertNotIn("0", cursors)
 
     @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_patch_updates_active_workspace_client_and_preserves_public_lifecycle_fields(self, mocked_time):
+        client = self.make_client("Before Update", tax_identifier="PATCH-100")
+        original = client.public_id, client.archived_at, client.created_at
+        self.authenticate(workspace=self.workspace)
+        response = self.patch_json(client.public_id, {
+            "legal_name": "  After   Update ", "primary_contact_email": "UPDATED@EXAMPLE.COM ",
+            "civil_status": "MARRIED", "telephone": "", "address": "",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"]["legal_name"], "After Update")
+        self.assertIn("created_at", response.json()["data"])
+        client.refresh_from_db()
+        self.assertEqual((client.public_id, client.archived_at, client.created_at), original)
+        self.assertEqual(client.primary_contact_email, "updated@example.com")
+        self.assertEqual((client.telephone, client.address), ("", ""))
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_patch_rejects_invalid_unknown_lifecycle_duplicate_and_cross_tenant_atomically(self, mocked_time):
+        client = self.make_client("Patch Target", tax_identifier="PATCH-200")
+        self.make_client("Duplicate", tax_identifier="DUPLICATE-200")
+        foreign = Workspace.objects.create(name="Foreign", slug="foreign-client-patch")
+        foreign_client = self.make_client("Foreign Client", workspace=foreign, tax_identifier="FOREIGN-200")
+        self.authenticate(workspace=self.workspace)
+        for payload in ({"unexpected": "x"}, {"status": "ARCHIVED"}, {"civil_status": "UNKNOWN"}, {"primary_contact_email": "bad"}, {"tax_identifier": "duplicate 200"}):
+            with self.subTest(payload=payload):
+                self.assertEqual(self.patch_json(client.public_id, payload).status_code, 400)
+                client.refresh_from_db()
+                self.assertEqual((client.legal_name, client.tax_identifier), ("Patch Target", "PATCH-200"))
+        self.assertEqual(self.patch_json(foreign_client.public_id, {"legal_name": "Leaked"}).status_code, 404)
+        self.assertEqual(self.patch_json("00000000-0000-4000-8000-000000000000", {"legal_name": "Missing"}).status_code, 404)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_patch_requires_auth_workspace_role_and_csrf(self, mocked_time):
+        client = self.make_client("Patch Auth", tax_identifier="PATCH-300")
+        self.assertEqual(self.patch_json(client.public_id, {"legal_name": "Denied"}).status_code, 401)
+        self.authenticate()
+        self.assertEqual(self.patch_json(client.public_id, {"legal_name": "Denied"}).status_code, 400)
+        self.authenticate(workspace=self.workspace)
+        with allow_membership_writes(): Membership.objects.filter(pk=self.membership.pk).update(role=Membership.Role.ADMINISTRATIVE)
+        self.assertEqual(self.patch_json(client.public_id, {"legal_name": "Denied"}).status_code, 403)
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.force_login(self.user)
+        session = csrf_client.session
+        session["api.auth_expires_at"] = 1_000_100
+        session["workspaces.active_workspace_public_id"] = str(self.workspace.public_id)
+        session.save()
+        with allow_membership_writes(): Membership.objects.filter(pk=self.membership.pk).update(role=Membership.Role.OPERATIONAL)
+        self.assertEqual(self.patch_json(client.public_id, {"legal_name": "Denied"}, client=csrf_client).status_code, 403)
+        token = csrf_client.get("/api/v1/session/").cookies["csrftoken"].value
+        response = csrf_client.patch(f"/api/v1/clients/{client.public_id}/", data=json.dumps({"legal_name": "CSRF Update"}), content_type="application/json", HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(response.status_code, 200)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
     def test_query_allowlist_and_methods_are_json(self, mocked_time):
         self.authenticate(workspace=self.workspace)
         for path in ("/api/v1/clients/?workspace=ignored", "/api/v1/clients/?cursor=a&cursor=b"):
@@ -1149,6 +1207,12 @@ class ClientApiTests(TestCase):
         self.assertEqual(response.status_code, 405)
         self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
         self.assertEqual(response["Allow"], "GET, POST, HEAD, OPTIONS")
+        client = self.make_client("Detail Contract", tax_identifier="DETAIL-400")
+        for field in ("public_id", "workspace", "workspace_id", "created_at", "updated_at", "archived_at", "id"):
+            self.assertEqual(self.patch_json(client.public_id, {field: "forged"}).status_code, 400)
+        for method in (self.client.get, self.client.post, self.client.put, self.client.delete):
+            detail = method(f"/api/v1/clients/{client.public_id}/")
+            self.assertEqual((detail.status_code, detail["Allow"]), (405, "PATCH, OPTIONS"))
 
 
 class _FakeServiceQuerySet:
