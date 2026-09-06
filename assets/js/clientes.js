@@ -3,6 +3,8 @@
 (function clientsModule() {
   const DATA_URL = '../assets/data/mock-data.json';
   const model = window.FreelanceFlowClientModel;
+  const MUTATIONS_ENABLED = false;
+  const MUTATION_UNAVAILABLE_MESSAGE = 'Los cambios de clientes estarán disponibles cuando finalice la migración al servidor.';
 
   const state = {
     clients: [],
@@ -32,6 +34,7 @@
     }
 
     cacheElements();
+    syncMutationControls();
     readFiltersFromUrl();
     bindEvents();
     syncFilterControls();
@@ -74,6 +77,21 @@
       statusDialog: document.getElementById('client-status-dialog'),
       toast: document.getElementById('client-toast')
     };
+  }
+
+  function syncMutationControls() {
+    const disabled = !MUTATIONS_ENABLED;
+    [elements.detailEdit, elements.submitButton].forEach((control) => {
+      if (!control) return;
+      control.disabled = disabled;
+      if (disabled) {
+        control.setAttribute('aria-disabled', 'true');
+        control.setAttribute('aria-describedby', 'client-mutations-disabled');
+      } else {
+        control.removeAttribute('aria-disabled');
+        control.removeAttribute('aria-describedby');
+      }
+    });
   }
 
   function bindEvents() {
@@ -192,7 +210,7 @@
         <td><a href="mailto:${escapeAttribute(client.correo)}">${escapeHtml(client.correo)}</a><small>${escapeHtml(client.celular)}</small></td>
         <td>${renderInlineSelect(client, 'estadoCivil')}</td>
         <td>${renderInlineSelect(client, 'estado')}</td>
-        <td><div class="client-row-actions"><button type="button" data-action="view-client" data-client-id="${escapeAttribute(client.id)}">Ver detalle</button><button class="client-icon-action" type="button" data-action="edit-client" data-client-id="${escapeAttribute(client.id)}" aria-label="Editar ${escapeAttribute(client.nombre_razon_social)}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg></button></div></td>
+        <td><div class="client-row-actions"><button type="button" data-action="view-client" data-client-id="${escapeAttribute(client.id)}">Ver detalle</button><button class="client-icon-action" type="button" data-action="edit-client" data-client-id="${escapeAttribute(client.id)}" aria-label="Editar ${escapeAttribute(client.nombre_razon_social)}"${mutationControlAttributes()}><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg></button></div></td>
       </tr>`;
   }
 
@@ -215,7 +233,7 @@
         </div>
         <footer>
           <button type="button" class="clients-secondary-action" data-action="view-client" data-client-id="${escapeAttribute(client.id)}">Ver detalle</button>
-          <button type="button" class="client-icon-action" data-action="edit-client" data-client-id="${escapeAttribute(client.id)}" aria-label="Editar ${escapeAttribute(client.nombre_razon_social)}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg></button>
+          <button type="button" class="client-icon-action" data-action="edit-client" data-client-id="${escapeAttribute(client.id)}" aria-label="Editar ${escapeAttribute(client.nombre_razon_social)}"${mutationControlAttributes()}><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg></button>
         </footer>
       </li>`;
   }
@@ -225,7 +243,11 @@
     const options = isCivil ? model.CIVIL_STATUS_OPTIONS : model.CLIENT_STATUS_OPTIONS;
     const label = isCivil ? 'estado civil' : 'estado';
     const className = isCivil ? '' : ` client-status-select client-status-${client.estado}`;
-    return `<select class="client-inline-select${className}" name="client-${field}-${escapeAttribute(client.id)}" data-client-field="${field}" data-client-id="${escapeAttribute(client.id)}" aria-label="Cambiar ${label} de ${escapeAttribute(client.nombre_razon_social)}">${options.map((option) => `<option value="${escapeAttribute(option)}"${option === client[field] ? ' selected' : ''}>${escapeHtml(titleCase(option))}</option>`).join('')}</select>`;
+    return `<select class="client-inline-select${className}" name="client-${field}-${escapeAttribute(client.id)}" data-client-field="${field}" data-client-id="${escapeAttribute(client.id)}" aria-label="Cambiar ${label} de ${escapeAttribute(client.nombre_razon_social)}"${mutationControlAttributes()}>${options.map((option) => `<option value="${escapeAttribute(option)}"${option === client[field] ? ' selected' : ''}>${escapeHtml(titleCase(option))}</option>`).join('')}</select>`;
+  }
+
+  function mutationControlAttributes() {
+    return MUTATIONS_ENABLED ? '' : ' disabled aria-disabled="true" aria-describedby="client-mutations-disabled" title="Cambios no disponibles durante la migración al servidor"';
   }
 
   function handleActionClick(event) {
@@ -248,6 +270,11 @@
   function handleInlineChange(event) {
     const select = event.target.closest('[data-client-field]');
     if (!select) return;
+    if (!MUTATIONS_ENABLED) {
+      showMutationUnavailable();
+      renderDirectory();
+      return;
+    }
 
     const client = findClient(select.dataset.clientId);
     if (!client) return;
@@ -269,6 +296,11 @@
     if (!pending) return;
 
     if (elements.statusDialog.returnValue === 'confirm') {
+      if (!MUTATIONS_ENABLED) {
+        showMutationUnavailable();
+        renderDirectory();
+        return;
+      }
       applyClientFieldChange(pending.clientId, pending.field, pending.value);
     } else {
       renderDirectory();
@@ -277,6 +309,7 @@
   }
 
   function applyClientFieldChange(clientId, field, value) {
+    if (!MUTATIONS_ENABLED) return showMutationUnavailable();
     const allowed = field === 'estadoCivil' ? model.CIVIL_STATUS_OPTIONS : model.CLIENT_STATUS_OPTIONS;
     if (!allowed.includes(value)) return;
 
@@ -338,9 +371,11 @@
     elements.submitButton.textContent = 'Registrar cliente';
     state.drawerMode = 'form';
     openDrawer(trigger);
+    if (!MUTATIONS_ENABLED) showMutationUnavailable();
   }
 
   function openEditForm(client, trigger) {
+    if (!MUTATIONS_ENABLED) return showMutationUnavailable();
     prepareForm(client);
     elements.drawerEyebrow.textContent = 'Actualizar ficha comercial';
     elements.drawerTitle.textContent = 'Editar cliente';
@@ -445,6 +480,10 @@
 
   function handleFormSubmit(event) {
     event.preventDefault();
+    if (!MUTATIONS_ENABLED) {
+      showMutationUnavailable();
+      return;
+    }
     const draft = readForm();
     const validation = model.validateClient(draft, state.clients);
     clearFormErrors();
@@ -531,6 +570,15 @@
     });
     elements.form.querySelectorAll('.has-error').forEach((field) => field.classList.remove('has-error'));
     elements.form.querySelectorAll('[data-field-error]').forEach((error) => { error.textContent = ''; });
+  }
+
+  function showMutationUnavailable() {
+    if (elements.formSummary && !elements.form?.hidden) {
+      elements.formSummary.textContent = MUTATION_UNAVAILABLE_MESSAGE;
+      elements.formSummary.hidden = false;
+    }
+    showToast(MUTATION_UNAVAILABLE_MESSAGE, 'error');
+    return false;
   }
 
   function setFieldError(fieldName, message) {
