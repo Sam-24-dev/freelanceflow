@@ -1,8 +1,9 @@
-/* FreelanceFlow — Clientes. API-backed directory; mutations remain disabled. */
+/* FreelanceFlow — Clientes. API-backed directory; creation is server-authoritative. */
 
 (function clientsModule() {
   const model = window.FreelanceFlowClientModel;
   const MUTATIONS_ENABLED = false;
+  const CREATE_ENABLED = true;
   const MUTATION_UNAVAILABLE_MESSAGE = 'Los cambios de clientes estarán disponibles cuando finalice la migración al servidor.';
 
   const state = {
@@ -79,8 +80,7 @@
   }
 
   function syncMutationControls() {
-    const disabled = !MUTATIONS_ENABLED;
-    [elements.detailEdit, elements.submitButton].forEach((control) => {
+    [[elements.detailEdit, !MUTATIONS_ENABLED], [elements.submitButton, !CREATE_ENABLED]].forEach(([control, disabled]) => {
       if (!control) return;
       control.disabled = disabled;
       if (disabled) {
@@ -158,9 +158,11 @@
       state.clients = clients;
       renderAll();
       setLoading(false);
+      return true;
     } catch (error) {
       state.clients = [];
       showFatalError(error);
+      return false;
     }
   }
 
@@ -386,7 +388,6 @@
     elements.submitButton.textContent = 'Registrar cliente';
     state.drawerMode = 'form';
     openDrawer(trigger);
-    if (!MUTATIONS_ENABLED) showMutationUnavailable();
   }
 
   function openEditForm(client, trigger) {
@@ -493,9 +494,9 @@
     setFieldError(field.name, validation.errors[field.name] ?? '');
   }
 
-  function handleFormSubmit(event) {
+  async function handleFormSubmit(event) {
     event.preventDefault();
-    if (!MUTATIONS_ENABLED) {
+    if (!CREATE_ENABLED || !window.FreelanceFlowApi?.createClient) {
       showMutationUnavailable();
       return;
     }
@@ -512,46 +513,59 @@
       return;
     }
 
-    elements.submitButton.disabled = true;
-    elements.submitButton.textContent = draft.id ? 'Guardando…' : 'Registrando…';
-
-    let savedClient;
-    let candidateClients;
     if (draft.id) {
-      savedClient = {
-        ...model.normalizeClient({ ...findClient(draft.id), ...draft }),
-        id: draft.id,
-        fecha_registro: findClient(draft.id).fecha_registro,
-        identificacion_fiscal: draft.identificacion,
-        correo_electronico: draft.correo
-      };
-      candidateClients = state.clients.map((client) => client.id === draft.id ? savedClient : client);
-    } else {
-      savedClient = model.createClientRecord(draft, {
-        id: generateClientId(),
-        date: getTodayDate()
-      });
-      candidateClients = [savedClient, ...state.clients];
-    }
-
-    if (!saveClients(candidateClients)) {
-      elements.formSummary.textContent = 'No se pudo guardar el cliente. Revisa el almacenamiento del navegador e inténtalo nuevamente.';
-      elements.formSummary.hidden = false;
-      elements.formSummary.focus();
+      showMutationUnavailable();
       elements.submitButton.disabled = false;
-      elements.submitButton.textContent = draft.id ? 'Guardar cambios' : 'Registrar cliente';
+      elements.submitButton.textContent = 'Registrar cliente';
       return;
     }
 
-    state.clients = candidateClients;
-    state.selectedClientId = savedClient.id;
-    renderAll();
-    state.formDirty = false;
-    closeDrawer();
-    recordActivity(draft.id ? 'Cliente actualizado' : 'Cliente registrado');
-    showToast(draft.id ? 'Cliente actualizado exitosamente.' : 'Cliente registrado exitosamente.', 'success');
-    elements.submitButton.disabled = false;
-    elements.submitButton.textContent = draft.id ? 'Guardar cambios' : 'Registrar cliente';
+    elements.submitButton.disabled = true;
+    elements.submitButton.textContent = 'Registrando…';
+
+    try {
+      await window.FreelanceFlowApi.createClient(buildCreatePayload(draft));
+      if (!await loadAndRenderClients()) {
+        showFormError('No se pudo actualizar el directorio después de registrar. Mantén el formulario abierto e inténtalo nuevamente.');
+        showToast('No se pudo actualizar el directorio.', 'error');
+        return;
+      }
+      state.formDirty = false;
+      closeDrawer();
+      showToast('Cliente registrado exitosamente.', 'success');
+    } catch (error) {
+      console.error(error);
+      showFormError('No se pudo registrar el cliente. Revisa los datos e inténtalo nuevamente.');
+      showToast('No se pudo registrar el cliente.', 'error');
+    } finally {
+      elements.submitButton.disabled = false;
+      elements.submitButton.textContent = 'Registrar cliente';
+    }
+  }
+
+  function buildCreatePayload(draft) {
+    const clientType = { Empresa: 'COMPANY', 'Persona natural': 'INDIVIDUAL' }[draft.tipo_cliente];
+    const civilStatus = { soltero: 'SINGLE', casado: 'MARRIED', divorciado: 'DIVORCED', separado: 'SEPARATED', 'unión libre': 'COMMONLAW' }[draft.estadoCivil];
+    const status = { activo: 'ACTIVE', inactivo: 'INACTIVE' }[draft.estado];
+    const payload = {
+      legal_name: draft.nombre_razon_social,
+      client_type: clientType,
+      tax_identifier: draft.identificacion,
+      primary_contact_name: `${draft.nombres} ${draft.apellidos}`.trim(),
+      primary_contact_email: draft.correo,
+      primary_contact_phone: draft.celular.replace(/\D/g, ''),
+      civil_status: civilStatus,
+      status
+    };
+    if (draft.telefono) payload.telephone = draft.telefono;
+    if (draft.direccion) payload.address = draft.direccion;
+    return payload;
+  }
+
+  function showFormError(message) {
+    elements.formSummary.textContent = message;
+    elements.formSummary.hidden = false;
+    elements.formSummary.focus();
   }
 
   function recordActivity(action) {

@@ -420,13 +420,18 @@ function createActivity() {
     now: () => new Date(Date.UTC(2026, 6, 1, 0, 0, tick++)).toISOString()
   });
 }
-function bootController({ clientStorage, formValues = {} }) {
+function bootController({ clientStorage, formValues = {}, api = {} }) {
   const activity = createActivity();
   const form = fakeElement({ hidden: false });
   const elements = {
     appLayout: fakeElement(),
     backdrop: fakeElement(),
     drawer: fakeElement({ attributes: { 'aria-hidden': 'false' } }),
+    loading: fakeElement(),
+    content: fakeElement(),
+    retryButton: fakeElement(),
+    dataError: fakeElement({ hidden: true }),
+    resultsCount: fakeElement(),
     form,
     formSummary: fakeElement({ hidden: true, attributes: { role: 'alert' } }),
     submitButton: fakeElement(),
@@ -451,7 +456,8 @@ function bootController({ clientStorage, formValues = {} }) {
     requestAnimationFrame: (callback) => callback(),
     setTimeout: () => 1,
     clearTimeout() {},
-    crypto: { randomUUID: () => 'candidate-id' }
+    crypto: { randomUUID: () => 'candidate-id' },
+    FreelanceFlowApi: api
   };
   context.window = context;
   context.globalThis = context;
@@ -610,6 +616,78 @@ test('B2.1 blocks form submission without local persistence or fake success', ()
   assert.equal(harness.activity.read().length, 0);
 });
 
+test('B2.3 creates through the API, then renders only the fresh server catalog', async () => {
+  const calls = [];
+  const api = {
+    async createClient(payload) { calls.push(['create', payload]); return { client: { public_id: 'response-only' } }; },
+    async clients(cursor) {
+      calls.push(['clients', cursor]);
+      return {
+        items: [{ public_id: 'server-client', legal_name: 'Server Client', client_type: 'COMPANY', tax_identifier: 'RUC-201',
+          primary_contact_name: 'Ada Lovelace', primary_contact_email: 'ada@example.com', primary_contact_phone: '0999999999',
+          telephone: '', address: '', civil_status: 'SINGLE', status: 'ACTIVE', archived_at: null }],
+        next_cursor: null
+      };
+    }
+  };
+  const harness = bootController({ api, formValues: validForm({ celular: '+593 99 000 0001' }) });
+
+  await harness.controller.handleFormSubmit({ preventDefault() {} });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    ['create', {
+      legal_name: 'New Client', client_type: 'COMPANY', tax_identifier: 'RUC-200',
+      primary_contact_name: 'Nora Vega', primary_contact_email: 'nora@example.com', primary_contact_phone: '593990000001',
+      civil_status: 'SINGLE', status: 'ACTIVE'
+    }],
+    ['clients', null]
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.controller.state.clients.map((client) => client.id))), ['server-client']);
+  assert.equal(harness.controller.state.drawerMode, null);
+  assert.equal(harness.elements.submitButton.disabled, false);
+  assert.equal(harness.activity.read().length, 0);
+});
+
+test('B2.3 keeps the create form open and reports a generic API error', async () => {
+  let reloads = 0;
+  const harness = bootController({
+    api: {
+      async createClient() { throw new Error('invalid_request'); },
+      async clients() { reloads += 1; return { items: [], next_cursor: null }; }
+    },
+    formValues: validForm({ nombre_razon_social: 'Rejected Client' })
+  });
+
+  await harness.controller.handleFormSubmit({ preventDefault() {} });
+
+  assert.equal(reloads, 0);
+  assert.equal(harness.controller.state.drawerMode, 'form');
+  assert.equal(harness.elements.formSummary.hidden, false);
+  assert.match(harness.elements.formSummary.textContent, /No se pudo registrar/i);
+  assert.equal(harness.elements.toast.dataset.type, 'error');
+  assert.equal(harness.elements.submitButton.disabled, false);
+  assert.equal(harness.activity.read().length, 0);
+});
+
+test('B2.3 does not claim success when the post-create refresh fails', async () => {
+  const harness = bootController({
+    api: {
+      async createClient() { return { client: { public_id: 'response-only' } }; },
+      async clients() { throw new Error('refresh failed'); }
+    },
+    formValues: validForm({ nombre_razon_social: 'Refresh Failure' })
+  });
+
+  await harness.controller.handleFormSubmit({ preventDefault() {} });
+
+  assert.equal(harness.controller.state.drawerMode, 'form');
+  assert.equal(harness.elements.formSummary.hidden, false);
+  assert.match(harness.elements.formSummary.textContent, /actualizar el directorio/i);
+  assert.notEqual(harness.elements.toast.dataset.type, 'success');
+  assert.equal(harness.elements.submitButton.disabled, false);
+  assert.equal(harness.activity.read().length, 0);
+});
+
 test('B2.1 blocks inline mutations without local persistence or success feedback', () => {
   let writes = 0;
   const storage = memoryStorage();
@@ -634,8 +712,20 @@ test('B2.1 exposes disabled mutation controls while preserving directory and dra
   assert.match(source, /MUTATIONS_ENABLED\s*=\s*false/);
   assert.match(source, /mutationControlAttributes\(\)/);
   assert.match(source, /return MUTATIONS_ENABLED \? '' : '[^']*disabled/);
-  assert.match(html, /id="client-submit-button"[^>]*disabled/);
+  assert.doesNotMatch(html, /id="client-submit-button"[^>]*disabled/);
   assert.match(html, /id="client-detail-edit"[^>]*disabled/);
   ['client-search', 'data-client-status', 'client-drawer', 'client-form'].forEach((hook) => assert.match(html, new RegExp(hook)));
+});
+
+test('B2.3 enables create while keeping edit and inline mutations disabled', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../assets/js/clientes.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../pages/clientes.html'), 'utf8');
+
+  assert.match(source, /CREATE_ENABLED\s*=\s*true/);
+  assert.match(source, /window\.FreelanceFlowApi\.createClient\(/);
+  assert.match(source, /if \(draft\.id\)\s*\{\s*showMutationUnavailable\(\);/s);
+  assert.match(source, /mutationControlAttributes\(\)/);
+  assert.match(html, /id="client-submit-button"[^>]*type="submit"(?![^>]*disabled)/);
+  assert.match(html, /id="client-detail-edit"[^>]*disabled[^>]*aria-disabled="true"/);
 });
 }());

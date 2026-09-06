@@ -47,6 +47,17 @@ test('successful login lists only server-returned workspaces', async () => {
   assert.deepEqual(calls, ['login']); assert.equal(harness.elements.login.hidden, true); assert.equal(harness.elements.memberships.children.length, 1);
 });
 
+test('login snapshots credentials before pending disables successful FormData controls', async () => {
+  const received = [];
+  const harness = createHarness({ session: async () => ({ authenticated: false, active_workspace: null }), login: async (...credentials) => { received.push(credentials); return { authenticated: true, active_workspace: null }; }, workspaces: async () => ({ workspaces: [] }) });
+  harness.scope.FormData = class {
+    constructor(form) { this.disabled = form.querySelectorAll().every((control) => control.disabled); }
+    get(name) { return this.disabled ? null : (name === 'email' ? 'member@example.com' : 'secret'); }
+  };
+  await flush(); await harness.submit(); await flush();
+  assert.deepEqual(received, [['member@example.com', 'secret']]);
+});
+
 test('workspace-load failure after login clears UI and offers a safe retry', async () => {
   const harness = createHarness({ session: async () => ({ authenticated: false }), login: async () => ({ authenticated: true }), workspaces: async () => { throw new Error('offline'); } });
   await flush(); await harness.submit(); await flush();

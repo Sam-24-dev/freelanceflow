@@ -81,10 +81,10 @@
   function bind(elements, state) {
     elements.login.addEventListener('submit', async (event) => {
       event.preventDefault(); if (!state.ready) return;
+      const form = new FormData(elements.login);
       setPending(elements, state, true); setMessage(elements, 'Iniciando sesión…');
       let loggedIn = false;
       try {
-        const form = new FormData(elements.login);
         const session = await api().login(form.get('email'), form.get('password'));
         if (!session?.authenticated) throw new Error('request_failed');
         loggedIn = true;
