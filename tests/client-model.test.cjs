@@ -11,12 +11,63 @@ const {
   filterClients,
   getEffectiveClients,
   getSelectableClients,
+  mapApiClientRecord,
   mergeClients,
   normalizeClient,
   persistClients,
   sanitizeStoredClients,
   validateClient
 } = require('../assets/js/client-model.js');
+
+test('mapApiClientRecord maps the public API record into the directory view model', () => {
+  const client = mapApiClientRecord({
+    public_id: 'client-1',
+    legal_name: 'Acme Corporation',
+    client_type: 'COMPANY',
+    tax_identifier: 'RUC-100',
+    primary_contact_name: 'Ada Lovelace',
+    primary_contact_email: 'ada@example.com',
+    primary_contact_phone: '0999999999',
+    telephone: '0225551234',
+    address: '42 Example Street',
+    civil_status: 'MARRIED',
+    status: 'ACTIVE',
+    archived_at: null
+  });
+
+  assert.deepEqual(client, {
+    id: 'client-1',
+    nombre_razon_social: 'Acme Corporation',
+    tipo_cliente: 'Empresa',
+    nombres: 'Ada',
+    apellidos: 'Lovelace',
+    identificacion: 'RUC-100',
+    identificacion_fiscal: 'RUC-100',
+    telefono: '0225551234',
+    celular: '0999999999',
+    correo: 'ada@example.com',
+    correo_electronico: 'ada@example.com',
+    direccion: '42 Example Street',
+    estadoCivil: 'casado',
+    estado: 'activo',
+    fecha_registro: ''
+  });
+});
+
+test('mapApiClientRecord keeps unknown or null civil status unregistered', () => {
+  for (const civil_status of [null, 'WIDOWED']) {
+    assert.equal(mapApiClientRecord({ civil_status }).estadoCivil, '');
+  }
+});
+
+test('mapApiClientRecord maps COMMONLAW to the exact unión libre UI option', () => {
+  assert.equal(mapApiClientRecord({ civil_status: 'COMMONLAW' }).estadoCivil, CIVIL_STATUS_OPTIONS[4]);
+});
+
+test('filterClients does not turn an unregistered civil status into a visible fact', () => {
+  const client = mapApiClientRecord({ public_id: 'client-1', legal_name: 'Acme', civil_status: null });
+  assert.equal(filterClients([client])[0].estadoCivil, '');
+});
 
 const validClient = {
   nombre_razon_social: 'Bodega Andina S.A.',
@@ -415,6 +466,8 @@ function bootController({ clientStorage, formValues = {} }) {
         state,
         setElements(value) { elements = value; },
         setRenderAll(value) { renderAll = value; },
+        loadAndRenderClients,
+        renderDirectory,
         handleFormSubmit,
         applyClientFieldChange
       };
@@ -432,6 +485,94 @@ function bootController({ clientStorage, formValues = {} }) {
     setFormValues: (values) => { currentValues = { ...values }; }
   };
 }
+function bootDirectoryController(api) {
+  const elements = {
+    loading: fakeElement(), content: fakeElement(), retryButton: fakeElement(), dataError: fakeElement(),
+    resultsCount: fakeElement(), tableBody: fakeElement(), cardList: fakeElement(), emptyState: fakeElement(),
+    noResults: fakeElement(), clearFilters: fakeElement(), totalCount: fakeElement(), activeCount: fakeElement(),
+    inactiveCount: fakeElement()
+  };
+  const document = { addEventListener() {}, querySelector: () => null, body: fakeElement(), activeElement: null };
+  const context = {
+    console: { ...console }, document, Intl, Date, URLSearchParams,
+    requestAnimationFrame: (callback) => callback(), setTimeout: () => 1, clearTimeout() {},
+    window: null, globalThis: null, FreelanceFlowApi: api,
+    FreelanceFlowClientModel: { ...model }
+  };
+  context.window = context;
+  context.globalThis = context;
+  const source = fs.readFileSync(path.join(__dirname, '../assets/js/clientes.js'), 'utf8')
+    .replace(/\r?\n}\(\)\);\s*$/, `
+      globalThis.__clientsTest = { state, setElements(value) { elements = value; }, loadAndRenderClients, renderDirectory };
+    }());`);
+  vm.runInNewContext(source, context, { filename: 'clientes.js' });
+  const controller = context.__clientsTest;
+  controller.setElements(elements);
+  controller.state.filters = { query: '', status: 'todos' };
+  return { controller, elements };
+}
+
+test('client directory consumes every API page serially and filters the complete transient catalog', async () => {
+  const calls = [];
+  const pages = [
+    { items: Array.from({ length: 25 }, (_, index) => ({
+      public_id: `client-${index + 1}`, legal_name: `Client ${String(index + 1).padStart(2, '0')}`,
+      client_type: 'COMPANY', tax_identifier: `RUC-${index + 1}`, primary_contact_name: 'Ada Lovelace',
+      primary_contact_email: 'ada@example.com', primary_contact_phone: '0999999999', telephone: '', address: '',
+      civil_status: 'SINGLE', status: 'ACTIVE', archived_at: null
+    })), next_cursor: 'cursor-1' },
+    { items: [{ public_id: 'client-26', legal_name: 'Client 26', client_type: 'COMPANY', tax_identifier: 'RUC-26',
+      primary_contact_name: 'Ada Lovelace', primary_contact_email: 'ada@example.com', primary_contact_phone: '0999999999',
+      telephone: '', address: '', civil_status: 'SINGLE', status: 'ACTIVE', archived_at: null }], next_cursor: null }
+  ];
+  const harness = bootDirectoryController({ clients: async (cursor) => { calls.push(cursor); return pages[calls.length - 1]; } });
+
+  await harness.controller.loadAndRenderClients();
+
+  assert.deepEqual(calls, [null, 'cursor-1']);
+  assert.equal(harness.controller.state.clients.length, 26);
+  harness.controller.state.filters.query = 'client 26';
+  harness.controller.renderDirectory();
+  assert.match(harness.elements.tableBody.innerHTML, /Client 26/);
+  assert.doesNotMatch(harness.elements.tableBody.innerHTML, /Client 01/);
+});
+
+test('client directory clears partial API pages and retries from the first cursorless request', async () => {
+  const calls = [];
+  let fail = true;
+  const page = { items: [{ public_id: 'client-1', legal_name: 'Client 1', client_type: 'COMPANY', tax_identifier: 'RUC-1',
+    primary_contact_name: 'Ada Lovelace', primary_contact_email: 'ada@example.com', primary_contact_phone: '0999999999',
+    telephone: '', address: '', civil_status: 'SINGLE', status: 'ACTIVE', archived_at: null }], next_cursor: 'cursor-1' };
+  const api = { clients: async (cursor) => {
+    calls.push(cursor);
+    if (fail && cursor === 'cursor-1') throw new Error('page failed');
+    return cursor === null ? { ...page, next_cursor: fail ? 'cursor-1' : null } : { items: page.items, next_cursor: null };
+  } };
+  const harness = bootDirectoryController(api);
+
+  await harness.controller.loadAndRenderClients();
+  assert.equal(harness.controller.state.clients.length, 0);
+  assert.equal(harness.elements.content.hidden, true);
+  fail = false;
+  await harness.controller.loadAndRenderClients();
+  assert.deepEqual(calls, [null, 'cursor-1', null]);
+  assert.equal(harness.controller.state.clients.length, 1);
+  assert.equal(harness.elements.content.hidden, false);
+});
+
+test('client directory rejects a repeated API cursor without rendering partial rows', async () => {
+  const calls = [];
+  const harness = bootDirectoryController({ clients: async (cursor) => {
+    calls.push(cursor);
+    return { items: [], next_cursor: 'cursor-1' };
+  } });
+
+  await harness.controller.loadAndRenderClients();
+
+  assert.deepEqual(calls, [null, 'cursor-1']);
+  assert.equal(harness.controller.state.clients.length, 0);
+  assert.equal(harness.elements.content.hidden, true);
+});
 function validForm(overrides = {}) {
   return {
     id: '',
