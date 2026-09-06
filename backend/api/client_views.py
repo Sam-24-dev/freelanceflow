@@ -10,6 +10,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.decorators import method_decorator
+from django.shortcuts import get_object_or_404
 
 from clients.models import Client
 from workspaces.context import WorkspaceContextError, resolve_active_workspace_context
@@ -27,7 +28,7 @@ CURSOR_SIGNER = TimestampSigner(salt="api.clients.cursor.v1")
 READ_FIELDS = (
     "public_id", "legal_name", "client_type", "tax_identifier",
     "primary_contact_name", "primary_contact_email", "primary_contact_phone",
-    "telephone", "address", "civil_status", "status", "archived_at",
+    "telephone", "address", "civil_status", "status", "archived_at", "created_at",
 )
 POST_REQUIRED_FIELDS = {
     "legal_name", "client_type", "tax_identifier", "primary_contact_name",
@@ -35,6 +36,31 @@ POST_REQUIRED_FIELDS = {
 }
 POST_OPTIONAL_FIELDS = {"telephone", "address", "civil_status", "status"}
 POST_FIELDS = POST_REQUIRED_FIELDS | POST_OPTIONAL_FIELDS
+PATCH_FIELDS = {
+    "legal_name", "client_type", "tax_identifier", "primary_contact_name",
+    "primary_contact_email", "primary_contact_phone", "telephone", "address", "civil_status",
+}
+CIVIL_STATUS_VALUES = {"SINGLE", "MARRIED", "DIVORCED", "SEPARATED", "COMMONLAW"}
+
+
+def _patch_payload(request):
+    if request.content_type != "application/json":
+        return None, json_error("unsupported_media_type", status=415)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, json_error("invalid_json", status=400)
+    if not isinstance(payload, dict) or not payload or not set(payload).issubset(PATCH_FIELDS):
+        return None, json_error("invalid_request", status=400)
+    if not all(isinstance(value, str) for value in payload.values()):
+        return None, json_error("invalid_request", status=400)
+    if "client_type" in payload and payload["client_type"] not in Client.ClientType.values:
+        return None, json_error("invalid_request", status=400)
+    if "civil_status" in payload and payload["civil_status"] not in CIVIL_STATUS_VALUES:
+        return None, json_error("invalid_request", status=400)
+    if "primary_contact_phone" in payload and not payload["primary_contact_phone"].strip():
+        return None, json_error("invalid_request", status=400)
+    return payload, None
 
 
 def _cursor_error():
@@ -193,3 +219,31 @@ class ClientListView(JsonMethodView):
             return json_error("invalid_request", status=400)
         row = Client.objects.values(*READ_FIELDS).get(pk=client.pk)
         return json_data(_serialize(row), status=201)
+
+
+class ClientDetailView(JsonMethodView):
+    @method_decorator(require_api_auth)
+    def patch(self, request, public_id):
+        try:
+            context = resolve_active_workspace_context(request)
+            require_workspace_permission(context.membership, can_perform_operational_work)
+        except WorkspacePermissionDenied:
+            return json_error("permission_denied", status=403)
+        except WorkspaceContextError:
+            return json_error("workspace_required", status=400)
+
+        payload, error_response = _patch_payload(request)
+        if error_response is not None:
+            return error_response
+        client = get_object_or_404(
+            Client.objects.for_workspace(context.workspace), public_id=public_id
+        )
+        try:
+            with transaction.atomic():
+                for field, value in payload.items():
+                    setattr(client, field, value)
+                client.save(update_fields=[*payload, "tax_identifier_normalized", "updated_at"])
+        except (ValidationError, IntegrityError):
+            return json_error("invalid_request", status=400)
+        row = Client.objects.values(*READ_FIELDS).get(pk=client.pk)
+        return json_data(_serialize(row))
