@@ -319,20 +319,6 @@ test('all six consumers load and use the canonical effective client catalog', ()
   });
 });
 
-test('client controller persists candidates before state, success feedback, or activity', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../assets/js/clientes.js'), 'utf8');
-  const persistGuard = source.indexOf('if (!saveClients(candidateClients))');
-  const stateCommit = source.indexOf('state.clients = candidateClients', persistGuard);
-  const activity = source.indexOf("recordActivity('Cliente", persistGuard);
-  const success = source.indexOf("showToast(message, 'success')", persistGuard);
-
-  assert.notEqual(persistGuard, -1);
-  assert.ok(stateCommit > persistGuard);
-  assert.ok(activity > stateCommit);
-  assert.ok(success > stateCommit);
-  assert.doesNotMatch(source, /recordActivity\([^)]*(?:nombre_razon_social|identificacion|correo|celular|direccion|estadoCivil)/);
-});
-
 test('client controls keep a minimum 44 by 44 pixel target', () => {
   const css = fs.readFileSync(path.join(__dirname, '../assets/css/app.css'), 'utf8');
 
@@ -463,60 +449,52 @@ function validForm(overrides = {}) {
     ...overrides
   };
 }
-test('QuotaExceeded on create keeps the form open and never leaks the failed candidate into a later save', () => {
-  const stored = memoryStorage();
-  let blocked = true;
-  const storage = { getItem: stored.getItem, setItem(key, value) { if (blocked) throw new Error('QuotaExceededError'); stored.setItem(key, value); } };
-  const harness = bootController({ clientStorage: storage, formValues: validForm({ nombre_razon_social: 'Failed Create' }) });
+test('B2.1 blocks form submission without local persistence or fake success', () => {
+  let writes = 0;
+  const storage = memoryStorage();
+  const clientStorage = {
+    getItem: storage.getItem,
+    setItem(key, value) { writes += 1; storage.setItem(key, value); }
+  };
+  const harness = bootController({ clientStorage, formValues: validForm({ nombre_razon_social: 'Blocked Create' }) });
+
   harness.controller.handleFormSubmit({ preventDefault() {} });
-  assert.equal(harness.controller.state.clients.length, 1);
+
+  assert.equal(writes, 0);
+  assert.deepEqual(harness.controller.state.clients.map((client) => client.id), ['cli_base']);
   assert.equal(harness.controller.state.drawerMode, 'form');
   assert.equal(harness.elements.formSummary.hidden, false);
-  assert.equal(harness.elements.formSummary.getAttribute('role'), 'alert');
-  assert.equal(harness.elements.toast.hidden, true);
+  assert.match(harness.elements.formSummary.textContent, /servidor/i);
+  assert.equal(harness.elements.toast.dataset.type, 'error');
   assert.equal(harness.activity.read().length, 0);
-  blocked = false;
-  harness.setFormValues(validForm({ nombre_razon_social: 'Confirmed Create', identificacion: 'RUC-201' }));
-  harness.controller.handleFormSubmit({ preventDefault() {} });
-  const persisted = JSON.parse(stored.value(model.CLIENT_STORAGE_KEY));
-  assert.equal(persisted.some((client) => client.nombre_razon_social === 'Failed Create'), false);
-  assert.equal(persisted.some((client) => client.nombre_razon_social === 'Confirmed Create'), true);
 });
-test('blocked edit keeps confirmed state, accessible alert, and no success or activity', () => {
-  const stored = memoryStorage();
-  let blocked = true;
-  const storage = { setItem(key, value) { if (blocked) throw new Error('SecurityError'); stored.setItem(key, value); } };
-  const harness = bootController({ clientStorage: storage, formValues: validForm({ id: 'cli_base', nombre_razon_social: 'Failed Edit', identificacion: 'RUC-100' }) });
-  harness.controller.handleFormSubmit({ preventDefault() {} });
-  assert.equal(harness.controller.state.clients[0].nombre_razon_social, 'Baseline Client');
-  assert.equal(harness.controller.state.drawerMode, 'form');
-  assert.equal(harness.elements.formSummary.hidden, false);
-  assert.equal(harness.elements.formSummary.getAttribute('role'), 'alert');
-  assert.equal(harness.elements.toast.hidden, true);
-  assert.equal(harness.activity.read().length, 0);
-  blocked = false;
-  harness.setFormValues(validForm({ id: 'cli_base', nombre_razon_social: 'Confirmed Edit', identificacion: 'RUC-100' }));
-  harness.controller.handleFormSubmit({ preventDefault() {} });
-  assert.equal(JSON.stringify(JSON.parse(stored.value(model.CLIENT_STORAGE_KEY))).includes('Failed Edit'), false);
-});
-test('blocked inline change keeps confirmed state and emits only an assertive error', () => {
-  const stored = memoryStorage();
-  let blocked = true;
-  const harness = bootController({ clientStorage: { setItem(key, value) { if (blocked) throw new Error('SecurityError'); stored.setItem(key, value); } } });
+
+test('B2.1 blocks inline mutations without local persistence or success feedback', () => {
+  let writes = 0;
+  const storage = memoryStorage();
+  const clientStorage = {
+    getItem: storage.getItem,
+    setItem() { writes += 1; }
+  };
+  const harness = bootController({ clientStorage });
+
   assert.equal(harness.controller.applyClientFieldChange('cli_base', 'estadoCivil', 'casado'), false);
+  assert.equal(writes, 0);
   assert.equal(harness.controller.state.clients[0].estadoCivil, 'soltero');
   assert.equal(harness.elements.toast.dataset.type, 'error');
   assert.equal(harness.elements.toast.getAttribute('role'), 'alert');
   assert.equal(harness.activity.read().length, 0);
-  blocked = false;
-  assert.equal(harness.controller.applyClientFieldChange('cli_base', 'estadoCivil', 'divorciado'), true);
-  assert.equal(JSON.parse(stored.value(model.CLIENT_STORAGE_KEY))[0].estadoCivil, 'divorciado');
 });
-test('two consecutive successful client updates record two activity events', () => {
-  const harness = bootController({ clientStorage: memoryStorage() });
-  assert.equal(harness.controller.applyClientFieldChange('cli_base', 'estadoCivil', 'casado'), true);
-  assert.equal(harness.controller.applyClientFieldChange('cli_base', 'estadoCivil', 'divorciado'), true);
-  assert.equal(harness.activity.read().length, 2);
-  assert.deepEqual(harness.activity.read().map((entry) => entry.action), ['Cliente actualizado', 'Cliente actualizado']);
+
+test('B2.1 exposes disabled mutation controls while preserving directory and drawer hooks', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../assets/js/clientes.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../pages/clientes.html'), 'utf8');
+
+  assert.match(source, /MUTATIONS_ENABLED\s*=\s*false/);
+  assert.match(source, /mutationControlAttributes\(\)/);
+  assert.match(source, /return MUTATIONS_ENABLED \? '' : '[^']*disabled/);
+  assert.match(html, /id="client-submit-button"[^>]*disabled/);
+  assert.match(html, /id="client-detail-edit"[^>]*disabled/);
+  ['client-search', 'data-client-status', 'client-drawer', 'client-form'].forEach((hook) => assert.match(html, new RegExp(hook)));
 });
 }());
