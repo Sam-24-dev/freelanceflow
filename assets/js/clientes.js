@@ -1,7 +1,6 @@
-/* FreelanceFlow — Clientes. Browser-only prototype; no backend or external APIs. */
+/* FreelanceFlow — Clientes. API-backed directory; mutations remain disabled. */
 
 (function clientsModule() {
-  const DATA_URL = '../assets/data/mock-data.json';
   const model = window.FreelanceFlowClientModel;
   const MUTATIONS_ENABLED = false;
   const MUTATION_UNAVAILABLE_MESSAGE = 'Los cambios de clientes estarán disponibles cuando finalice la migración al servidor.';
@@ -138,21 +137,35 @@
   async function loadAndRenderClients() {
     setLoading(true);
     elements.dataError.hidden = true;
+    state.clients = [];
 
     try {
-      const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL);
-      state.clients = model.getEffectiveClients(data.clientes ?? []);
+      const clients = [];
+      const requestedCursors = new Set();
+      let cursor = null;
+      do {
+        if (requestedCursors.has(cursor)) throw new Error('Repeated client pagination cursor.');
+        requestedCursors.add(cursor);
+        const page = await window.FreelanceFlowApi.clients(cursor);
+        if (!page || typeof page !== 'object' || Array.isArray(page)
+          || !Array.isArray(page.items)
+          || !(page.next_cursor === null || typeof page.next_cursor === 'string')) {
+          throw new Error('Invalid clients directory response.');
+        }
+        clients.push(...page.items.map(model.mapApiClientRecord));
+        cursor = page.next_cursor;
+      } while (cursor !== null);
+      state.clients = clients;
       renderAll();
       setLoading(false);
     } catch (error) {
+      state.clients = [];
       showFatalError(error);
     }
   }
 
-  function saveClients(candidateClients) {
-    const saved = model.persistClients(candidateClients);
-    if (!saved) console.warn('No se pudieron guardar los cambios locales de clientes.');
-    return saved;
+  function saveClients() {
+    return false;
   }
 
   function setLoading(isLoading) {
@@ -243,7 +256,9 @@
     const options = isCivil ? model.CIVIL_STATUS_OPTIONS : model.CLIENT_STATUS_OPTIONS;
     const label = isCivil ? 'estado civil' : 'estado';
     const className = isCivil ? '' : ` client-status-select client-status-${client.estado}`;
-    return `<select class="client-inline-select${className}" name="client-${field}-${escapeAttribute(client.id)}" data-client-field="${field}" data-client-id="${escapeAttribute(client.id)}" aria-label="Cambiar ${label} de ${escapeAttribute(client.nombre_razon_social)}"${mutationControlAttributes()}>${options.map((option) => `<option value="${escapeAttribute(option)}"${option === client[field] ? ' selected' : ''}>${escapeHtml(titleCase(option))}</option>`).join('')}</select>`;
+    const hasValue = options.includes(client[field]);
+    const fallback = isCivil && !hasValue ? '<option value="" selected disabled>No registrado</option>' : '';
+    return `<select class="client-inline-select${className}" name="client-${field}-${escapeAttribute(client.id)}" data-client-field="${field}" data-client-id="${escapeAttribute(client.id)}" aria-label="Cambiar ${label} de ${escapeAttribute(client.nombre_razon_social)}"${mutationControlAttributes()}>${fallback}${options.map((option) => `<option value="${escapeAttribute(option)}"${option === client[field] ? ' selected' : ''}>${escapeHtml(titleCase(option))}</option>`).join('')}</select>`;
   }
 
   function mutationControlAttributes() {
