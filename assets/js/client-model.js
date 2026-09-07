@@ -39,6 +39,36 @@
     };
   }
 
+  function mapApiClientRecord(record = {}) {
+    const contactName = String(record.primary_contact_name ?? '').trim().split(/\s+/).filter(Boolean);
+    const civilStatus = normalizeText(record.civil_status);
+    const civilStatusMap = {
+      single: 'soltero', soltero: 'soltero',
+      married: 'casado', casado: 'casado',
+      divorced: 'divorciado', divorciado: 'divorciado',
+      separated: 'separado', separado: 'separado',
+      commonlaw: 'unión libre', unionfree: 'unión libre',
+      'union libre': 'unión libre'
+    };
+    const client = normalizeClient({
+      id: record.public_id,
+      nombre_razon_social: record.legal_name,
+      tipo_cliente: record.client_type === 'INDIVIDUAL' ? 'Persona natural' : 'Empresa',
+      nombres: contactName.shift() ?? '',
+      apellidos: contactName.join(' '),
+      identificacion: record.tax_identifier,
+      telefono: record.telephone,
+      celular: record.primary_contact_phone,
+      correo: record.primary_contact_email,
+      direccion: record.address,
+      estadoCivil: civilStatusMap[civilStatus] ?? '',
+      estado: record.status === 'ARCHIVED' ? 'inactivo' : 'activo',
+      fecha_registro: record.created_at
+    });
+    client.estadoCivil = civilStatusMap[civilStatus] ?? '';
+    return client;
+  }
+
   function validateClient(client = {}, existingClients = []) {
     const candidate = normalizeClient(client);
     const errors = {};
@@ -89,7 +119,11 @@
     const status = filters.status || 'todos';
 
     return clients
-      .map(normalizeClient)
+      .map((client) => {
+        const normalized = normalizeClient(client);
+        if (!CIVIL_STATUS_OPTIONS.includes(client?.estadoCivil)) normalized.estadoCivil = '';
+        return normalized;
+      })
       .filter((client) => status === 'todos' || client.estado === status)
       .filter((client) => {
         if (!queryTokens.length) return true;
@@ -199,6 +233,7 @@
     filterClients,
     getEffectiveClients,
     getSelectableClients,
+    mapApiClientRecord,
     mergeClients,
     normalizeClient,
     normalizeIdentification,

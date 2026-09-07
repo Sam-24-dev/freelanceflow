@@ -1,11 +1,16 @@
-"""Read-only active-workspace client directory with session-bound cursors."""
+"""Active-workspace client registration and directory with session-bound cursors."""
 
+import json
 import secrets
 from time import time as current_time
 
+from django.core.exceptions import ValidationError
 from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
+from django.db import IntegrityError, transaction
 from django.db.models import Q
+from django.utils import timezone
 from django.utils.decorators import method_decorator
+from django.shortcuts import get_object_or_404
 
 from clients.models import Client
 from workspaces.context import WorkspaceContextError, resolve_active_workspace_context
@@ -23,8 +28,45 @@ CURSOR_SIGNER = TimestampSigner(salt="api.clients.cursor.v1")
 READ_FIELDS = (
     "public_id", "legal_name", "client_type", "tax_identifier",
     "primary_contact_name", "primary_contact_email", "primary_contact_phone",
-    "status", "archived_at",
+    "telephone", "address", "civil_status", "status", "archived_at", "created_at",
 )
+POST_REQUIRED_FIELDS = {
+    "legal_name", "client_type", "tax_identifier", "primary_contact_name",
+    "primary_contact_email", "primary_contact_phone",
+}
+POST_OPTIONAL_FIELDS = {"telephone", "address", "civil_status", "status"}
+POST_FIELDS = POST_REQUIRED_FIELDS | POST_OPTIONAL_FIELDS
+PATCH_FIELDS = {
+    "legal_name", "client_type", "tax_identifier", "primary_contact_name",
+    "primary_contact_email", "primary_contact_phone", "telephone", "address", "civil_status",
+}
+CIVIL_STATUS_VALUES = {"SINGLE", "MARRIED", "DIVORCED", "SEPARATED", "COMMONLAW"}
+
+
+def _patch_payload(request):
+    if request.content_type != "application/json":
+        return None, json_error("unsupported_media_type", status=415)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, json_error("invalid_json", status=400)
+    if not isinstance(payload, dict) or not payload:
+        return None, json_error("invalid_request", status=400)
+    if not all(isinstance(value, str) for value in payload.values()):
+        return None, json_error("invalid_request", status=400)
+    if set(payload) == {"status"}:
+        if payload["status"] in Client.Status.values:
+            return payload, None
+        return None, json_error("invalid_request", status=400)
+    if not set(payload).issubset(PATCH_FIELDS):
+        return None, json_error("invalid_request", status=400)
+    if "client_type" in payload and payload["client_type"] not in Client.ClientType.values:
+        return None, json_error("invalid_request", status=400)
+    if "civil_status" in payload and payload["civil_status"] not in CIVIL_STATUS_VALUES:
+        return None, json_error("invalid_request", status=400)
+    if "primary_contact_phone" in payload and not payload["primary_contact_phone"].strip():
+        return None, json_error("invalid_request", status=400)
+    return payload, None
 
 
 def _cursor_error():
@@ -93,6 +135,33 @@ def _serialize(row):
     return {field: row[field] for field in READ_FIELDS}
 
 
+def _post_payload(request):
+    if request.content_type != "application/json":
+        return None, json_error("unsupported_media_type", status=415)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, json_error("invalid_json", status=400)
+    if (
+        not isinstance(payload, dict)
+        or not POST_REQUIRED_FIELDS.issubset(payload)
+        or not set(payload).issubset(POST_FIELDS)
+        or not all(isinstance(payload[field], str) for field in POST_REQUIRED_FIELDS)
+    ):
+        return None, json_error("invalid_request", status=400)
+    for field in ("telephone", "address", "civil_status", "status"):
+        value = payload.get(field)
+        if value is not None and not isinstance(value, str):
+            return None, json_error("invalid_request", status=400)
+    if not payload["primary_contact_phone"].strip():
+        return None, json_error("invalid_request", status=400)
+    if payload.get("client_type") not in Client.ClientType.values:
+        return None, json_error("invalid_request", status=400)
+    if payload.get("status", "ACTIVE") not in ("ACTIVE", "INACTIVE"):
+        return None, json_error("invalid_request", status=400)
+    return payload, None
+
+
 class ClientListView(JsonMethodView):
     @method_decorator(require_api_auth)
     def get(self, request):
@@ -121,3 +190,72 @@ class ClientListView(JsonMethodView):
             "items": [_serialize(row) for row in page],
             "next_cursor": _new_cursor(request, context, page[-1]) if len(rows) > CURSOR_PAGE_SIZE else None,
         })
+
+    @method_decorator(require_api_auth)
+    def post(self, request):
+        try:
+            context = resolve_active_workspace_context(request)
+            require_workspace_permission(context.membership, can_perform_operational_work)
+        except WorkspacePermissionDenied:
+            return json_error("permission_denied", status=403)
+        except WorkspaceContextError:
+            return json_error("workspace_required", status=400)
+
+        payload, error_response = _post_payload(request)
+        if error_response is not None:
+            return error_response
+        status = Client.Status.ARCHIVED if payload.get("status") == "INACTIVE" else Client.Status.ACTIVE
+        try:
+            with transaction.atomic():
+                client = Client.objects.create(
+                    workspace=context.workspace,
+                    legal_name=payload["legal_name"],
+                    client_type=payload["client_type"],
+                    tax_identifier=payload["tax_identifier"],
+                    primary_contact_name=payload["primary_contact_name"],
+                    primary_contact_email=payload["primary_contact_email"],
+                    primary_contact_phone=payload["primary_contact_phone"].strip(),
+                    telephone=payload.get("telephone") or "",
+                    address=payload.get("address") or "",
+                    civil_status=payload.get("civil_status"),
+                    status=status,
+                    archived_at=timezone.now() if status == Client.Status.ARCHIVED else None,
+                )
+        except (ValidationError, IntegrityError):
+            return json_error("invalid_request", status=400)
+        row = Client.objects.values(*READ_FIELDS).get(pk=client.pk)
+        return json_data(_serialize(row), status=201)
+
+
+class ClientDetailView(JsonMethodView):
+    @method_decorator(require_api_auth)
+    def patch(self, request, public_id):
+        try:
+            context = resolve_active_workspace_context(request)
+            require_workspace_permission(context.membership, can_perform_operational_work)
+        except WorkspacePermissionDenied:
+            return json_error("permission_denied", status=403)
+        except WorkspaceContextError:
+            return json_error("workspace_required", status=400)
+
+        payload, error_response = _patch_payload(request)
+        if error_response is not None:
+            return error_response
+        client = get_object_or_404(
+            Client.objects.for_workspace(context.workspace), public_id=public_id
+        )
+        try:
+            with transaction.atomic():
+                if set(payload) == {"status"}:
+                    if payload["status"] == Client.Status.ARCHIVED and client.status != Client.Status.ARCHIVED:
+                        client.archive()
+                    elif payload["status"] == Client.Status.ACTIVE and client.status != Client.Status.ACTIVE:
+                        client.restore()
+                else:
+                    for field, value in payload.items():
+                        setattr(client, field, value)
+                    client.save(update_fields=[*payload, "tax_identifier_normalized", "updated_at"])
+        except (ValidationError, IntegrityError):
+            return json_error("invalid_request", status=400)
+        row = Client.objects.values(*READ_FIELDS).get(pk=client.pk)
+        return json_data(_serialize(row))

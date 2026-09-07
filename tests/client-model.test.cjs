@@ -11,12 +11,64 @@ const {
   filterClients,
   getEffectiveClients,
   getSelectableClients,
+  mapApiClientRecord,
   mergeClients,
   normalizeClient,
   persistClients,
   sanitizeStoredClients,
   validateClient
 } = require('../assets/js/client-model.js');
+
+test('mapApiClientRecord maps the public API record into the directory view model', () => {
+  const client = mapApiClientRecord({
+    public_id: 'client-1',
+    legal_name: 'Acme Corporation',
+    client_type: 'COMPANY',
+    tax_identifier: 'RUC-100',
+    primary_contact_name: 'Ada Lovelace',
+    primary_contact_email: 'ada@example.com',
+    primary_contact_phone: '0999999999',
+    telephone: '0225551234',
+    address: '42 Example Street',
+    civil_status: 'MARRIED',
+    status: 'ACTIVE',
+    archived_at: null,
+    created_at: '2026-09-05T14:30:00Z'
+  });
+
+  assert.deepEqual(client, {
+    id: 'client-1',
+    nombre_razon_social: 'Acme Corporation',
+    tipo_cliente: 'Empresa',
+    nombres: 'Ada',
+    apellidos: 'Lovelace',
+    identificacion: 'RUC-100',
+    identificacion_fiscal: 'RUC-100',
+    telefono: '0225551234',
+    celular: '0999999999',
+    correo: 'ada@example.com',
+    correo_electronico: 'ada@example.com',
+    direccion: '42 Example Street',
+    estadoCivil: 'casado',
+    estado: 'activo',
+    fecha_registro: '2026-09-05T14:30:00Z'
+  });
+});
+
+test('mapApiClientRecord keeps unknown or null civil status unregistered', () => {
+  for (const civil_status of [null, 'WIDOWED']) {
+    assert.equal(mapApiClientRecord({ civil_status }).estadoCivil, '');
+  }
+});
+
+test('mapApiClientRecord maps COMMONLAW to the exact unión libre UI option', () => {
+  assert.equal(mapApiClientRecord({ civil_status: 'COMMONLAW' }).estadoCivil, CIVIL_STATUS_OPTIONS[4]);
+});
+
+test('filterClients does not turn an unregistered civil status into a visible fact', () => {
+  const client = mapApiClientRecord({ public_id: 'client-1', legal_name: 'Acme', civil_status: null });
+  assert.equal(filterClients([client])[0].estadoCivil, '');
+});
 
 const validClient = {
   nombre_razon_social: 'Bodega Andina S.A.',
@@ -319,20 +371,6 @@ test('all six consumers load and use the canonical effective client catalog', ()
   });
 });
 
-test('client controller persists candidates before state, success feedback, or activity', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../assets/js/clientes.js'), 'utf8');
-  const persistGuard = source.indexOf('if (!saveClients(candidateClients))');
-  const stateCommit = source.indexOf('state.clients = candidateClients', persistGuard);
-  const activity = source.indexOf("recordActivity('Cliente", persistGuard);
-  const success = source.indexOf("showToast(message, 'success')", persistGuard);
-
-  assert.notEqual(persistGuard, -1);
-  assert.ok(stateCommit > persistGuard);
-  assert.ok(activity > stateCommit);
-  assert.ok(success > stateCommit);
-  assert.doesNotMatch(source, /recordActivity\([^)]*(?:nombre_razon_social|identificacion|correo|celular|direccion|estadoCivil)/);
-});
-
 test('client controls keep a minimum 44 by 44 pixel target', () => {
   const css = fs.readFileSync(path.join(__dirname, '../assets/css/app.css'), 'utf8');
 
@@ -383,14 +421,24 @@ function createActivity() {
     now: () => new Date(Date.UTC(2026, 6, 1, 0, 0, tick++)).toISOString()
   });
 }
-function bootController({ clientStorage, formValues = {} }) {
+function bootController({ clientStorage, formValues = {}, api = {}, disabledEstado = false }) {
   const activity = createActivity();
   const form = fakeElement({ hidden: false });
+  form.querySelector = (selector) => selector === '[name="estado"]:checked' && disabledEstado ? { value: 'activo', checked: true, disabled: true } : null;
+  form.elements = { namedItem() { return null; } };
   const elements = {
     appLayout: fakeElement(),
     backdrop: fakeElement(),
     drawer: fakeElement({ attributes: { 'aria-hidden': 'false' } }),
+    tableBody: fakeElement(), cardList: fakeElement(), emptyState: fakeElement(), noResults: fakeElement(),
+    clearFilters: fakeElement(), totalCount: fakeElement(), activeCount: fakeElement(), inactiveCount: fakeElement(),
+    loading: fakeElement(),
+    content: fakeElement(),
+    retryButton: fakeElement(),
+    dataError: fakeElement({ hidden: true }),
+    resultsCount: fakeElement(),
     form,
+    statusDialog: fakeElement({ returnValue: 'cancel', showModal() { this.opened = true; } }),
     formSummary: fakeElement({ hidden: true, attributes: { role: 'alert' } }),
     submitButton: fakeElement(),
     toast: fakeElement({ hidden: true })
@@ -408,13 +456,15 @@ function bootController({ clientStorage, formValues = {} }) {
     Intl,
     Date,
     URLSearchParams,
+    RadioNodeList: class {},
     FormData: class {
-      get(name) { return currentValues[name] ?? ''; }
+      get(name) { return name === 'estado' && disabledEstado ? '' : currentValues[name] ?? ''; }
     },
     requestAnimationFrame: (callback) => callback(),
     setTimeout: () => 1,
     clearTimeout() {},
-    crypto: { randomUUID: () => 'candidate-id' }
+    crypto: { randomUUID: () => 'candidate-id' },
+    FreelanceFlowApi: api
   };
   context.window = context;
   context.globalThis = context;
@@ -429,8 +479,12 @@ function bootController({ clientStorage, formValues = {} }) {
         state,
         setElements(value) { elements = value; },
         setRenderAll(value) { renderAll = value; },
+        loadAndRenderClients,
+        renderDirectory,
         handleFormSubmit,
-        applyClientFieldChange
+        applyClientFieldChange,
+        resolveStatusDialog,
+        handleInlineChange
       };
     }());`);
   vm.runInNewContext(source, context, { filename: 'clientes.js' });
@@ -446,6 +500,94 @@ function bootController({ clientStorage, formValues = {} }) {
     setFormValues: (values) => { currentValues = { ...values }; }
   };
 }
+function bootDirectoryController(api) {
+  const elements = {
+    loading: fakeElement(), content: fakeElement(), retryButton: fakeElement(), dataError: fakeElement(),
+    resultsCount: fakeElement(), tableBody: fakeElement(), cardList: fakeElement(), emptyState: fakeElement(),
+    noResults: fakeElement(), clearFilters: fakeElement(), totalCount: fakeElement(), activeCount: fakeElement(),
+    inactiveCount: fakeElement()
+  };
+  const document = { addEventListener() {}, querySelector: () => null, body: fakeElement(), activeElement: null };
+  const context = {
+    console: { ...console }, document, Intl, Date, URLSearchParams,
+    requestAnimationFrame: (callback) => callback(), setTimeout: () => 1, clearTimeout() {},
+    window: null, globalThis: null, FreelanceFlowApi: api,
+    FreelanceFlowClientModel: { ...model }
+  };
+  context.window = context;
+  context.globalThis = context;
+  const source = fs.readFileSync(path.join(__dirname, '../assets/js/clientes.js'), 'utf8')
+    .replace(/\r?\n}\(\)\);\s*$/, `
+      globalThis.__clientsTest = { state, setElements(value) { elements = value; }, loadAndRenderClients, renderDirectory };
+    }());`);
+  vm.runInNewContext(source, context, { filename: 'clientes.js' });
+  const controller = context.__clientsTest;
+  controller.setElements(elements);
+  controller.state.filters = { query: '', status: 'todos' };
+  return { controller, elements };
+}
+
+test('client directory consumes every API page serially and filters the complete transient catalog', async () => {
+  const calls = [];
+  const pages = [
+    { items: Array.from({ length: 25 }, (_, index) => ({
+      public_id: `client-${index + 1}`, legal_name: `Client ${String(index + 1).padStart(2, '0')}`,
+      client_type: 'COMPANY', tax_identifier: `RUC-${index + 1}`, primary_contact_name: 'Ada Lovelace',
+      primary_contact_email: 'ada@example.com', primary_contact_phone: '0999999999', telephone: '', address: '',
+      civil_status: 'SINGLE', status: 'ACTIVE', archived_at: null
+    })), next_cursor: 'cursor-1' },
+    { items: [{ public_id: 'client-26', legal_name: 'Client 26', client_type: 'COMPANY', tax_identifier: 'RUC-26',
+      primary_contact_name: 'Ada Lovelace', primary_contact_email: 'ada@example.com', primary_contact_phone: '0999999999',
+      telephone: '', address: '', civil_status: 'SINGLE', status: 'ACTIVE', archived_at: null }], next_cursor: null }
+  ];
+  const harness = bootDirectoryController({ clients: async (cursor) => { calls.push(cursor); return pages[calls.length - 1]; } });
+
+  await harness.controller.loadAndRenderClients();
+
+  assert.deepEqual(calls, [null, 'cursor-1']);
+  assert.equal(harness.controller.state.clients.length, 26);
+  harness.controller.state.filters.query = 'client 26';
+  harness.controller.renderDirectory();
+  assert.match(harness.elements.tableBody.innerHTML, /Client 26/);
+  assert.doesNotMatch(harness.elements.tableBody.innerHTML, /Client 01/);
+});
+
+test('client directory clears partial API pages and retries from the first cursorless request', async () => {
+  const calls = [];
+  let fail = true;
+  const page = { items: [{ public_id: 'client-1', legal_name: 'Client 1', client_type: 'COMPANY', tax_identifier: 'RUC-1',
+    primary_contact_name: 'Ada Lovelace', primary_contact_email: 'ada@example.com', primary_contact_phone: '0999999999',
+    telephone: '', address: '', civil_status: 'SINGLE', status: 'ACTIVE', archived_at: null }], next_cursor: 'cursor-1' };
+  const api = { clients: async (cursor) => {
+    calls.push(cursor);
+    if (fail && cursor === 'cursor-1') throw new Error('page failed');
+    return cursor === null ? { ...page, next_cursor: fail ? 'cursor-1' : null } : { items: page.items, next_cursor: null };
+  } };
+  const harness = bootDirectoryController(api);
+
+  await harness.controller.loadAndRenderClients();
+  assert.equal(harness.controller.state.clients.length, 0);
+  assert.equal(harness.elements.content.hidden, true);
+  fail = false;
+  await harness.controller.loadAndRenderClients();
+  assert.deepEqual(calls, [null, 'cursor-1', null]);
+  assert.equal(harness.controller.state.clients.length, 1);
+  assert.equal(harness.elements.content.hidden, false);
+});
+
+test('client directory rejects a repeated API cursor without rendering partial rows', async () => {
+  const calls = [];
+  const harness = bootDirectoryController({ clients: async (cursor) => {
+    calls.push(cursor);
+    return { items: [], next_cursor: 'cursor-1' };
+  } });
+
+  await harness.controller.loadAndRenderClients();
+
+  assert.deepEqual(calls, [null, 'cursor-1']);
+  assert.equal(harness.controller.state.clients.length, 0);
+  assert.equal(harness.elements.content.hidden, true);
+});
 function validForm(overrides = {}) {
   return {
     id: '',
@@ -463,60 +605,231 @@ function validForm(overrides = {}) {
     ...overrides
   };
 }
-test('QuotaExceeded on create keeps the form open and never leaks the failed candidate into a later save', () => {
-  const stored = memoryStorage();
-  let blocked = true;
-  const storage = { getItem: stored.getItem, setItem(key, value) { if (blocked) throw new Error('QuotaExceededError'); stored.setItem(key, value); } };
-  const harness = bootController({ clientStorage: storage, formValues: validForm({ nombre_razon_social: 'Failed Create' }) });
+test('B2.1 blocks form submission without local persistence or fake success', () => {
+  let writes = 0;
+  const storage = memoryStorage();
+  const clientStorage = {
+    getItem: storage.getItem,
+    setItem(key, value) { writes += 1; storage.setItem(key, value); }
+  };
+  const harness = bootController({ clientStorage, formValues: validForm({ nombre_razon_social: 'Blocked Create' }) });
+
   harness.controller.handleFormSubmit({ preventDefault() {} });
-  assert.equal(harness.controller.state.clients.length, 1);
+
+  assert.equal(writes, 0);
+  assert.deepEqual(harness.controller.state.clients.map((client) => client.id), ['cli_base']);
   assert.equal(harness.controller.state.drawerMode, 'form');
   assert.equal(harness.elements.formSummary.hidden, false);
-  assert.equal(harness.elements.formSummary.getAttribute('role'), 'alert');
-  assert.equal(harness.elements.toast.hidden, true);
+  assert.match(harness.elements.formSummary.textContent, /lifecycle/i);
+  assert.equal(harness.elements.toast.dataset.type, 'error');
   assert.equal(harness.activity.read().length, 0);
-  blocked = false;
-  harness.setFormValues(validForm({ nombre_razon_social: 'Confirmed Create', identificacion: 'RUC-201' }));
-  harness.controller.handleFormSubmit({ preventDefault() {} });
-  const persisted = JSON.parse(stored.value(model.CLIENT_STORAGE_KEY));
-  assert.equal(persisted.some((client) => client.nombre_razon_social === 'Failed Create'), false);
-  assert.equal(persisted.some((client) => client.nombre_razon_social === 'Confirmed Create'), true);
 });
-test('blocked edit keeps confirmed state, accessible alert, and no success or activity', () => {
-  const stored = memoryStorage();
-  let blocked = true;
-  const storage = { setItem(key, value) { if (blocked) throw new Error('SecurityError'); stored.setItem(key, value); } };
-  const harness = bootController({ clientStorage: storage, formValues: validForm({ id: 'cli_base', nombre_razon_social: 'Failed Edit', identificacion: 'RUC-100' }) });
-  harness.controller.handleFormSubmit({ preventDefault() {} });
+
+test('B2.3 creates through the API, then renders only the fresh server catalog', async () => {
+  const calls = [];
+  const api = {
+    async createClient(payload) { calls.push(['create', payload]); return { client: { public_id: 'response-only' } }; },
+    async clients(cursor) {
+      calls.push(['clients', cursor]);
+      return {
+        items: [{ public_id: 'server-client', legal_name: 'Server Client', client_type: 'COMPANY', tax_identifier: 'RUC-201',
+          primary_contact_name: 'Ada Lovelace', primary_contact_email: 'ada@example.com', primary_contact_phone: '0999999999',
+          telephone: '', address: '', civil_status: 'SINGLE', status: 'ACTIVE', archived_at: null }],
+        next_cursor: null
+      };
+    }
+  };
+  const harness = bootController({ api, formValues: validForm({ celular: '+593 99 000 0001' }) });
+
+  await harness.controller.handleFormSubmit({ preventDefault() {} });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    ['create', {
+      legal_name: 'New Client', client_type: 'COMPANY', tax_identifier: 'RUC-200',
+      primary_contact_name: 'Nora Vega', primary_contact_email: 'nora@example.com', primary_contact_phone: '593990000001',
+      civil_status: 'SINGLE', status: 'ACTIVE'
+    }],
+    ['clients', null]
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.controller.state.clients.map((client) => client.id))), ['server-client']);
+  assert.equal(harness.controller.state.drawerMode, null);
+  assert.equal(harness.elements.submitButton.disabled, false);
+  assert.equal(harness.activity.read().length, 0);
+});
+
+test('B2.3 keeps the create form open and reports a generic API error', async () => {
+  let reloads = 0;
+  const harness = bootController({
+    api: {
+      async createClient() { throw new Error('invalid_request'); },
+      async clients() { reloads += 1; return { items: [], next_cursor: null }; }
+    },
+    formValues: validForm({ nombre_razon_social: 'Rejected Client' })
+  });
+
+  await harness.controller.handleFormSubmit({ preventDefault() {} });
+
+  assert.equal(reloads, 0);
+  assert.equal(harness.controller.state.drawerMode, 'form');
+  assert.equal(harness.elements.formSummary.hidden, false);
+  assert.match(harness.elements.formSummary.textContent, /No se pudo registrar/i);
+  assert.equal(harness.elements.toast.dataset.type, 'error');
+  assert.equal(harness.elements.submitButton.disabled, false);
+  assert.equal(harness.activity.read().length, 0);
+});
+
+test('B2.3 does not claim success when the post-create refresh fails', async () => {
+  const harness = bootController({
+    api: {
+      async createClient() { return { client: { public_id: 'response-only' } }; },
+      async clients() { throw new Error('refresh failed'); }
+    },
+    formValues: validForm({ nombre_razon_social: 'Refresh Failure' })
+  });
+
+  await harness.controller.handleFormSubmit({ preventDefault() {} });
+
+  assert.equal(harness.controller.state.drawerMode, 'form');
+  assert.equal(harness.elements.formSummary.hidden, false);
+  assert.match(harness.elements.formSummary.textContent, /actualizar el directorio/i);
+  assert.notEqual(harness.elements.toast.dataset.type, 'success');
+  assert.equal(harness.elements.submitButton.disabled, false);
+  assert.equal(harness.activity.read().length, 0);
+});
+
+test('B2.4 PATCHes edit with a checked but disabled lifecycle status radio omitted from FormData', async () => {
+  const calls = []; let writes = 0;
+  const harness = bootController({
+    disabledEstado: true, clientStorage: { getItem() { return null; }, setItem() { writes += 1; } },
+    api: {
+      async updateClient(id, payload) { calls.push(['patch', id, payload]); return { public_id: id }; },
+      async clients() {
+        calls.push(['clients', null]);
+        return { items: [{ public_id: 'cli_base', legal_name: 'Server Confirmed', client_type: 'COMPANY', tax_identifier: 'RUC-100',
+          primary_contact_name: 'Ana P?rez', primary_contact_email: 'ana@example.com', primary_contact_phone: '0991234567',
+          telephone: '', address: '', civil_status: 'MARRIED', status: 'ACTIVE', archived_at: null,
+          created_at: '2026-07-01T00:00:00Z' }], next_cursor: null };
+      }
+    }, formValues: validForm({ id: 'cli_base', nombre_razon_social: 'Edited Client', estadoCivil: 'casado' })
+  });
+  await harness.controller.handleFormSubmit({ preventDefault() {} });
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    ['patch', 'cli_base', { legal_name: 'Edited Client', client_type: 'COMPANY', tax_identifier: 'RUC-200',
+      primary_contact_name: 'Nora Vega', primary_contact_email: 'nora@example.com', primary_contact_phone: '0997654321', civil_status: 'MARRIED', telephone: '', address: '' }],
+    ['clients', null]
+  ]);
+  assert.equal(harness.controller.state.clients[0].nombre_razon_social, 'Server Confirmed');
+  assert.equal(harness.controller.state.clients[0].estadoCivil, 'casado');
+  assert.equal(writes, 0); assert.equal(harness.elements.toast.dataset.type, 'success');
+});
+
+test('B2.4 restores confirmed inline civil status on direct PATCH rejection without local persistence', async () => {
+  let writes = 0;
+  const harness = bootController({ clientStorage: { getItem() { return null; }, setItem() { writes += 1; } }, api: { async updateClient() { throw new Error('invalid_request'); } } });
+  const select = { value: 'divorciado', dataset: { clientField: 'estadoCivil', clientId: 'cli_base' }, closest: () => select };
+  await harness.controller.handleInlineChange({ target: select });
+  assert.equal(select.value, 'soltero');
+  assert.equal(harness.controller.state.clients[0].estadoCivil, 'soltero');
+  assert.equal(writes, 0); assert.equal(harness.elements.toast.dataset.type, 'error');
+});
+
+test('B2.5 archives only after confirmation, PATCHes lifecycle, and renders fresh server state', async () => {
+  const calls = []; let writes = 0;
+  const harness = bootController({
+    clientStorage: { getItem() { return null; }, setItem() { writes += 1; } },
+    api: {
+      async updateClient(id, payload) { calls.push(['patch', id, payload]); return {}; },
+      async clients(cursor) {
+        calls.push(['clients', cursor]);
+        return { items: [{ public_id: 'cli_base', legal_name: 'Archived by Server', client_type: 'COMPANY',
+          tax_identifier: 'RUC-100', primary_contact_name: 'Ana Pérez', primary_contact_email: 'ana@example.com',
+          primary_contact_phone: '0991234567', telephone: '', address: '', civil_status: 'SINGLE',
+          status: 'ARCHIVED', archived_at: '2026-09-06T12:00:00Z', created_at: '2026-07-01T00:00:00Z' }], next_cursor: null };
+      }
+    }
+  });
+  const select = { value: 'inactivo', dataset: { clientField: 'estado', clientId: 'cli_base' }, closest: () => select };
+
+  await harness.controller.handleInlineChange({ target: select });
+  assert.deepEqual(calls, []);
+  assert.equal(harness.controller.state.pendingStatusChange.value, 'inactivo');
+
+  harness.elements.statusDialog.returnValue = 'confirm';
+  harness.controller.resolveStatusDialog();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    ['patch', 'cli_base', { status: 'ARCHIVED' }], ['clients', null]
+  ]);
+  assert.equal(harness.controller.state.clients[0].estado, 'inactivo');
+  assert.equal(harness.elements.toast.dataset.type, 'success');
+  assert.equal(writes, 0);
+});
+
+test('B2.5 restores through lifecycle PATCH and retains confirmed state after failure', async () => {
+  const calls = [];
+  const harness = bootController({ api: {
+    async updateClient(id, payload) { calls.push(['patch', id, payload]); throw new Error('request failed'); }
+  } });
+  harness.controller.state.clients[0].estado = 'inactivo';
+  const select = { value: 'activo', dataset: { clientField: 'estado', clientId: 'cli_base' }, closest: () => select };
+
+  await harness.controller.handleInlineChange({ target: select });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['patch', 'cli_base', { status: 'ACTIVE' }]]);
+  assert.equal(harness.controller.state.clients[0].estado, 'inactivo');
+  assert.equal(select.value, 'inactivo');
+  assert.equal(harness.elements.toast.dataset.type, 'error');
+});
+
+test('B2.4 keeps confirmed server state and reports no success after a refresh error', async () => {
+  const harness = bootController({
+    api: { async updateClient() { return {}; }, async clients() { throw new Error('refresh failed'); } },
+    formValues: validForm({ id: 'cli_base', nombre_razon_social: 'Rejected Client' })
+  });
+  await harness.controller.handleFormSubmit({ preventDefault() {} });
   assert.equal(harness.controller.state.clients[0].nombre_razon_social, 'Baseline Client');
   assert.equal(harness.controller.state.drawerMode, 'form');
-  assert.equal(harness.elements.formSummary.hidden, false);
-  assert.equal(harness.elements.formSummary.getAttribute('role'), 'alert');
-  assert.equal(harness.elements.toast.hidden, true);
-  assert.equal(harness.activity.read().length, 0);
-  blocked = false;
-  harness.setFormValues(validForm({ id: 'cli_base', nombre_razon_social: 'Confirmed Edit', identificacion: 'RUC-100' }));
-  harness.controller.handleFormSubmit({ preventDefault() {} });
-  assert.equal(JSON.stringify(JSON.parse(stored.value(model.CLIENT_STORAGE_KEY))).includes('Failed Edit'), false);
+  assert.equal(harness.elements.toast.dataset.type, 'error');
 });
-test('blocked inline change keeps confirmed state and emits only an assertive error', () => {
-  const stored = memoryStorage();
-  let blocked = true;
-  const harness = bootController({ clientStorage: { setItem(key, value) { if (blocked) throw new Error('SecurityError'); stored.setItem(key, value); } } });
+test('B2.1 blocks inline mutations without local persistence or success feedback', () => {
+  let writes = 0;
+  const storage = memoryStorage();
+  const clientStorage = {
+    getItem: storage.getItem,
+    setItem() { writes += 1; }
+  };
+  const harness = bootController({ clientStorage });
+
   assert.equal(harness.controller.applyClientFieldChange('cli_base', 'estadoCivil', 'casado'), false);
+  assert.equal(writes, 0);
   assert.equal(harness.controller.state.clients[0].estadoCivil, 'soltero');
   assert.equal(harness.elements.toast.dataset.type, 'error');
   assert.equal(harness.elements.toast.getAttribute('role'), 'alert');
   assert.equal(harness.activity.read().length, 0);
-  blocked = false;
-  assert.equal(harness.controller.applyClientFieldChange('cli_base', 'estadoCivil', 'divorciado'), true);
-  assert.equal(JSON.parse(stored.value(model.CLIENT_STORAGE_KEY))[0].estadoCivil, 'divorciado');
 });
-test('two consecutive successful client updates record two activity events', () => {
-  const harness = bootController({ clientStorage: memoryStorage() });
-  assert.equal(harness.controller.applyClientFieldChange('cli_base', 'estadoCivil', 'casado'), true);
-  assert.equal(harness.controller.applyClientFieldChange('cli_base', 'estadoCivil', 'divorciado'), true);
-  assert.equal(harness.activity.read().length, 2);
-  assert.deepEqual(harness.activity.read().map((entry) => entry.action), ['Cliente actualizado', 'Cliente actualizado']);
+
+test('B2.5 enables lifecycle controls while preserving directory and drawer hooks', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../assets/js/clientes.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../pages/clientes.html'), 'utf8');
+
+  assert.match(source, /LIFECYCLE_ENABLED\s*=\s*true/);
+  assert.match(source, /mutationControlAttributes\(\)/);
+  assert.match(source, /function lifecycleControlAttributes\(\)/);
+  assert.doesNotMatch(html, /id="client-submit-button"[^>]*disabled/);
+  assert.doesNotMatch(html, /id="client-detail-edit"[^>]*disabled/);
+  ['client-search', 'data-client-status', 'client-drawer', 'client-form'].forEach((hook) => assert.match(html, new RegExp(hook)));
+});
+
+test('B2.4 keeps edit lifecycle radios disabled while enabling lifecycle directory controls', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../assets/js/clientes.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../pages/clientes.html'), 'utf8');
+
+  assert.match(source, /EDIT_ENABLED\s*=\s*true/);
+  assert.match(source, /window\.FreelanceFlowApi\.updateClient\(/);
+  assert.match(source, /field === 'estadoCivil'/);
+  assert.match(source, /LIFECYCLE_ENABLED\s*=\s*true/);
+  assert.match(html, /id="client-detail-edit"[^>]*type="button"(?![^>]*disabled)/);
+  assert.doesNotMatch(html, /archive and restore remain pending lifecycle/i);
 });
 }());

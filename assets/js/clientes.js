@@ -1,8 +1,13 @@
-/* FreelanceFlow — Clientes. Browser-only prototype; no backend or external APIs. */
+/* FreelanceFlow — Clientes. API-backed directory; creation is server-authoritative. */
 
 (function clientsModule() {
-  const DATA_URL = '../assets/data/mock-data.json';
   const model = window.FreelanceFlowClientModel;
+  const MUTATIONS_ENABLED = false;
+  const CREATE_ENABLED = true;
+  const EDIT_ENABLED = true;
+  const INLINE_CIVIL_STATUS_ENABLED = true;
+  const LIFECYCLE_ENABLED = true;
+  const MUTATION_UNAVAILABLE_MESSAGE = 'This lifecycle change is not available.';
 
   const state = {
     clients: [],
@@ -32,6 +37,7 @@
     }
 
     cacheElements();
+    syncMutationControls();
     readFiltersFromUrl();
     bindEvents();
     syncFilterControls();
@@ -76,6 +82,20 @@
     };
   }
 
+  function syncMutationControls() {
+    [[elements.detailEdit, !EDIT_ENABLED], [elements.submitButton, !CREATE_ENABLED]].forEach(([control, disabled]) => {
+      if (!control) return;
+      control.disabled = disabled;
+      if (disabled) {
+        control.setAttribute('aria-disabled', 'true');
+        control.setAttribute('aria-describedby', 'client-mutations-disabled');
+      } else {
+        control.removeAttribute('aria-disabled');
+        control.removeAttribute('aria-describedby');
+      }
+    });
+  }
+
   function bindEvents() {
     elements.createButton?.addEventListener('click', (event) => openCreateForm(event.currentTarget));
     elements.search?.addEventListener('input', (event) => {
@@ -117,24 +137,44 @@
     });
   }
 
-  async function loadAndRenderClients() {
+  async function loadAndRenderClients({ preserveOnError = false } = {}) {
+    const confirmedClients = state.clients;
     setLoading(true);
     elements.dataError.hidden = true;
+    state.clients = [];
 
     try {
-      const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL);
-      state.clients = model.getEffectiveClients(data.clientes ?? []);
+      const clients = [];
+      const requestedCursors = new Set();
+      let cursor = null;
+      do {
+        if (requestedCursors.has(cursor)) throw new Error('Repeated client pagination cursor.');
+        requestedCursors.add(cursor);
+        const page = await window.FreelanceFlowApi.clients(cursor);
+        if (!page || typeof page !== 'object' || Array.isArray(page)
+          || !Array.isArray(page.items)
+          || !(page.next_cursor === null || typeof page.next_cursor === 'string')) {
+          throw new Error('Invalid clients directory response.');
+        }
+        clients.push(...page.items.map(model.mapApiClientRecord));
+        cursor = page.next_cursor;
+      } while (cursor !== null);
+      state.clients = clients;
       renderAll();
       setLoading(false);
+      return true;
     } catch (error) {
-      showFatalError(error);
+      state.clients = preserveOnError ? confirmedClients : [];
+      if (preserveOnError) {
+        setLoading(false);
+        elements.dataError.hidden = false;
+      } else showFatalError(error);
+      return false;
     }
   }
 
-  function saveClients(candidateClients) {
-    const saved = model.persistClients(candidateClients);
-    if (!saved) console.warn('No se pudieron guardar los cambios locales de clientes.');
-    return saved;
+  function saveClients() {
+    return false;
   }
 
   function setLoading(isLoading) {
@@ -192,7 +232,7 @@
         <td><a href="mailto:${escapeAttribute(client.correo)}">${escapeHtml(client.correo)}</a><small>${escapeHtml(client.celular)}</small></td>
         <td>${renderInlineSelect(client, 'estadoCivil')}</td>
         <td>${renderInlineSelect(client, 'estado')}</td>
-        <td><div class="client-row-actions"><button type="button" data-action="view-client" data-client-id="${escapeAttribute(client.id)}">Ver detalle</button><button class="client-icon-action" type="button" data-action="edit-client" data-client-id="${escapeAttribute(client.id)}" aria-label="Editar ${escapeAttribute(client.nombre_razon_social)}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg></button></div></td>
+        <td><div class="client-row-actions"><button type="button" data-action="view-client" data-client-id="${escapeAttribute(client.id)}">Ver detalle</button><button class="client-icon-action" type="button" data-action="edit-client" data-client-id="${escapeAttribute(client.id)}" aria-label="Editar ${escapeAttribute(client.nombre_razon_social)}"${editControlAttributes()}><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg></button></div></td>
       </tr>`;
   }
 
@@ -215,7 +255,7 @@
         </div>
         <footer>
           <button type="button" class="clients-secondary-action" data-action="view-client" data-client-id="${escapeAttribute(client.id)}">Ver detalle</button>
-          <button type="button" class="client-icon-action" data-action="edit-client" data-client-id="${escapeAttribute(client.id)}" aria-label="Editar ${escapeAttribute(client.nombre_razon_social)}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg></button>
+          <button type="button" class="client-icon-action" data-action="edit-client" data-client-id="${escapeAttribute(client.id)}" aria-label="Editar ${escapeAttribute(client.nombre_razon_social)}"${editControlAttributes()}><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg></button>
         </footer>
       </li>`;
   }
@@ -225,7 +265,25 @@
     const options = isCivil ? model.CIVIL_STATUS_OPTIONS : model.CLIENT_STATUS_OPTIONS;
     const label = isCivil ? 'estado civil' : 'estado';
     const className = isCivil ? '' : ` client-status-select client-status-${client.estado}`;
-    return `<select class="client-inline-select${className}" name="client-${field}-${escapeAttribute(client.id)}" data-client-field="${field}" data-client-id="${escapeAttribute(client.id)}" aria-label="Cambiar ${label} de ${escapeAttribute(client.nombre_razon_social)}">${options.map((option) => `<option value="${escapeAttribute(option)}"${option === client[field] ? ' selected' : ''}>${escapeHtml(titleCase(option))}</option>`).join('')}</select>`;
+    const hasValue = options.includes(client[field]);
+    const fallback = isCivil && !hasValue ? '<option value="" selected disabled>No registrado</option>' : '';
+    return `<select class="client-inline-select${className}" name="client-${field}-${escapeAttribute(client.id)}" data-client-field="${field}" data-client-id="${escapeAttribute(client.id)}" aria-label="Cambiar ${label} de ${escapeAttribute(client.nombre_razon_social)}"${isCivil ? inlineCivilControlAttributes() : lifecycleControlAttributes()}>${fallback}${options.map((option) => `<option value="${escapeAttribute(option)}"${option === client[field] ? ' selected' : ''}>${escapeHtml(titleCase(option))}</option>`).join('')}</select>`;
+  }
+
+  function mutationControlAttributes() {
+    return MUTATIONS_ENABLED ? '' : ' disabled aria-disabled="true" aria-describedby="client-mutations-disabled" title="This client change is not available"';
+  }
+
+  function editControlAttributes() {
+    return EDIT_ENABLED ? '' : mutationControlAttributes();
+  }
+
+  function inlineCivilControlAttributes() {
+    return INLINE_CIVIL_STATUS_ENABLED ? '' : mutationControlAttributes();
+  }
+
+  function lifecycleControlAttributes() {
+    return LIFECYCLE_ENABLED ? '' : mutationControlAttributes();
   }
 
   function handleActionClick(event) {
@@ -248,19 +306,29 @@
   function handleInlineChange(event) {
     const select = event.target.closest('[data-client-field]');
     if (!select) return;
+    const field = select.dataset.clientField;
+    if ((field !== 'estadoCivil' && field !== 'estado')
+      || (field === 'estadoCivil' && !INLINE_CIVIL_STATUS_ENABLED)) {
+      showMutationUnavailable();
+      renderDirectory();
+      return;
+    }
 
     const client = findClient(select.dataset.clientId);
     if (!client) return;
-    const field = select.dataset.clientField;
     const nextValue = select.value;
 
     if (field === 'estado' && nextValue === 'inactivo' && client.estado !== 'inactivo') {
       state.pendingStatusChange = { clientId: client.id, field, value: nextValue };
+      select.value = client[field];
       elements.statusDialog.showModal();
       return;
     }
 
-    applyClientFieldChange(client.id, field, nextValue);
+    select.value = client[field];
+    return field === 'estado'
+      ? applyLifecycleChange(client.id, nextValue)
+      : applyClientFieldChange(client.id, field, nextValue);
   }
 
   function resolveStatusDialog() {
@@ -269,34 +337,68 @@
     if (!pending) return;
 
     if (elements.statusDialog.returnValue === 'confirm') {
-      applyClientFieldChange(pending.clientId, pending.field, pending.value);
+      applyLifecycleChange(pending.clientId, pending.value);
     } else {
       renderDirectory();
       if (state.drawerMode === 'detail') renderDetail(findClient(state.selectedClientId));
     }
   }
 
+  function civilStatusCode(value) {
+    return { soltero: 'SINGLE', casado: 'MARRIED', divorciado: 'DIVORCED', separado: 'SEPARATED' }[value]
+      || (value ? 'COMMONLAW' : '');
+  }
+
+  function lifecycleStatusCode(value) {
+    return { activo: 'ACTIVE', inactivo: 'ARCHIVED' }[value];
+  }
+
+  function applyLifecycleChange(clientId, value) {
+    if (!LIFECYCLE_ENABLED || !['activo', 'inactivo'].includes(value)
+      || !window.FreelanceFlowApi?.updateClient) return showMutationUnavailable();
+    const confirmedClients = state.clients;
+    return window.FreelanceFlowApi.updateClient(clientId, { status: lifecycleStatusCode(value) })
+      .then(async () => {
+        if (!await loadAndRenderClients({ preserveOnError: true })) {
+          state.clients = confirmedClients;
+          renderAll();
+          showToast('No se pudo actualizar el directorio. El cliente conserva su informacion confirmada.', 'error');
+          return false;
+        }
+        showToast(value === 'inactivo' ? 'Cliente archivado.' : 'Cliente restaurado.', 'success');
+        return true;
+      })
+      .catch((error) => {
+        console.error(error);
+        state.clients = confirmedClients;
+        renderAll();
+        showToast('No se pudo guardar el cambio. El cliente conserva su informacion confirmada.', 'error');
+        return false;
+      });
+  }
+
   function applyClientFieldChange(clientId, field, value) {
-    const allowed = field === 'estadoCivil' ? model.CIVIL_STATUS_OPTIONS : model.CLIENT_STATUS_OPTIONS;
-    if (!allowed.includes(value)) return;
-
-    const candidateClients = state.clients.map((client) => client.id === clientId ? { ...client, [field]: value } : client);
-    if (!saveClients(candidateClients)) {
-      renderAll();
-      showToast('No se pudo guardar el cambio. El cliente conserva su información anterior.', 'error');
-      return false;
-    }
-
-    state.clients = candidateClients;
-    renderAll();
-    recordActivity('Cliente actualizado');
-    const message = field === 'estadoCivil'
-      ? 'Estado civil actualizado.'
-      : value === 'inactivo'
-        ? 'Cliente inactivado. Su historial se mantiene disponible.'
-        : 'Estado del cliente actualizado.';
-    showToast(message, 'success');
-    return true;
+    if (field !== 'estadoCivil' || !INLINE_CIVIL_STATUS_ENABLED || !model.CIVIL_STATUS_OPTIONS.includes(value)
+      || !window.FreelanceFlowApi?.updateClient) return showMutationUnavailable();
+    const confirmedClients = state.clients;
+    return window.FreelanceFlowApi.updateClient(clientId, { civil_status: civilStatusCode(value) })
+      .then(async () => {
+        if (!await loadAndRenderClients({ preserveOnError: true })) {
+          state.clients = confirmedClients;
+          renderAll();
+          showToast('No se pudo actualizar el directorio. El cliente conserva su informacion confirmada.', 'error');
+          return false;
+        }
+        showToast('Estado civil actualizado.', 'success');
+        return true;
+      })
+      .catch((error) => {
+        console.error(error);
+        state.clients = confirmedClients;
+        renderAll();
+        showToast('No se pudo guardar el cambio. El cliente conserva su informacion confirmada.', 'error');
+        return false;
+      });
   }
 
   function openDetail(client, trigger) {
@@ -341,6 +443,7 @@
   }
 
   function openEditForm(client, trigger) {
+    if (!EDIT_ENABLED) return showMutationUnavailable();
     prepareForm(client);
     elements.drawerEyebrow.textContent = 'Actualizar ficha comercial';
     elements.drawerTitle.textContent = 'Editar cliente';
@@ -372,6 +475,9 @@
     setFormValue('address', values.direccion);
     const status = elements.form.querySelector(`[name="estado"][value="${values.estado || 'activo'}"]`);
     if (status) status.checked = true;
+    elements.form.querySelectorAll('[name="estado"]').forEach((control) => {
+      control.disabled = Boolean(client);
+    });
     state.formDirty = false;
   }
 
@@ -443,61 +549,82 @@
     setFieldError(field.name, validation.errors[field.name] ?? '');
   }
 
-  function handleFormSubmit(event) {
+  async function handleFormSubmit(event) {
     event.preventDefault();
     const draft = readForm();
+    const isEdit = Boolean(draft.id);
+    if ((isEdit && (!EDIT_ENABLED || !window.FreelanceFlowApi?.updateClient))
+      || (!isEdit && (!CREATE_ENABLED || !window.FreelanceFlowApi?.createClient))) return showMutationUnavailable();
     const validation = model.validateClient(draft, state.clients);
     clearFormErrors();
 
     if (!validation.valid) {
       Object.entries(validation.errors).forEach(([field, message]) => setFieldError(field, message));
-      elements.formSummary.textContent = 'Revisa los campos señalados antes de guardar.';
+      elements.formSummary.textContent = 'Revisa los campos indicados antes de guardar.';
       elements.formSummary.hidden = false;
-      const firstInvalid = elements.form.querySelector('[aria-invalid="true"]');
-      firstInvalid?.focus();
+      elements.form.querySelector('[aria-invalid="true"]')?.focus();
       return;
     }
 
     elements.submitButton.disabled = true;
-    elements.submitButton.textContent = draft.id ? 'Guardando…' : 'Registrando…';
-
-    let savedClient;
-    let candidateClients;
-    if (draft.id) {
-      savedClient = {
-        ...model.normalizeClient({ ...findClient(draft.id), ...draft }),
-        id: draft.id,
-        fecha_registro: findClient(draft.id).fecha_registro,
-        identificacion_fiscal: draft.identificacion,
-        correo_electronico: draft.correo
-      };
-      candidateClients = state.clients.map((client) => client.id === draft.id ? savedClient : client);
-    } else {
-      savedClient = model.createClientRecord(draft, {
-        id: generateClientId(),
-        date: getTodayDate()
-      });
-      candidateClients = [savedClient, ...state.clients];
-    }
-
-    if (!saveClients(candidateClients)) {
-      elements.formSummary.textContent = 'No se pudo guardar el cliente. Revisa el almacenamiento del navegador e inténtalo nuevamente.';
-      elements.formSummary.hidden = false;
-      elements.formSummary.focus();
+    elements.submitButton.textContent = isEdit ? 'Guardando...' : 'Registrando...';
+    const confirmedClients = state.clients;
+    try {
+      if (isEdit) await window.FreelanceFlowApi.updateClient(draft.id, buildUpdatePayload(draft));
+      else await window.FreelanceFlowApi.createClient(buildCreatePayload(draft));
+      if (!await loadAndRenderClients({ preserveOnError: true })) {
+        state.clients = confirmedClients;
+        renderAll();
+        showFormError('No se pudo actualizar el directorio. El cliente conserva su informacion confirmada.');
+        showToast('No se pudo actualizar el directorio.', 'error');
+        return;
+      }
+      state.formDirty = false;
+      closeDrawer();
+      showToast(isEdit ? 'Cliente actualizado exitosamente.' : 'Cliente registrado exitosamente.', 'success');
+    } catch (error) {
+      console.error(error);
+      state.clients = confirmedClients;
+      renderAll();
+      showFormError(isEdit ? 'No se pudo actualizar el cliente. Revisa los datos e intentalo nuevamente.' : 'No se pudo registrar el cliente. Revisa los datos e intentalo nuevamente.');
+      showToast(isEdit ? 'No se pudo actualizar el cliente.' : 'No se pudo registrar el cliente.', 'error');
+    } finally {
       elements.submitButton.disabled = false;
-      elements.submitButton.textContent = draft.id ? 'Guardar cambios' : 'Registrar cliente';
-      return;
+      elements.submitButton.textContent = isEdit ? 'Guardar cambios' : 'Registrar cliente';
     }
+  }
 
-    state.clients = candidateClients;
-    state.selectedClientId = savedClient.id;
-    renderAll();
-    state.formDirty = false;
-    closeDrawer();
-    recordActivity(draft.id ? 'Cliente actualizado' : 'Cliente registrado');
-    showToast(draft.id ? 'Cliente actualizado exitosamente.' : 'Cliente registrado exitosamente.', 'success');
-    elements.submitButton.disabled = false;
-    elements.submitButton.textContent = draft.id ? 'Guardar cambios' : 'Registrar cliente';
+  function buildCreatePayload(draft) {
+    const clientType = { Empresa: 'COMPANY', 'Persona natural': 'INDIVIDUAL' }[draft.tipo_cliente];
+    const civilStatus = { soltero: 'SINGLE', casado: 'MARRIED', divorciado: 'DIVORCED', separado: 'SEPARATED', 'unión libre': 'COMMONLAW' }[draft.estadoCivil];
+    const status = { activo: 'ACTIVE', inactivo: 'INACTIVE' }[draft.estado];
+    const payload = {
+      legal_name: draft.nombre_razon_social,
+      client_type: clientType,
+      tax_identifier: draft.identificacion,
+      primary_contact_name: `${draft.nombres} ${draft.apellidos}`.trim(),
+      primary_contact_email: draft.correo,
+      primary_contact_phone: draft.celular.replace(/\D/g, ''),
+      civil_status: civilStatus,
+      status
+    };
+    if (draft.telefono) payload.telephone = draft.telefono;
+    if (draft.direccion) payload.address = draft.direccion;
+    return payload;
+  }
+
+  function buildUpdatePayload(draft) {
+    const payload = buildCreatePayload(draft);
+    delete payload.status;
+    payload.telephone = draft.telefono;
+    payload.address = draft.direccion;
+    return payload;
+  }
+
+  function showFormError(message) {
+    elements.formSummary.textContent = message;
+    elements.formSummary.hidden = false;
+    elements.formSummary.focus();
   }
 
   function recordActivity(action) {
@@ -518,7 +645,7 @@
       celular: String(data.get('celular') ?? '').trim(),
       telefono: String(data.get('telefono') ?? '').trim(),
       direccion: String(data.get('direccion') ?? '').trim(),
-      estado: String(data.get('estado') ?? '').trim()
+      estado: String(data.get('estado') || elements.form.querySelector('[name="estado"]:checked')?.value || '').trim()
     };
   }
 
@@ -531,6 +658,15 @@
     });
     elements.form.querySelectorAll('.has-error').forEach((field) => field.classList.remove('has-error'));
     elements.form.querySelectorAll('[data-field-error]').forEach((error) => { error.textContent = ''; });
+  }
+
+  function showMutationUnavailable() {
+    if (elements.formSummary && !elements.form?.hidden) {
+      elements.formSummary.textContent = MUTATION_UNAVAILABLE_MESSAGE;
+      elements.formSummary.hidden = false;
+    }
+    showToast(MUTATION_UNAVAILABLE_MESSAGE, 'error');
+    return false;
   }
 
   function setFieldError(fieldName, message) {
@@ -619,7 +755,7 @@
 
   function formatDate(value) {
     if (!value) return 'Fecha no disponible';
-    const date = new Date(`${value}T00:00:00`);
+    const date = new Date(value.length === 10 ? `${value}T00:00:00` : value);
     return Number.isNaN(date.getTime()) ? 'Fecha no disponible' : dateFormatter.format(date);
   }
 

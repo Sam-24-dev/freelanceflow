@@ -35,7 +35,9 @@ class Client(models.Model):
     primary_contact_name = models.CharField(max_length=255)
     primary_contact_email = models.EmailField()
     primary_contact_phone = models.CharField(max_length=15, blank=True)
+    telephone = models.CharField(max_length=15, blank=True)
     address = models.TextField(blank=True)
+    civil_status = models.CharField(max_length=32, blank=True, null=True)
     status = models.CharField(
         max_length=10,
         choices=Status.choices,
@@ -116,7 +118,10 @@ class Client(models.Model):
         self.primary_contact_name = self._collapse_whitespace(self.primary_contact_name)
         self.primary_contact_email = self.primary_contact_email.strip().lower()
         self.primary_contact_phone = self.primary_contact_phone.strip()
+        self.telephone = self.telephone.strip()
         self.address = self._collapse_whitespace(self.address)
+        if self.civil_status is not None:
+            self.civil_status = self._collapse_whitespace(self.civil_status)
 
     @staticmethod
     def _collapse_whitespace(value: str) -> str:
