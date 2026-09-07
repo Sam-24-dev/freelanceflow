@@ -83,7 +83,7 @@ async function loadController() {
     confirm: () => true,
     FreelanceFlowServiceModel: require('../assets/js/service-model.js'),
     FreelanceFlowActivity: { record(event) { activity.push(event); } },
-    FreelanceFlowDataLoader: { loadJson: async () => ({ servicios: [{ id: 'srv_001', nombre_servicio: 'Auditoría', descripcion: '', unidad_medida: 'Hora', tarifa_unitaria: 10, moneda: 'USD' }] }) },
+    FreelanceFlowApi: { services: async () => ({ items: [{ public_id: 'srv_001', name: 'Auditoria', description: '', unit_of_measure: 'HOUR', rate: '10.00', currency: 'USD', status: 'ACTIVE', archived_at: null }], next_cursor: null }) },
     window: null,
     globalThis: null
   };

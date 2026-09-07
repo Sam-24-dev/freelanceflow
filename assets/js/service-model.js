@@ -9,14 +9,16 @@
     return String(value ?? '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   }
 
-  function parseRate(value) {
+  function parseRate(value, allowZero = false) {
     if (value === '' || value === null || typeof value === 'undefined') return null;
+    if (typeof value === 'string' && value.trim() === '') return null;
+    if (typeof value !== 'number' && typeof value !== 'string') return NaN;
     const rate = Number(value);
-    return Number.isFinite(rate) && rate > 0 ? Math.round((rate + Number.EPSILON) * 100) / 100 : NaN;
+    return Number.isFinite(rate) && (allowZero ? rate >= 0 : rate > 0) ? Math.round((rate + Number.EPSILON) * 100) / 100 : NaN;
   }
 
-  function normalizeService(service = {}) {
-    const rate = parseRate(service.tarifa_unitaria);
+  function normalizeService(service = {}, { allowZero = false } = {}) {
+    const rate = parseRate(service.tarifa_unitaria, allowZero);
     const unit = String(service.unidad_medida ?? '').trim();
     const currency = String(service.moneda ?? 'USD').trim().toUpperCase();
     return {
@@ -27,6 +29,19 @@
       tarifa_unitaria: Number.isNaN(rate) ? null : rate,
       moneda: currency
     };
+  }
+
+  function mapApiServiceRecord(record = {}) {
+    const unitMap = { HOUR: 'Hora', PROJECT: 'Proyecto', DELIVERABLE: 'Entregable' };
+    const normalized = normalizeService({
+      id: record.public_id,
+      nombre_servicio: record.name,
+      descripcion: record.description,
+      unidad_medida: unitMap[record.unit_of_measure] || record.unit_of_measure,
+      tarifa_unitaria: record.rate,
+      moneda: record.currency
+    }, { allowZero: true });
+    return { ...normalized, estado: record.status === 'ARCHIVED' ? 'archivado' : 'activo', archived_at: record.archived_at ?? null };
   }
 
   function validateService(service = {}, existingServices = []) {
@@ -45,7 +60,7 @@
   function filterServices(services = [], filters = {}) {
     const tokens = normalizeText(filters.query).split(/\s+/).filter(Boolean);
     const unit = filters.unit || 'todas';
-    return services.map(normalizeService).filter((service) => (unit === 'todas' || service.unidad_medida === unit) && (!tokens.length || tokens.every((token) => normalizeText(`${service.nombre_servicio} ${service.descripcion}`).includes(token))));
+    return services.map((source) => ({ ...normalizeService(source), estado: source?.estado, archived_at: source?.archived_at ?? null })).filter((service) => (unit === 'todas' || service.unidad_medida === unit) && (!tokens.length || tokens.every((token) => normalizeText(`${service.nombre_servicio} ${service.descripcion}`).includes(token))));
   }
 
   function calculateServiceMetrics(services = []) {
@@ -99,7 +114,7 @@
     return [...merged.values()];
   }
 
-  const api = { SERVICE_UNIT_OPTIONS, SERVICE_CURRENCY_OPTIONS, SERVICE_STORAGE_VERSION, normalizeText, normalizeService, validateService, filterServices, calculateServiceMetrics, createServiceRecord, updateService, removeService, normalizeStoredCatalog, saveStoredCatalog, mergeServices };
+  const api = { SERVICE_UNIT_OPTIONS, SERVICE_CURRENCY_OPTIONS, SERVICE_STORAGE_VERSION, normalizeText, normalizeService, mapApiServiceRecord, validateService, filterServices, calculateServiceMetrics, createServiceRecord, updateService, removeService, normalizeStoredCatalog, saveStoredCatalog, mergeServices };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   globalScope.FreelanceFlowServiceModel = api;
 }(typeof globalThis !== 'undefined' ? globalThis : window));

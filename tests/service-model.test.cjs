@@ -20,6 +20,9 @@ test('validates required unique names, approved units and positive finite rates'
   assert.equal(model.validateService({ nombre_servicio: 'consultoría ux/ui', unidad_medida: 'Hora', tarifa_unitaria: 10 }, services).errors.nombre_servicio, 'Ya existe un servicio con ese nombre.');
   assert.equal(model.validateService({ nombre_servicio: 'Nuevo', unidad_medida: 'Mensual', tarifa_unitaria: 10 }, services).errors.unidad_medida, 'Seleccioná una unidad de medida.');
   assert.equal(model.validateService({ nombre_servicio: 'Nuevo', unidad_medida: 'Hora', tarifa_unitaria: 'Infinity' }, services).errors.tarifa_unitaria, 'Ingresá una tarifa mayor que cero.');
+  const zeroRate = model.validateService({ nombre_servicio: 'Nuevo', unidad_medida: 'Hora', tarifa_unitaria: 0 });
+  assert.equal(zeroRate.valid, false);
+  assert.ok(zeroRate.errors.tarifa_unitaria);
   assert.equal(model.validateService({ nombre_servicio: 'Nuevo', unidad_medida: 'Hora', tarifa_unitaria: '12.50', moneda: 'MXN' }, services).valid, true);
   assert.deepEqual(model.validateService({ nombre_servicio: 'Nuevo', unidad_medida: 'Hora', tarifa_unitaria: 10, moneda: 'GBP' }, services), { valid: false, errors: { moneda: 'Seleccioná una moneda válida.' } });
 });

@@ -1,8 +1,6 @@
 /* FreelanceFlow — Servicios. Browser-only catalogue with local persistence. */
 (function servicesModule() {
   'use strict';
-  const DATA_URL = '../assets/data/mock-data.json';
-  const STORAGE_KEY = 'freelanceflow_services_v1';
   const MUTATIONS_ENABLED = false;
   const MUTATION_UNAVAILABLE_ID = 'services-mutations-unavailable';
   const model = window.FreelanceFlowServiceModel;
@@ -30,15 +28,41 @@
     elements.form?.addEventListener('focusout', validateBlur); elements.form?.addEventListener('submit', submitForm); elements.dialog?.addEventListener('close', resolveRemoval);
     document.addEventListener('keydown', keyboard);
   }
-  async function load() { loading(true); elements.error.hidden = true; try { const data = await window.FreelanceFlowDataLoader.loadJson(DATA_URL); const stored = readStored(); state.deletedIds = stored.deletedIds; state.services = model.mergeServices(data.servicios || [], stored); render(); loading(false); } catch (error) { fatal(error); } }
-  function readStored() { try { return model.normalizeStoredCatalog(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')) || { items: [], deletedIds: [] }; } catch { return { items: [], deletedIds: [] }; } }
-  function loading(value) { elements.loading.hidden = !value; elements.content.hidden = value; }
-  function fatal(error) { console.error(error); loading(false); elements.content.hidden = true; elements.error.hidden = false; elements.count.textContent = 'Servicios no disponibles'; }
+  async function load() {
+    loading(true); elements.error.hidden = true; state.services = [];
+    try {
+      const services = [];
+      const requestedCursors = new Set();
+      let cursor = null;
+      do {
+        if (requestedCursors.has(cursor)) throw new Error('Repeated service pagination cursor.');
+        requestedCursors.add(cursor);
+        const page = await window.FreelanceFlowApi.services(cursor);
+        if (!page || typeof page !== 'object' || Array.isArray(page) || !Array.isArray(page.items)
+          || !(page.next_cursor === null || (typeof page.next_cursor === 'string' && page.next_cursor.length > 0))
+          || page.items.some((item) => !isApiServiceRecord(item))) throw new Error('Invalid services directory response.');
+        services.push(...page.items.map(model.mapApiServiceRecord));
+        cursor = page.next_cursor;
+      } while (cursor !== null);
+      state.services = services; render(); loading(false);
+    } catch (error) { fatal(error); }
+  }
+  function isApiServiceRecord(record) {
+    return record && typeof record === 'object' && !Array.isArray(record)
+      && typeof record.public_id === 'string' && typeof record.name === 'string'
+      && typeof record.description === 'string' && typeof record.unit_of_measure === 'string'
+      && (typeof record.rate === 'number' || (typeof record.rate === 'string' && record.rate.trim() !== '')) && Number.isFinite(Number(record.rate)) && Number(record.rate) >= 0
+      && record.currency === 'USD' && ['ACTIVE', 'ARCHIVED'].includes(record.status)
+      && ((record.status === 'ACTIVE' && record.archived_at === null) || (record.status === 'ARCHIVED' && typeof record.archived_at === 'string'));
+  }
+  function loading(value) { elements.loading.hidden = !value; elements.content.hidden = value; elements.retry.disabled = value; }
+  function fatal(error) { console.error(error); state.services = []; elements.table.innerHTML = ''; elements.cards.innerHTML = ''; loading(false); elements.content.hidden = true; elements.error.hidden = false; elements.count.textContent = 'Servicios no disponibles'; elements.status.textContent = 'Servicios no disponibles'; }
   function visible() { return model.filterServices(state.services, state.filters); }
   function render() { const shown = visible(); const metrics = model.calculateServiceMetrics(state.services); elements.total.textContent = metrics.total; elements.average.textContent = format(metrics.averageRate, metrics.averageCurrency); elements.mostUsed.textContent = metrics.mostUsedUnit; elements.table.innerHTML = shown.map(row).join(''); elements.cards.innerHTML = shown.map(card).join(''); const empty = state.services.length === 0; elements.empty.hidden = !empty; elements.noResults.hidden = empty || shown.length !== 0; elements.count.textContent = empty ? 'Sin servicios registrados' : `${shown.length} ${shown.length === 1 ? 'servicio visible' : 'servicios visibles'}`; elements.status.textContent = elements.count.textContent; elements.clear.hidden = !(state.filters.query.trim() || state.filters.unit !== 'todas'); }
-  function row(service) { return `<tr><td><strong>${safe(service.nombre_servicio)}</strong></td><td title="${safe(service.descripcion)}"><span class="service-description">${safe(service.descripcion || 'Sin descripción')}</span></td><td>${safe(service.unidad_medida)}</td><td class="service-rate">${format(service.tarifa_unitaria, service.moneda)}</td><td>${safe(service.moneda)}</td><td><div class="services-row-actions">${actions(service)}</div></td></tr>`; }
-  function card(service) { return `<li class="service-card"><div><strong>${safe(service.nombre_servicio)}</strong><span class="service-unit-badge">${safe(service.unidad_medida)}</span></div><p>${safe(service.descripcion || 'Sin descripción')}</p><dl><div><dt>Tarifa</dt><dd>${format(service.tarifa_unitaria, service.moneda)}</dd></div><div><dt>Moneda</dt><dd>${safe(service.moneda)}</dd></div></dl><div class="services-row-actions">${actions(service)}</div></li>`; }
+  function row(service) { return `<tr><td><strong>${safe(service.nombre_servicio)}</strong>${status(service)}</td><td title="${safe(service.descripcion)}"><span class="service-description">${safe(service.descripcion || 'Sin descripci\u00f3n')}</span></td><td>${safe(service.unidad_medida)}</td><td class="service-rate">${format(service.tarifa_unitaria, service.moneda)}</td><td>${safe(service.moneda)}</td><td><div class="services-row-actions">${actions(service)}</div></td></tr>`; }
+  function card(service) { return `<li class="service-card"><div><strong>${safe(service.nombre_servicio)}</strong><span class="service-unit-badge">${safe(service.unidad_medida)}</span>${status(service)}</div><p>${safe(service.descripcion || 'Sin descripci\u00f3n')}</p><dl><div><dt>Tarifa</dt><dd>${format(service.tarifa_unitaria, service.moneda)}</dd></div><div><dt>Moneda</dt><dd>${safe(service.moneda)}</dd></div></dl><div class="services-row-actions">${actions(service)}</div></li>`; }
   function actions(service) { const disabled = MUTATIONS_ENABLED ? '' : ` disabled aria-describedby="${MUTATION_UNAVAILABLE_ID}"`; return `<button type="button" data-action="edit-service" data-id="${safe(service.id)}" aria-label="Editar ${safe(service.nombre_servicio)}"${disabled}>Editar</button><button type="button" data-action="remove-service" data-id="${safe(service.id)}" aria-label="Eliminar ${safe(service.nombre_servicio)}"${disabled}>Eliminar</button>`; }
+  function status(service) { return service.estado === 'archivado' ? '<span class="service-status-badge">Archivado</span>' : ''; }
   function actionClick(event) { const action = event.target.closest('[data-action]'); if (!action) return; if (action.dataset.action === 'clear-service-filters') return clearFilters(); if (!MUTATIONS_ENABLED) return; if (action.dataset.action === 'create-service') openForm(null, action); if (action.dataset.action === 'edit-service') openForm(find(action.dataset.id), action); if (action.dataset.action === 'remove-service') removeDialog(action.dataset.id); }
   function find(id) { return state.services.find((service) => service.id === id); }
   function clearFilters() { state.filters = { query: '', unit: 'todas' }; elements.search.value = ''; elements.unit.value = 'todas'; render(); }

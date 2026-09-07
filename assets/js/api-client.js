@@ -47,6 +47,7 @@
     workspaces: () => request('/api/v1/workspaces/'),
     selectWorkspace: (workspacePublicId) => post('/api/v1/workspaces/active/', { workspace_public_id: workspacePublicId }),
     clients: (cursor) => request(`/api/v1/clients/${cursor == null ? '' : `?cursor=${encodeURIComponent(cursor)}`}`),
+    services: (cursor) => request(`/api/v1/services/${cursor == null ? '' : `?cursor=${encodeURIComponent(cursor)}`}`),
     createClient: (payload) => post('/api/v1/clients/', payload),
     updateClient: (publicId, payload) => write(`/api/v1/clients/${encodeURIComponent(publicId)}/`, 'PATCH', payload)
   };
