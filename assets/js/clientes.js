@@ -6,8 +6,8 @@
   const CREATE_ENABLED = true;
   const EDIT_ENABLED = true;
   const INLINE_CIVIL_STATUS_ENABLED = true;
-  const LIFECYCLE_ENABLED = false;
-  const MUTATION_UNAVAILABLE_MESSAGE = 'Archive and restore remain pending lifecycle.';
+  const LIFECYCLE_ENABLED = true;
+  const MUTATION_UNAVAILABLE_MESSAGE = 'This lifecycle change is not available.';
 
   const state = {
     clients: [],
@@ -267,11 +267,11 @@
     const className = isCivil ? '' : ` client-status-select client-status-${client.estado}`;
     const hasValue = options.includes(client[field]);
     const fallback = isCivil && !hasValue ? '<option value="" selected disabled>No registrado</option>' : '';
-    return `<select class="client-inline-select${className}" name="client-${field}-${escapeAttribute(client.id)}" data-client-field="${field}" data-client-id="${escapeAttribute(client.id)}" aria-label="Cambiar ${label} de ${escapeAttribute(client.nombre_razon_social)}"${isCivil ? inlineCivilControlAttributes() : mutationControlAttributes()}>${fallback}${options.map((option) => `<option value="${escapeAttribute(option)}"${option === client[field] ? ' selected' : ''}>${escapeHtml(titleCase(option))}</option>`).join('')}</select>`;
+    return `<select class="client-inline-select${className}" name="client-${field}-${escapeAttribute(client.id)}" data-client-field="${field}" data-client-id="${escapeAttribute(client.id)}" aria-label="Cambiar ${label} de ${escapeAttribute(client.nombre_razon_social)}"${isCivil ? inlineCivilControlAttributes() : lifecycleControlAttributes()}>${fallback}${options.map((option) => `<option value="${escapeAttribute(option)}"${option === client[field] ? ' selected' : ''}>${escapeHtml(titleCase(option))}</option>`).join('')}</select>`;
   }
 
   function mutationControlAttributes() {
-    return MUTATIONS_ENABLED ? '' : ' disabled aria-disabled="true" aria-describedby="client-mutations-disabled" title="Archive and restore remain pending lifecycle"';
+    return MUTATIONS_ENABLED ? '' : ' disabled aria-disabled="true" aria-describedby="client-mutations-disabled" title="This client change is not available"';
   }
 
   function editControlAttributes() {
@@ -280,6 +280,10 @@
 
   function inlineCivilControlAttributes() {
     return INLINE_CIVIL_STATUS_ENABLED ? '' : mutationControlAttributes();
+  }
+
+  function lifecycleControlAttributes() {
+    return LIFECYCLE_ENABLED ? '' : mutationControlAttributes();
   }
 
   function handleActionClick(event) {
@@ -303,7 +307,8 @@
     const select = event.target.closest('[data-client-field]');
     if (!select) return;
     const field = select.dataset.clientField;
-    if (field !== 'estadoCivil' || !INLINE_CIVIL_STATUS_ENABLED) {
+    if ((field !== 'estadoCivil' && field !== 'estado')
+      || (field === 'estadoCivil' && !INLINE_CIVIL_STATUS_ENABLED)) {
       showMutationUnavailable();
       renderDirectory();
       return;
@@ -315,12 +320,15 @@
 
     if (field === 'estado' && nextValue === 'inactivo' && client.estado !== 'inactivo') {
       state.pendingStatusChange = { clientId: client.id, field, value: nextValue };
+      select.value = client[field];
       elements.statusDialog.showModal();
       return;
     }
 
     select.value = client[field];
-    return applyClientFieldChange(client.id, field, nextValue);
+    return field === 'estado'
+      ? applyLifecycleChange(client.id, nextValue)
+      : applyClientFieldChange(client.id, field, nextValue);
   }
 
   function resolveStatusDialog() {
@@ -329,12 +337,7 @@
     if (!pending) return;
 
     if (elements.statusDialog.returnValue === 'confirm') {
-      if (!MUTATIONS_ENABLED) {
-        showMutationUnavailable();
-        renderDirectory();
-        return;
-      }
-      applyClientFieldChange(pending.clientId, pending.field, pending.value);
+      applyLifecycleChange(pending.clientId, pending.value);
     } else {
       renderDirectory();
       if (state.drawerMode === 'detail') renderDetail(findClient(state.selectedClientId));
@@ -344,6 +347,34 @@
   function civilStatusCode(value) {
     return { soltero: 'SINGLE', casado: 'MARRIED', divorciado: 'DIVORCED', separado: 'SEPARATED' }[value]
       || (value ? 'COMMONLAW' : '');
+  }
+
+  function lifecycleStatusCode(value) {
+    return { activo: 'ACTIVE', inactivo: 'ARCHIVED' }[value];
+  }
+
+  function applyLifecycleChange(clientId, value) {
+    if (!LIFECYCLE_ENABLED || !['activo', 'inactivo'].includes(value)
+      || !window.FreelanceFlowApi?.updateClient) return showMutationUnavailable();
+    const confirmedClients = state.clients;
+    return window.FreelanceFlowApi.updateClient(clientId, { status: lifecycleStatusCode(value) })
+      .then(async () => {
+        if (!await loadAndRenderClients({ preserveOnError: true })) {
+          state.clients = confirmedClients;
+          renderAll();
+          showToast('No se pudo actualizar el directorio. El cliente conserva su informacion confirmada.', 'error');
+          return false;
+        }
+        showToast(value === 'inactivo' ? 'Cliente archivado.' : 'Cliente restaurado.', 'success');
+        return true;
+      })
+      .catch((error) => {
+        console.error(error);
+        state.clients = confirmedClients;
+        renderAll();
+        showToast('No se pudo guardar el cambio. El cliente conserva su informacion confirmada.', 'error');
+        return false;
+      });
   }
 
   function applyClientFieldChange(clientId, field, value) {
@@ -445,7 +476,7 @@
     const status = elements.form.querySelector(`[name="estado"][value="${values.estado || 'activo'}"]`);
     if (status) status.checked = true;
     elements.form.querySelectorAll('[name="estado"]').forEach((control) => {
-      control.disabled = Boolean(client) && !LIFECYCLE_ENABLED;
+      control.disabled = Boolean(client);
     });
     state.formDirty = false;
   }

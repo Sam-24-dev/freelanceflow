@@ -430,12 +430,15 @@ function bootController({ clientStorage, formValues = {}, api = {}, disabledEsta
     appLayout: fakeElement(),
     backdrop: fakeElement(),
     drawer: fakeElement({ attributes: { 'aria-hidden': 'false' } }),
+    tableBody: fakeElement(), cardList: fakeElement(), emptyState: fakeElement(), noResults: fakeElement(),
+    clearFilters: fakeElement(), totalCount: fakeElement(), activeCount: fakeElement(), inactiveCount: fakeElement(),
     loading: fakeElement(),
     content: fakeElement(),
     retryButton: fakeElement(),
     dataError: fakeElement({ hidden: true }),
     resultsCount: fakeElement(),
     form,
+    statusDialog: fakeElement({ returnValue: 'cancel', showModal() { this.opened = true; } }),
     formSummary: fakeElement({ hidden: true, attributes: { role: 'alert' } }),
     submitButton: fakeElement(),
     toast: fakeElement({ hidden: true })
@@ -480,6 +483,7 @@ function bootController({ clientStorage, formValues = {}, api = {}, disabledEsta
         renderDirectory,
         handleFormSubmit,
         applyClientFieldChange,
+        resolveStatusDialog,
         handleInlineChange
       };
     }());`);
@@ -729,6 +733,55 @@ test('B2.4 restores confirmed inline civil status on direct PATCH rejection with
   assert.equal(writes, 0); assert.equal(harness.elements.toast.dataset.type, 'error');
 });
 
+test('B2.5 archives only after confirmation, PATCHes lifecycle, and renders fresh server state', async () => {
+  const calls = []; let writes = 0;
+  const harness = bootController({
+    clientStorage: { getItem() { return null; }, setItem() { writes += 1; } },
+    api: {
+      async updateClient(id, payload) { calls.push(['patch', id, payload]); return {}; },
+      async clients(cursor) {
+        calls.push(['clients', cursor]);
+        return { items: [{ public_id: 'cli_base', legal_name: 'Archived by Server', client_type: 'COMPANY',
+          tax_identifier: 'RUC-100', primary_contact_name: 'Ana Pérez', primary_contact_email: 'ana@example.com',
+          primary_contact_phone: '0991234567', telephone: '', address: '', civil_status: 'SINGLE',
+          status: 'ARCHIVED', archived_at: '2026-09-06T12:00:00Z', created_at: '2026-07-01T00:00:00Z' }], next_cursor: null };
+      }
+    }
+  });
+  const select = { value: 'inactivo', dataset: { clientField: 'estado', clientId: 'cli_base' }, closest: () => select };
+
+  await harness.controller.handleInlineChange({ target: select });
+  assert.deepEqual(calls, []);
+  assert.equal(harness.controller.state.pendingStatusChange.value, 'inactivo');
+
+  harness.elements.statusDialog.returnValue = 'confirm';
+  harness.controller.resolveStatusDialog();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    ['patch', 'cli_base', { status: 'ARCHIVED' }], ['clients', null]
+  ]);
+  assert.equal(harness.controller.state.clients[0].estado, 'inactivo');
+  assert.equal(harness.elements.toast.dataset.type, 'success');
+  assert.equal(writes, 0);
+});
+
+test('B2.5 restores through lifecycle PATCH and retains confirmed state after failure', async () => {
+  const calls = [];
+  const harness = bootController({ api: {
+    async updateClient(id, payload) { calls.push(['patch', id, payload]); throw new Error('request failed'); }
+  } });
+  harness.controller.state.clients[0].estado = 'inactivo';
+  const select = { value: 'activo', dataset: { clientField: 'estado', clientId: 'cli_base' }, closest: () => select };
+
+  await harness.controller.handleInlineChange({ target: select });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['patch', 'cli_base', { status: 'ACTIVE' }]]);
+  assert.equal(harness.controller.state.clients[0].estado, 'inactivo');
+  assert.equal(select.value, 'inactivo');
+  assert.equal(harness.elements.toast.dataset.type, 'error');
+});
+
 test('B2.4 keeps confirmed server state and reports no success after a refresh error', async () => {
   const harness = bootController({
     api: { async updateClient() { return {}; }, async clients() { throw new Error('refresh failed'); } },
@@ -756,27 +809,27 @@ test('B2.1 blocks inline mutations without local persistence or success feedback
   assert.equal(harness.activity.read().length, 0);
 });
 
-test('B2.1 exposes disabled mutation controls while preserving directory and drawer hooks', () => {
+test('B2.5 enables lifecycle controls while preserving directory and drawer hooks', () => {
   const source = fs.readFileSync(path.join(__dirname, '../assets/js/clientes.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../pages/clientes.html'), 'utf8');
 
-  assert.match(source, /LIFECYCLE_ENABLED\s*=\s*false/);
+  assert.match(source, /LIFECYCLE_ENABLED\s*=\s*true/);
   assert.match(source, /mutationControlAttributes\(\)/);
-  assert.match(source, /return MUTATIONS_ENABLED \? '' : '[^']*disabled/);
+  assert.match(source, /function lifecycleControlAttributes\(\)/);
   assert.doesNotMatch(html, /id="client-submit-button"[^>]*disabled/);
   assert.doesNotMatch(html, /id="client-detail-edit"[^>]*disabled/);
   ['client-search', 'data-client-status', 'client-drawer', 'client-form'].forEach((hook) => assert.match(html, new RegExp(hook)));
 });
 
-test('B2.4 enables edit and civil status PATCH while lifecycle controls remain disabled', () => {
+test('B2.4 keeps edit lifecycle radios disabled while enabling lifecycle directory controls', () => {
   const source = fs.readFileSync(path.join(__dirname, '../assets/js/clientes.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../pages/clientes.html'), 'utf8');
 
   assert.match(source, /EDIT_ENABLED\s*=\s*true/);
   assert.match(source, /window\.FreelanceFlowApi\.updateClient\(/);
   assert.match(source, /field === 'estadoCivil'/);
-  assert.match(source, /LIFECYCLE_ENABLED\s*=\s*false/);
+  assert.match(source, /LIFECYCLE_ENABLED\s*=\s*true/);
   assert.match(html, /id="client-detail-edit"[^>]*type="button"(?![^>]*disabled)/);
-  assert.match(html, /archive and restore remain pending lifecycle/i);
+  assert.doesNotMatch(html, /archive and restore remain pending lifecycle/i);
 });
 }());
