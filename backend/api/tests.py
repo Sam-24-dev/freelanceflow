@@ -1161,13 +1161,59 @@ class ClientApiTests(TestCase):
         self.assertEqual((client.telephone, client.address), ("", ""))
 
     @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_patch_lifecycle_archives_restores_and_repeats_without_timestamp_changes(self, mocked_time):
+        client = self.make_client("Lifecycle Client", tax_identifier="LIFECYCLE-100")
+        self.authenticate(workspace=self.workspace)
+
+        archived = self.patch_json(client.public_id, {"status": "ARCHIVED"})
+        self.assertEqual(archived.status_code, 200)
+        client.refresh_from_db()
+        self.assertEqual(client.status, ClientModel.Status.ARCHIVED)
+        self.assertIsNotNone(client.archived_at)
+        archived_at, updated_at = client.archived_at, client.updated_at
+
+        repeated_archive = self.patch_json(client.public_id, {"status": "ARCHIVED"})
+        self.assertEqual(repeated_archive.status_code, 200)
+        client.refresh_from_db()
+        self.assertEqual((client.archived_at, client.updated_at), (archived_at, updated_at))
+
+        restored = self.patch_json(client.public_id, {"status": "ACTIVE"})
+        self.assertEqual(restored.status_code, 200)
+        client.refresh_from_db()
+        self.assertEqual(client.status, ClientModel.Status.ACTIVE)
+        self.assertIsNone(client.archived_at)
+        restored_updated_at = client.updated_at
+
+        repeated_restore = self.patch_json(client.public_id, {"status": "ACTIVE"})
+        self.assertEqual(repeated_restore.status_code, 200)
+        client.refresh_from_db()
+        self.assertEqual(client.updated_at, restored_updated_at)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_patch_rejects_mixed_lifecycle_and_archived_at_payloads(self, mocked_time):
+        client = self.make_client("Lifecycle Contract", tax_identifier="LIFECYCLE-200")
+        self.authenticate(workspace=self.workspace)
+
+        for payload in (
+            {"status": "ARCHIVED", "legal_name": "Mixed"},
+            {"archived_at": None},
+            {"status": "INVALID"},
+        ):
+            with self.subTest(payload=payload):
+                response = self.patch_json(client.public_id, payload)
+                self.assertEqual(response.status_code, 400)
+                client.refresh_from_db()
+                self.assertEqual(client.status, ClientModel.Status.ACTIVE)
+                self.assertIsNone(client.archived_at)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
     def test_patch_rejects_invalid_unknown_lifecycle_duplicate_and_cross_tenant_atomically(self, mocked_time):
         client = self.make_client("Patch Target", tax_identifier="PATCH-200")
         self.make_client("Duplicate", tax_identifier="DUPLICATE-200")
         foreign = Workspace.objects.create(name="Foreign", slug="foreign-client-patch")
         foreign_client = self.make_client("Foreign Client", workspace=foreign, tax_identifier="FOREIGN-200")
         self.authenticate(workspace=self.workspace)
-        for payload in ({"unexpected": "x"}, {"status": "ARCHIVED"}, {"civil_status": "UNKNOWN"}, {"primary_contact_email": "bad"}, {"tax_identifier": "duplicate 200"}):
+        for payload in ({"unexpected": "x"}, {"civil_status": "UNKNOWN"}, {"primary_contact_email": "bad"}, {"tax_identifier": "duplicate 200"}):
             with self.subTest(payload=payload):
                 self.assertEqual(self.patch_json(client.public_id, payload).status_code, 400)
                 client.refresh_from_db()

@@ -50,9 +50,15 @@ def _patch_payload(request):
         payload = json.loads(request.body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         return None, json_error("invalid_json", status=400)
-    if not isinstance(payload, dict) or not payload or not set(payload).issubset(PATCH_FIELDS):
+    if not isinstance(payload, dict) or not payload:
         return None, json_error("invalid_request", status=400)
     if not all(isinstance(value, str) for value in payload.values()):
+        return None, json_error("invalid_request", status=400)
+    if set(payload) == {"status"}:
+        if payload["status"] in Client.Status.values:
+            return payload, None
+        return None, json_error("invalid_request", status=400)
+    if not set(payload).issubset(PATCH_FIELDS):
         return None, json_error("invalid_request", status=400)
     if "client_type" in payload and payload["client_type"] not in Client.ClientType.values:
         return None, json_error("invalid_request", status=400)
@@ -240,9 +246,15 @@ class ClientDetailView(JsonMethodView):
         )
         try:
             with transaction.atomic():
-                for field, value in payload.items():
-                    setattr(client, field, value)
-                client.save(update_fields=[*payload, "tax_identifier_normalized", "updated_at"])
+                if set(payload) == {"status"}:
+                    if payload["status"] == Client.Status.ARCHIVED and client.status != Client.Status.ARCHIVED:
+                        client.archive()
+                    elif payload["status"] == Client.Status.ACTIVE and client.status != Client.Status.ACTIVE:
+                        client.restore()
+                else:
+                    for field, value in payload.items():
+                        setattr(client, field, value)
+                    client.save(update_fields=[*payload, "tax_identifier_normalized", "updated_at"])
         except (ValidationError, IntegrityError):
             return json_error("invalid_request", status=400)
         row = Client.objects.values(*READ_FIELDS).get(pk=client.pk)
