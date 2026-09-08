@@ -2,9 +2,10 @@
 (function servicesModule() {
   'use strict';
   const MUTATIONS_ENABLED = false;
+  const CREATE_ENABLED = true;
   const MUTATION_UNAVAILABLE_ID = 'services-mutations-unavailable';
   const model = window.FreelanceFlowServiceModel;
-  const state = { services: [], filters: { query: '', unit: 'todas' }, editingId: '', pendingRemovalId: '', deletedIds: [], formDirty: false, lastTrigger: null, toastTimer: 0 };
+  const state = { services: [], filters: { query: '', unit: 'todas' }, editingId: '', pendingRemovalId: '', deletedIds: [], formDirty: false, lastTrigger: null, toastTimer: 0, loaded: false };
   let elements = {};
 
   document.addEventListener('DOMContentLoaded', initialize);
@@ -15,7 +16,7 @@
   }
   function cache() { elements = {
     layout: document.querySelector('[data-app-layout]'), create: document.getElementById('service-create-button'), search: document.getElementById('service-search'), unit: document.getElementById('service-unit-filter'), clear: document.getElementById('services-clear-filters'), retry: document.getElementById('services-retry-button'), error: document.getElementById('services-data-error'), loading: document.getElementById('services-loading'), content: document.getElementById('services-content'), table: document.getElementById('services-table-body'), cards: document.getElementById('services-card-list'), empty: document.getElementById('services-empty-state'), noResults: document.getElementById('services-no-results'), count: document.getElementById('services-results-count'), status: document.getElementById('services-results-status'), total: document.getElementById('services-total-count'), average: document.getElementById('services-average-rate'), mostUsed: document.getElementById('services-most-used-unit'), backdrop: document.getElementById('service-drawer-backdrop'), drawer: document.getElementById('service-drawer'), close: document.getElementById('service-drawer-close'), title: document.getElementById('service-drawer-title'), form: document.getElementById('service-form'), summary: document.getElementById('service-form-summary'), cancel: document.getElementById('service-form-cancel'), submit: document.getElementById('service-submit-button'), dialog: document.getElementById('service-remove-dialog'), removeCopy: document.getElementById('service-remove-dialog-copy'), toast: document.getElementById('service-toast') }; }
-  function disableMutationControls() { if (MUTATIONS_ENABLED) return; [elements.create, elements.submit].forEach((control) => { control?.setAttribute('disabled', ''); control?.setAttribute('aria-describedby', MUTATION_UNAVAILABLE_ID); control.disabled = true; }); }
+  function disableMutationControls() { if (CREATE_ENABLED) elements.create?.removeAttribute('disabled'); if (MUTATIONS_ENABLED) return; [elements.submit].forEach((control) => { control?.setAttribute('disabled', ''); control?.setAttribute('aria-describedby', MUTATION_UNAVAILABLE_ID); control.disabled = true; }); }
   function bind() {
     elements.create?.addEventListener('click', (event) => openForm(null, event.currentTarget));
     elements.search?.addEventListener('input', (event) => { state.filters.query = event.currentTarget.value; render(); });
@@ -29,7 +30,7 @@
     document.addEventListener('keydown', keyboard);
   }
   async function load() {
-    loading(true); elements.error.hidden = true; state.services = [];
+    loading(true); elements.error.hidden = true;
     try {
       const services = [];
       const requestedCursors = new Set();
@@ -44,8 +45,8 @@
         services.push(...page.items.map(model.mapApiServiceRecord));
         cursor = page.next_cursor;
       } while (cursor !== null);
-      state.services = services; render(); loading(false);
-    } catch (error) { fatal(error); }
+      state.services = services; state.loaded = true; render(); loading(false); return true;
+    } catch (error) { if (state.loaded) { render(); loading(false); elements.error.hidden = false; } else fatal(error); return false; }
   }
   function isApiServiceRecord(record) {
     return record && typeof record === 'object' && !Array.isArray(record)
@@ -63,14 +64,40 @@
   function card(service) { return `<li class="service-card"><div><strong>${safe(service.nombre_servicio)}</strong><span class="service-unit-badge">${safe(service.unidad_medida)}</span>${status(service)}</div><p>${safe(service.descripcion || 'Sin descripci\u00f3n')}</p><dl><div><dt>Tarifa</dt><dd>${format(service.tarifa_unitaria, service.moneda)}</dd></div><div><dt>Moneda</dt><dd>${safe(service.moneda)}</dd></div></dl><div class="services-row-actions">${actions(service)}</div></li>`; }
   function actions(service) { const disabled = MUTATIONS_ENABLED ? '' : ` disabled aria-describedby="${MUTATION_UNAVAILABLE_ID}"`; return `<button type="button" data-action="edit-service" data-id="${safe(service.id)}" aria-label="Editar ${safe(service.nombre_servicio)}"${disabled}>Editar</button><button type="button" data-action="remove-service" data-id="${safe(service.id)}" aria-label="Eliminar ${safe(service.nombre_servicio)}"${disabled}>Eliminar</button>`; }
   function status(service) { return service.estado === 'archivado' ? '<span class="service-status-badge">Archivado</span>' : ''; }
-  function actionClick(event) { const action = event.target.closest('[data-action]'); if (!action) return; if (action.dataset.action === 'clear-service-filters') return clearFilters(); if (!MUTATIONS_ENABLED) return; if (action.dataset.action === 'create-service') openForm(null, action); if (action.dataset.action === 'edit-service') openForm(find(action.dataset.id), action); if (action.dataset.action === 'remove-service') removeDialog(action.dataset.id); }
+  function actionClick(event) { const action = event.target.closest('[data-action]'); if (!action) return; if (action.dataset.action === 'clear-service-filters') return clearFilters(); if (action.dataset.action === 'create-service') return CREATE_ENABLED && openForm(null, action); if (!MUTATIONS_ENABLED) return; if (action.dataset.action === 'edit-service') openForm(find(action.dataset.id), action); if (action.dataset.action === 'remove-service') removeDialog(action.dataset.id); }
   function find(id) { return state.services.find((service) => service.id === id); }
   function clearFilters() { state.filters = { query: '', unit: 'todas' }; elements.search.value = ''; elements.unit.value = 'todas'; render(); }
-  function openForm(service, trigger) { if (!MUTATIONS_ENABLED) return; state.editingId = service?.id || ''; state.lastTrigger = trigger || document.activeElement; elements.title.textContent = service ? 'Editar servicio' : 'Crear servicio'; elements.submit.textContent = service ? 'Guardar cambios' : 'Crear servicio'; elements.form.reset(); ['id', 'nombre_servicio', 'descripcion', 'unidad_medida', 'tarifa_unitaria', 'moneda'].forEach((name) => { elements.form.elements[name].value = service?.[name] ?? (name === 'moneda' ? 'USD' : ''); }); clearErrors(); state.formDirty = false; elements.drawer.removeAttribute('inert'); elements.drawer.setAttribute('aria-hidden', 'false'); elements.backdrop.classList.add('is-visible'); elements.layout?.setAttribute('inert', ''); document.body.classList.add('service-drawer-open'); requestAnimationFrame(() => elements.form.elements.nombre_servicio.focus()); }
+  function openForm(service, trigger) { if (service ? !MUTATIONS_ENABLED : !CREATE_ENABLED) return; state.editingId = service?.id || ''; state.lastTrigger = trigger || document.activeElement; elements.title.textContent = service ? 'Editar servicio' : 'Crear servicio'; elements.submit.textContent = service ? 'Guardar cambios' : 'Crear servicio'; elements.submit.disabled = false; elements.submit.removeAttribute('aria-describedby'); elements.form.reset(); ['id', 'nombre_servicio', 'descripcion', 'unidad_medida', 'tarifa_unitaria', 'moneda'].forEach((name) => { elements.form.elements[name].value = service?.[name] ?? (name === 'moneda' ? 'USD' : ''); }); clearErrors(); state.formDirty = false; elements.drawer.removeAttribute('inert'); elements.drawer.setAttribute('aria-hidden', 'false'); elements.backdrop.classList.add('is-visible'); elements.layout?.setAttribute('inert', ''); document.body.classList.add('service-drawer-open'); requestAnimationFrame(() => elements.form.elements.nombre_servicio.focus()); }
   function closeForm(confirmDirty) { if (confirmDirty && state.formDirty && !window.confirm('Hay cambios sin guardar. ¿Cerrar de todos modos?')) return; elements.drawer.setAttribute('inert', ''); elements.drawer.setAttribute('aria-hidden', 'true'); elements.backdrop.classList.remove('is-visible'); elements.layout?.removeAttribute('inert'); document.body.classList.remove('service-drawer-open'); state.formDirty = false; state.lastTrigger?.focus?.(); }
   function data() { return Object.fromEntries(new FormData(elements.form).entries()); }
-  function submitForm(event) { event.preventDefault(); if (!MUTATIONS_ENABLED) return; const form = data(); const result = model.validateService({ ...form, id: state.editingId }, state.services.filter((service) => service.id !== state.editingId)); if (!result.valid) return showErrors(result.errors); const record = model.createServiceRecord(form, { id: state.editingId || `srv_${Date.now()}` }); const services = state.editingId ? model.updateService(state.services, state.editingId, record) : [...state.services, record]; state.services = services; if (state.editingId) { activity('Servicio actualizado', `Actualizó el servicio ${record.nombre_servicio}.`); toast('Servicio actualizado correctamente.'); } else { activity('Servicio creado', `Creó el servicio ${record.nombre_servicio}.`); toast('Servicio guardado correctamente.'); } closeForm(false); render(); }
-  function validateBlur(event) { if (!event.target.name) return; showErrors(model.validateService({ ...data(), id: state.editingId }, state.services.filter((service) => service.id !== state.editingId)).errors, event.target.name); }
+  async function submitForm(event) {
+    event.preventDefault();
+    if (state.editingId ? !MUTATIONS_ENABLED : !CREATE_ENABLED) return;
+    const form = data();
+    const result = model.validateService({ ...form, id: state.editingId }, state.services.filter((service) => service.id !== state.editingId), { currencyOptions: ['USD'], allowZero: true });
+    if (!result.valid) return showErrors(result.errors);
+    const payload = {
+      name: form.nombre_servicio,
+      description: form.descripcion,
+      unit_of_measure: { Hora: 'HOUR', Proyecto: 'PROJECT', Entregable: 'DELIVERABLE' }[form.unidad_medida],
+      rate: form.tarifa_unitaria,
+      currency: form.moneda
+    };
+    try {
+      await window.FreelanceFlowApi.createService(payload);
+    } catch (error) {
+      toast('No pudimos crear el servicio. Reintentá.', 'error');
+      return;
+    }
+    closeForm(false);
+    if (await load()) {
+      activity('Servicio creado', `Creó el servicio ${form.nombre_servicio}.`);
+      toast('Servicio guardado correctamente.');
+    } else {
+      toast('El servicio se creó, pero no pudimos actualizar el catálogo. Reintentá.', 'error');
+    }
+  }
+  function validateBlur(event) { if (!event.target.name) return; showErrors(model.validateService({ ...data(), id: state.editingId }, state.services.filter((service) => service.id !== state.editingId), { currencyOptions: ['USD'], allowZero: true }).errors, event.target.name); }
   function showErrors(errors = {}, only = '') { clearErrors(only); const fields = only ? [only] : Object.keys(errors); fields.forEach((field) => { if (!errors[field]) return; elements.form.elements[field]?.setAttribute('aria-invalid', 'true'); const error = elements.form.querySelector(`[data-field-error="${field}"]`); if (error) error.textContent = errors[field]; }); if (!only && fields.length) { elements.summary.hidden = false; elements.summary.textContent = 'Revisá los campos marcados para guardar el servicio.'; elements.form.elements[fields[0]]?.focus(); } }
   function clearErrors(only = '') { elements.form.querySelectorAll(only ? `[data-field-error="${only}"]` : '[data-field-error]').forEach((item) => { item.textContent = ''; }); (only ? [elements.form.elements[only]] : [...elements.form.elements]).forEach((item) => item?.removeAttribute?.('aria-invalid')); if (!only) elements.summary.hidden = true; }
   function removeDialog(id) { if (!MUTATIONS_ENABLED) return; const service = find(id); if (!service) return; state.pendingRemovalId = id; elements.removeCopy.textContent = `Eliminarás el servicio ${service.nombre_servicio}. Esta acción no se puede deshacer.`; elements.dialog.showModal(); }

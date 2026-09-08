@@ -1436,9 +1436,29 @@ class ServiceApiTests(TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertEqual(response.json(), {"error": {"code": "invalid_request"}})
         response = self.client.post("/api/v1/services/")
-        self.assertEqual(response.status_code, 405)
-        self.assertEqual(response.json(), {"error": {"code": "method_not_allowed"}})
-        self.assertEqual(response["Allow"], "GET, HEAD, OPTIONS")
+        self.assertEqual(response.status_code, 415)
+        self.assertEqual(response.json(), {"error": {"code": "unsupported_media_type"}})
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_post_creates_server_authoritative_service_in_active_workspace(self, mocked_time):
+        self.authenticate(workspace=self.workspace)
+        response = self.client.post("/api/v1/services/", data=json.dumps({
+            "name": "  Discovery   Workshop ",
+            "description": "  Planning   session ",
+            "unit_of_measure": "HOUR",
+            "rate": "0.00",
+            "currency": "USD",
+        }), content_type="application/json")
+
+        self.assertEqual(response.status_code, 201)
+        item = response.json()["data"]
+        self.assertEqual(item["name"], "Discovery Workshop")
+        self.assertEqual(item["description"], "Planning session")
+        self.assertEqual(item["rate"], "0.00")
+        self.assertEqual(item["status"], "ACTIVE")
+        self.assertIsNone(item["archived_at"])
+        self.assertTrue(item["public_id"])
+        self.assertEqual(Service.objects.get().workspace, self.workspace)
 
 
 class ServiceCursorStorageTests(TestCase):

@@ -32,6 +32,22 @@ test('services API client reads same-origin pages and optionally encodes cursors
   } finally { harness.restore(); }
 });
 
+test('services API client posts create payload with the CSRF header', async () => {
+  const calls = [];
+  const harness = loadApi(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({ data: { public_id: 'server-id' } }) };
+  });
+  global.document.cookie = 'csrftoken=csrf-token';
+  try {
+    await harness.api.createService({ name: 'Audit', description: '', unit_of_measure: 'HOUR', rate: '0.00', currency: 'USD' });
+    assert.equal(calls[0].url, '/api/v1/services/');
+    assert.equal(calls[0].options.method, 'POST');
+    assert.equal(calls[0].options.headers['X-CSRFToken'], 'csrf-token');
+    assert.deepEqual(JSON.parse(calls[0].options.body), { name: 'Audit', description: '', unit_of_measure: 'HOUR', rate: '0.00', currency: 'USD' });
+  } finally { harness.restore(); }
+});
+
 test('service adapter maps server units, USD rate, and archived display state', () => {
   const model = require('../assets/js/service-model.js');
   assert.deepEqual(model.mapApiServiceRecord({

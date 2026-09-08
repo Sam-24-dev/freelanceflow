@@ -49,6 +49,7 @@
     clients: (cursor) => request(`/api/v1/clients/${cursor == null ? '' : `?cursor=${encodeURIComponent(cursor)}`}`),
     services: (cursor) => request(`/api/v1/services/${cursor == null ? '' : `?cursor=${encodeURIComponent(cursor)}`}`),
     createClient: (payload) => post('/api/v1/clients/', payload),
+    createService: (payload) => post('/api/v1/services/', payload),
     updateClient: (publicId, payload) => write(`/api/v1/clients/${encodeURIComponent(publicId)}/`, 'PATCH', payload)
   };
 
