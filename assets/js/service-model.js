@@ -44,27 +44,28 @@
     return { ...normalized, estado: record.status === 'ARCHIVED' ? 'archivado' : 'activo', archived_at: record.archived_at ?? null };
   }
 
-  function validateService(service = {}, existingServices = []) {
-    const candidate = normalizeService(service);
+  function validateService(service = {}, existingServices = [], options = {}) {
+    const candidate = normalizeService(service, { allowZero: options.allowZero === true });
+    const currencyOptions = options.currencyOptions || SERVICE_CURRENCY_OPTIONS;
     const errors = {};
     if (!candidate.nombre_servicio) errors.nombre_servicio = 'Ingresá un nombre para el servicio.';
     if (candidate.nombre_servicio && existingServices.some((existing) => normalizeText(existing.nombre_servicio) === normalizeText(candidate.nombre_servicio) && String(existing.id) !== candidate.id)) {
       errors.nombre_servicio = 'Ya existe un servicio con ese nombre.';
     }
-    if (!SERVICE_CURRENCY_OPTIONS.includes(candidate.moneda)) errors.moneda = 'Seleccioná una moneda válida.';
+    if (!currencyOptions.includes(candidate.moneda)) errors.moneda = 'Seleccioná una moneda válida.';
     if (!SERVICE_UNIT_OPTIONS.includes(candidate.unidad_medida)) errors.unidad_medida = 'Seleccioná una unidad de medida.';
-    if (Number.isNaN(parseRate(service.tarifa_unitaria)) || candidate.tarifa_unitaria === null) errors.tarifa_unitaria = 'Ingresá una tarifa mayor que cero.';
+    if (Number.isNaN(parseRate(service.tarifa_unitaria, options.allowZero === true)) || candidate.tarifa_unitaria === null) errors.tarifa_unitaria = options.allowZero === true ? 'Ingresá una tarifa válida (puede ser cero).' : 'Ingresá una tarifa mayor que cero.';
     return { valid: Object.keys(errors).length === 0, errors };
   }
 
   function filterServices(services = [], filters = {}) {
     const tokens = normalizeText(filters.query).split(/\s+/).filter(Boolean);
     const unit = filters.unit || 'todas';
-    return services.map((source) => ({ ...normalizeService(source), estado: source?.estado, archived_at: source?.archived_at ?? null })).filter((service) => (unit === 'todas' || service.unidad_medida === unit) && (!tokens.length || tokens.every((token) => normalizeText(`${service.nombre_servicio} ${service.descripcion}`).includes(token))));
+    return services.map((source) => ({ ...normalizeService(source, { allowZero: true }), estado: source?.estado, archived_at: source?.archived_at ?? null })).filter((service) => (unit === 'todas' || service.unidad_medida === unit) && (!tokens.length || tokens.every((token) => normalizeText(`${service.nombre_servicio} ${service.descripcion}`).includes(token))));
   }
 
   function calculateServiceMetrics(services = []) {
-    const normalized = services.map(normalizeService).filter((service) => service.nombre_servicio && service.tarifa_unitaria !== null);
+    const normalized = services.map((service) => normalizeService(service, { allowZero: true })).filter((service) => service.nombre_servicio && service.tarifa_unitaria !== null);
     const counts = SERVICE_UNIT_OPTIONS.map((unit) => [unit, normalized.filter((service) => service.unidad_medida === unit).length]);
     const currencyCounts = SERVICE_CURRENCY_OPTIONS.map((currency) => [currency, normalized.filter((service) => service.moneda === currency).length]);
     const winner = counts.reduce((best, item) => item[1] > best[1] ? item : best, ['', 0]);
@@ -78,7 +79,7 @@
     };
   }
 
-  function createServiceRecord(service, metadata = {}) { return { ...normalizeService(service), id: metadata.id || normalizeService(service).id }; }
+  function createServiceRecord(service, metadata = {}) { return { ...normalizeService(service, { allowZero: true }), id: metadata.id || normalizeService(service, { allowZero: true }).id }; }
   function updateService(services = [], id, record) { return services.map((service) => String(service.id) === String(id) ? createServiceRecord(record, { id }) : service); }
   function removeService(services = [], id) { return services.filter((service) => String(service.id) !== String(id)); }
   function normalizeStoredCatalog(stored) {

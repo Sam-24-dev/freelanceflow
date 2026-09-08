@@ -1,9 +1,13 @@
-"""Read-only active-workspace service directory with session-bound cursors."""
+"""Active-workspace service directory with session-bound cursors."""
 
+import json
 import secrets
+from decimal import Decimal, InvalidOperation
 from time import time as current_time
 
 from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils.decorators import method_decorator
 
@@ -28,6 +32,8 @@ READ_FIELDS = (
     "public_id", "name", "description", "unit_of_measure", "rate",
     "currency", "status", "archived_at",
 )
+POST_REQUIRED_FIELDS = {"name", "unit_of_measure", "rate", "currency"}
+POST_FIELDS = POST_REQUIRED_FIELDS | {"description"}
 
 
 def _cursor_error():
@@ -96,6 +102,44 @@ def _serialize(row):
     return {field: row[field] for field in READ_FIELDS}
 
 
+def _post_payload(request):
+    if request.content_type != "application/json":
+        return None, json_error("unsupported_media_type", status=415)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, json_error("invalid_json", status=400)
+    if (
+        not isinstance(payload, dict)
+        or not POST_REQUIRED_FIELDS.issubset(payload)
+        or not set(payload).issubset(POST_FIELDS)
+        or not isinstance(payload.get("name"), str)
+        or not isinstance(payload.get("unit_of_measure"), str)
+        or not isinstance(payload.get("currency"), str)
+    ):
+        return None, json_error("invalid_request", status=400)
+    if "description" in payload and not isinstance(payload["description"], str):
+        return None, json_error("invalid_request", status=400)
+    if not payload["name"].strip():
+        return None, json_error("invalid_request", status=400)
+    if payload["unit_of_measure"] not in Service.UnitOfMeasure.values or payload["currency"] != Service.Currency.USD:
+        return None, json_error("invalid_request", status=400)
+    rate = payload["rate"]
+    if isinstance(rate, bool) or rate is None or (isinstance(rate, str) and not rate.strip()):
+        return None, json_error("invalid_request", status=400)
+    if not isinstance(rate, (str, int, float)):
+        return None, json_error("invalid_request", status=400)
+    try:
+        rate = Decimal(str(rate))
+    except (InvalidOperation, ValueError):
+        return None, json_error("invalid_request", status=400)
+    if not rate.is_finite() or rate < 0:
+        return None, json_error("invalid_request", status=400)
+    payload["rate"] = rate
+    payload.setdefault("description", "")
+    return payload, None
+
+
 class ServiceListView(JsonMethodView):
     @method_decorator(require_api_auth)
     def get(self, request):
@@ -124,3 +168,33 @@ class ServiceListView(JsonMethodView):
             "items": [_serialize(row) for row in page],
             "next_cursor": _new_cursor(request, context, page[-1]) if len(rows) > CURSOR_PAGE_SIZE else None,
         })
+
+    @method_decorator(require_api_auth)
+    def post(self, request):
+        try:
+            context = resolve_active_workspace_context(request)
+            require_workspace_permission(context.membership, can_perform_operational_work)
+        except WorkspacePermissionDenied:
+            return json_error("permission_denied", status=403)
+        except WorkspaceContextError:
+            return json_error("workspace_required", status=400)
+
+        payload, error_response = _post_payload(request)
+        if error_response is not None:
+            return error_response
+        try:
+            with transaction.atomic():
+                service = Service.objects.create(
+                    workspace=context.workspace,
+                    name=payload["name"],
+                    description=payload["description"],
+                    unit_of_measure=payload["unit_of_measure"],
+                    rate=payload["rate"],
+                    currency=payload["currency"],
+                    status=Service.Status.ACTIVE,
+                    archived_at=None,
+                )
+        except (ValidationError, IntegrityError):
+            return json_error("invalid_request", status=400)
+        row = Service.objects.values(*READ_FIELDS).get(pk=service.pk)
+        return json_data(_serialize(row), status=201)

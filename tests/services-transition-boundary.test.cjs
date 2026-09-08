@@ -83,7 +83,7 @@ async function loadController() {
     confirm: () => true,
     FreelanceFlowServiceModel: require('../assets/js/service-model.js'),
     FreelanceFlowActivity: { record(event) { activity.push(event); } },
-    FreelanceFlowApi: { services: async () => ({ items: [{ public_id: 'srv_001', name: 'Auditoria', description: '', unit_of_measure: 'HOUR', rate: '10.00', currency: 'USD', status: 'ACTIVE', archived_at: null }], next_cursor: null }) },
+    FreelanceFlowApi: { services: async () => ({ items: [{ public_id: 'srv_001', name: 'Auditoria', description: '', unit_of_measure: 'HOUR', rate: '10.00', currency: 'USD', status: 'ACTIVE', archived_at: null }], next_cursor: null }), createService: async () => ({ public_id: 'srv_002' }) },
     window: null,
     globalThis: null
   };
@@ -94,24 +94,23 @@ async function loadController() {
   return { elements, form, storage, activity };
 }
 
-test('Services mutation controls are disabled with an accessible migration explanation', async () => {
+test('Services create is enabled while edit and remove remain disabled', async () => {
   const { elements } = await loadController();
   const renderedActions = elements.get('services-table-body').innerHTML;
 
-  assert.equal(elements.get('service-create-button').disabled, true);
-  assert.match(elements.get('service-create-button').getAttribute('aria-describedby'), /services-mutations-unavailable/);
+  assert.equal(elements.get('service-create-button').disabled, false);
   assert.match(renderedActions, /data-action="edit-service"[^>]*disabled/);
   assert.match(renderedActions, /data-action="remove-service"[^>]*disabled/);
   assert.match(renderedActions, /aria-describedby="services-mutations-unavailable"/);
 });
 
-test('Services submit cannot persist a local mutation while the boundary is disabled', async () => {
+test('Services create uses the API and never persists a local mutation', async () => {
   const { form, storage, elements, activity } = await loadController();
   const submit = form.getListener('submit');
 
-  submit({ preventDefault() {} });
+  await submit({ preventDefault() {} });
 
   assert.equal(storage.writes, 0);
-  assert.equal(activity.length, 0);
-  assert.equal(elements.get('service-toast').hidden, true);
+  assert.equal(activity.length, 1);
+  assert.equal(elements.get('service-toast').hidden, false);
 });
