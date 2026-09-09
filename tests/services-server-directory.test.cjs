@@ -48,6 +48,22 @@ test('services API client posts create payload with the CSRF header', async () =
   } finally { harness.restore(); }
 });
 
+test('services API client sends edit PATCH through the shared CSRF wrapper', async () => {
+  const calls = [];
+  const harness = loadApi(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({ data: { public_id: 'server-id', name: 'Updated' } }) };
+  });
+  global.document.cookie = 'csrftoken=csrf-token';
+  try {
+    await harness.api.updateService('srv/1', { name: 'Updated', rate: '0.00' });
+    assert.equal(calls[0].url, '/api/v1/services/srv%2F1/');
+    assert.equal(calls[0].options.method, 'PATCH');
+    assert.equal(calls[0].options.headers['X-CSRFToken'], 'csrf-token');
+    assert.deepEqual(JSON.parse(calls[0].options.body), { name: 'Updated', rate: '0.00' });
+  } finally { harness.restore(); }
+});
+
 test('service adapter maps server units, USD rate, and archived display state', () => {
   const model = require('../assets/js/service-model.js');
   assert.deepEqual(model.mapApiServiceRecord({
@@ -91,7 +107,7 @@ function createElement(id) {
   };
 }
 
-async function loadController(pages) {
+async function loadController(pages, apiOverrides = {}) {
   const elements = new Map();
   const getElement = (id) => elements.get(id) || elements.set(id, createElement(id)).get(id);
   const documentListeners = {};
@@ -109,7 +125,7 @@ async function loadController(pages) {
   const context = {
     document, console: { error() {} }, Intl, Date, setTimeout: () => 0, clearTimeout() {}, requestAnimationFrame: (fn) => fn(),
     confirm: () => true, FreelanceFlowServiceModel: require('../assets/js/service-model.js'),
-    FreelanceFlowActivity: { record() {} }, FreelanceFlowApi: { services: async (cursor) => { calls.push(cursor ?? null); const page = pages.shift(); if (page instanceof Error) throw page; return page; } },
+    FreelanceFlowActivity: { record() {} }, FreelanceFlowApi: { services: async (cursor) => { calls.push(cursor ?? null); const page = pages.shift(); if (page instanceof Error) throw page; return page; }, ...apiOverrides },
     window: null, globalThis: null
   };
   context.window = context; context.globalThis = context;

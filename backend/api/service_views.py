@@ -9,6 +9,7 @@ from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Q
+from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 
 from services.models import Service
@@ -34,6 +35,7 @@ READ_FIELDS = (
 )
 POST_REQUIRED_FIELDS = {"name", "unit_of_measure", "rate", "currency"}
 POST_FIELDS = POST_REQUIRED_FIELDS | {"description"}
+PATCH_FIELDS = {"name", "description", "unit_of_measure", "rate", "currency"}
 
 
 def _cursor_error():
@@ -140,6 +142,38 @@ def _post_payload(request):
     return payload, None
 
 
+def _patch_payload(request):
+    if request.content_type != "application/json":
+        return None, json_error("unsupported_media_type", status=415)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, json_error("invalid_json", status=400)
+    if not isinstance(payload, dict) or not payload or not set(payload).issubset(PATCH_FIELDS):
+        return None, json_error("invalid_request", status=400)
+    for field in ("name", "description", "unit_of_measure", "currency"):
+        if field in payload and not isinstance(payload[field], str):
+            return None, json_error("invalid_request", status=400)
+    if "unit_of_measure" in payload and payload["unit_of_measure"] not in Service.UnitOfMeasure.values:
+        return None, json_error("invalid_request", status=400)
+    if "currency" in payload and payload["currency"] != Service.Currency.USD:
+        return None, json_error("invalid_request", status=400)
+    if "rate" in payload:
+        rate = payload["rate"]
+        if isinstance(rate, bool) or rate is None or (isinstance(rate, str) and not rate.strip()):
+            return None, json_error("invalid_request", status=400)
+        if not isinstance(rate, (str, int, float)):
+            return None, json_error("invalid_request", status=400)
+        try:
+            rate = Decimal(str(rate))
+        except (InvalidOperation, ValueError):
+            return None, json_error("invalid_request", status=400)
+        if not rate.is_finite() or rate < 0:
+            return None, json_error("invalid_request", status=400)
+        payload["rate"] = rate
+    return payload, None
+
+
 class ServiceListView(JsonMethodView):
     @method_decorator(require_api_auth)
     def get(self, request):
@@ -198,3 +232,31 @@ class ServiceListView(JsonMethodView):
             return json_error("invalid_request", status=400)
         row = Service.objects.values(*READ_FIELDS).get(pk=service.pk)
         return json_data(_serialize(row), status=201)
+
+
+class ServiceDetailView(JsonMethodView):
+    @method_decorator(require_api_auth)
+    def patch(self, request, public_id):
+        try:
+            context = resolve_active_workspace_context(request)
+            require_workspace_permission(context.membership, can_perform_operational_work)
+        except WorkspacePermissionDenied:
+            return json_error("permission_denied", status=403)
+        except WorkspaceContextError:
+            return json_error("workspace_required", status=400)
+
+        payload, error_response = _patch_payload(request)
+        if error_response is not None:
+            return error_response
+        service = get_object_or_404(
+            Service.objects.for_workspace(context.workspace), public_id=public_id
+        )
+        try:
+            with transaction.atomic():
+                for field, value in payload.items():
+                    setattr(service, field, value)
+                service.save(update_fields=[*payload, "name_normalized", "updated_at"])
+        except (ValidationError, IntegrityError):
+            return json_error("invalid_request", status=400)
+        row = Service.objects.values(*READ_FIELDS).get(pk=service.pk)
+        return json_data(_serialize(row))

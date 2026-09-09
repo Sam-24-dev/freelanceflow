@@ -13,7 +13,7 @@ from .preference_views import InterfacePreferencesView
 from .proposal_views import ProposalListView
 from .project_views import ProjectListView
 from .report_views import CashActivityReportView
-from .service_views import ServiceListView
+from .service_views import ServiceDetailView, ServiceListView
 from .workspace_views import ActiveWorkspaceSelectionView, WorkspaceListView
 
 app_name = "api"
@@ -32,6 +32,7 @@ urlpatterns = [
     path("clients/<uuid:public_id>/", ClientDetailView.as_view(), name="client-detail"),
     path("categories/", CategoryListView.as_view(), name="category-list"),
     path("services/", ServiceListView.as_view(), name="service-list"),
+    path("services/<uuid:public_id>/", ServiceDetailView.as_view(), name="service-detail"),
     path("proposals/", ProposalListView.as_view(), name="proposal-list"),
     path("projects/", ProjectListView.as_view(), name="project-list"),
     path("invoices/", InvoiceListView.as_view(), name="invoice-list"),
