@@ -1300,6 +1300,11 @@ class ServiceApiTests(TestCase):
             session["workspaces.active_workspace_public_id"] = str(workspace.public_id)
         session.save()
 
+    def patch_json(self, public_id, payload, *, client=None, content_type="application/json"):
+        return (client or self.client).patch(
+            f"/api/v1/services/{public_id}/", data=json.dumps(payload), content_type=content_type
+        )
+
     def make_service(self, name, *, workspace=None, status=Service.Status.ACTIVE, archived_at=None):
         return Service.objects.create(
             workspace=workspace or self.workspace,
@@ -1459,6 +1464,110 @@ class ServiceApiTests(TestCase):
         self.assertIsNone(item["archived_at"])
         self.assertTrue(item["public_id"])
         self.assertEqual(Service.objects.get().workspace, self.workspace)
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_patch_updates_partial_service_and_preserves_zero_rate(self, mocked_time):
+        service = self.make_service("  Discovery   Workshop ")
+        self.authenticate(workspace=self.workspace)
+
+        response = self.patch_json(service.public_id, {"description": "  Revised   scope ", "rate": "0.00"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"]["description"], "Revised scope")
+        self.assertEqual(response.json()["data"]["rate"], "0.00")
+        service.refresh_from_db()
+        self.assertEqual((service.name, service.description, service.rate), ("Discovery Workshop", "Revised scope", Decimal("0.00")))
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_patch_rejects_malformed_json_and_unsupported_media_type(self, mocked_time):
+        service = self.make_service("Payload Contract")
+        self.authenticate(workspace=self.workspace)
+
+        malformed = self.client.patch(
+            f"/api/v1/services/{service.public_id}/", data="{", content_type="application/json"
+        )
+        self.assertEqual((malformed.status_code, malformed.json()), (400, {"error": {"code": "invalid_json"}}))
+        unsupported = self.patch_json(service.public_id, {"name": "Changed"}, content_type="text/plain")
+        self.assertEqual((unsupported.status_code, unsupported.json()), (415, {"error": {"code": "unsupported_media_type"}}))
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_patch_rejects_non_object_json_atomically(self, mocked_time):
+        service = self.make_service("Non-object Payload")
+        original = tuple(
+            getattr(service, field)
+            for field in ("name", "description", "unit_of_measure", "rate", "currency", "status", "archived_at")
+        )
+        self.authenticate(workspace=self.workspace)
+
+        for payload in ([], None, "scalar"):
+            with self.subTest(payload=payload):
+                response = self.patch_json(service.public_id, payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json()["error"]["code"], "invalid_request")
+                service.refresh_from_db()
+                self.assertEqual(
+                    tuple(
+                        getattr(service, field)
+                        for field in ("name", "description", "unit_of_measure", "rate", "currency", "status", "archived_at")
+                    ),
+                    original,
+                )
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_patch_rejects_unknown_lifecycle_and_invalid_payloads_atomically(self, mocked_time):
+        service = self.make_service("Atomic Service")
+        original = (service.name, service.description, service.rate)
+        self.authenticate(workspace=self.workspace)
+
+        for payload in (
+            {"name": "Changed", "unexpected": "x"}, {"status": "ARCHIVED"}, {"workspace": "forged"},
+            {"public_id": str(uuid4())}, {"created_at": "forged"}, {"rate": -1}, {"rate": True},
+            {"rate": "Infinity"}, {"unit_of_measure": "INVALID"}, {"currency": "EUR"}, {},
+        ):
+            with self.subTest(payload=payload):
+                response = self.patch_json(service.public_id, payload)
+                self.assertEqual(response.status_code, 400)
+                service.refresh_from_db()
+                self.assertEqual((service.name, service.description, service.rate), original)
+
+        duplicate = self.make_service("Normalized Duplicate")
+        response = self.patch_json(service.public_id, {"name": f"  {duplicate.name.casefold()}  "})
+        self.assertEqual(response.status_code, 400)
+        service.refresh_from_db()
+        self.assertEqual(service.name, original[0])
+
+    @patch("api.auth_views.time.time", return_value=1_000_000)
+    def test_patch_requires_scope_role_csrf_and_hides_foreign_services(self, mocked_time):
+        service = self.make_service("Scoped Service")
+        foreign = Workspace.objects.create(name="Foreign Service Workspace", slug="foreign-service-patch")
+        foreign_service = self.make_service("Foreign Service", workspace=foreign)
+        self.assertEqual(self.patch_json(service.public_id, {"name": "Denied"}).status_code, 401)
+        self.authenticate(workspace=self.workspace)
+        with allow_membership_writes():
+            Membership.objects.filter(pk=self.membership.pk).update(role=Membership.Role.ADMINISTRATIVE)
+        self.assertEqual(self.patch_json(service.public_id, {"name": "Denied"}).status_code, 403)
+        with allow_membership_writes():
+            Membership.objects.filter(pk=self.membership.pk).update(role=Membership.Role.OPERATIONAL)
+        self.assertEqual(self.patch_json(foreign_service.public_id, {"name": "Leaked"}).status_code, 404)
+        session = self.client.session
+        session.pop("workspaces.active_workspace_public_id", None)
+        session.save()
+        self.assertEqual(self.patch_json(service.public_id, {"name": "No Workspace"}).json(), {"error": {"code": "workspace_required"}})
+        self.authenticate(workspace=self.workspace)
+
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.force_login(self.user)
+        session = csrf_client.session
+        session["api.auth_expires_at"] = 1_000_100
+        session["workspaces.active_workspace_public_id"] = str(self.workspace.public_id)
+        session.save()
+        self.assertEqual(self.patch_json(service.public_id, {"name": "No CSRF"}, client=csrf_client).status_code, 403)
+        token = csrf_client.get("/api/v1/session/").cookies["csrftoken"].value
+        response = csrf_client.patch(
+            f"/api/v1/services/{service.public_id}/", data=json.dumps({"name": "CSRF Update"}),
+            content_type="application/json", HTTP_X_CSRFTOKEN=token,
+        )
+        self.assertEqual(response.status_code, 200)
 
 
 class ServiceCursorStorageTests(TestCase):

@@ -32,7 +32,7 @@ function createElement(id = '') {
   return element;
 }
 
-async function loadController() {
+async function loadController(apiOverrides = {}) {
   const elements = new Map();
   const getElement = (id) => elements.get(id) || elements.set(id, createElement(id)).get(id);
   const documentListeners = {};
@@ -83,7 +83,7 @@ async function loadController() {
     confirm: () => true,
     FreelanceFlowServiceModel: require('../assets/js/service-model.js'),
     FreelanceFlowActivity: { record(event) { activity.push(event); } },
-    FreelanceFlowApi: { services: async () => ({ items: [{ public_id: 'srv_001', name: 'Auditoria', description: '', unit_of_measure: 'HOUR', rate: '10.00', currency: 'USD', status: 'ACTIVE', archived_at: null }], next_cursor: null }), createService: async () => ({ public_id: 'srv_002' }) },
+    FreelanceFlowApi: { services: async () => ({ items: [{ public_id: 'srv_001', name: 'Auditoria', description: '', unit_of_measure: 'HOUR', rate: '10.00', currency: 'USD', status: 'ACTIVE', archived_at: null }], next_cursor: null }), createService: async () => ({ public_id: 'srv_002' }), ...apiOverrides },
     window: null,
     globalThis: null
   };
@@ -94,14 +94,58 @@ async function loadController() {
   return { elements, form, storage, activity };
 }
 
-test('Services create is enabled while edit and remove remain disabled', async () => {
+test('Services create and edit are enabled while remove remains disabled', async () => {
   const { elements } = await loadController();
   const renderedActions = elements.get('services-table-body').innerHTML;
 
   assert.equal(elements.get('service-create-button').disabled, false);
-  assert.match(renderedActions, /data-action="edit-service"[^>]*disabled/);
+  assert.doesNotMatch(renderedActions, /data-action="edit-service"[^>]*disabled/);
   assert.match(renderedActions, /data-action="remove-service"[^>]*disabled/);
   assert.match(renderedActions, /aria-describedby="services-mutations-unavailable"/);
+});
+
+test('Services notice names only disabled delete while preserving the delete aria contract', () => {
+  const page = fs.readFileSync(path.join(__dirname, '../pages/servicios.html'), 'utf8');
+  assert.match(page, /Eliminar servicios no est[aá]n disponibles/);
+  assert.doesNotMatch(page, /Editar y eliminar servicios no est[aá]n disponibles/);
+  assert.match(page, /value="confirm"[^>]*disabled[^>]*aria-describedby="services-mutations-unavailable"/);
+});
+
+test('Services edit PATCHes, then refetches the confirmed list and preserves zero', async () => {
+  const calls = [];
+  const harness = await loadController({
+    updateService: async (id, payload) => { calls.push(['patch', id, payload]); return { public_id: id }; },
+    services: async () => { calls.push(['get']); return { items: [{ public_id: 'srv_001', name: 'Updated', description: '', unit_of_measure: 'HOUR', rate: '0.00', currency: 'USD', status: 'ACTIVE', archived_at: null }], next_cursor: null }; }
+  });
+  const edit = harness.elements.get('services-table-body').innerHTML.match(/data-action="edit-service"[^>]*data-id="([^"]+)"/)[1];
+  harness.elements.get('main-content').getListener('click')({ target: { closest: () => ({ dataset: { action: 'edit-service', id: edit } }) } });
+  harness.form.elements.nombre_servicio.value = 'Updated';
+  harness.form.elements.tarifa_unitaria.value = '0.00';
+  await harness.form.getListener('submit')({ preventDefault() {} });
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.slice(1))), [['patch', 'srv_001', { name: 'Updated', description: '', unit_of_measure: 'HOUR', rate: '0.00', currency: 'USD' }], ['get']]);
+  assert.equal(harness.elements.get('service-toast').hidden, false);
+});
+
+test('Services edit failure retains the confirmed list and announces no success', async () => {
+  const harness = await loadController({ updateService: async () => { throw new Error('offline'); } });
+  harness.elements.get('main-content').getListener('click')({ target: { closest: () => ({ dataset: { action: 'edit-service', id: 'srv_001' } }) } });
+  await harness.form.getListener('submit')({ preventDefault() {} });
+  assert.match(harness.elements.get('services-table-body').innerHTML, /Auditoria/);
+  assert.equal(harness.activity.length, 0);
+  assert.equal(harness.elements.get('service-toast').dataset.tone, 'error');
+});
+
+test('Services edit does not announce success when the confirmation refetch fails', async () => {
+  let reads = 0;
+  const harness = await loadController({
+    services: async () => { reads += 1; if (reads > 1) throw new Error('offline'); return { items: [{ public_id: 'srv_001', name: 'Auditoria', description: '', unit_of_measure: 'HOUR', rate: '10.00', currency: 'USD', status: 'ACTIVE', archived_at: null }], next_cursor: null }; },
+    updateService: async () => ({ public_id: 'srv_001' })
+  });
+  harness.elements.get('main-content').getListener('click')({ target: { closest: () => ({ dataset: { action: 'edit-service', id: 'srv_001' } }) } });
+  await harness.form.getListener('submit')({ preventDefault() {} });
+  assert.equal(harness.activity.length, 0);
+  assert.equal(harness.elements.get('service-toast').dataset.tone, 'error');
+  assert.match(harness.elements.get('services-table-body').innerHTML, /Auditoria/);
 });
 
 test('Services create uses the API and never persists a local mutation', async () => {
