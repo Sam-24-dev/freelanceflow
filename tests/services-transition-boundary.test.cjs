@@ -133,6 +133,16 @@ test('Services edit failure retains the confirmed list and announces no success'
   assert.match(harness.elements.get('services-table-body').innerHTML, /Auditoria/);
   assert.equal(harness.activity.length, 0);
   assert.equal(harness.elements.get('service-toast').dataset.tone, 'error');
+  assert.equal(harness.elements.get('service-toast').textContent, 'No pudimos actualizar el servicio. Reintentá.');
+});
+
+test('Services create failure retains the confirmed list and announces no success', async () => {
+  const harness = await loadController({ createService: async () => { throw new Error('offline'); } });
+  await harness.form.getListener('submit')({ preventDefault() {} });
+  assert.match(harness.elements.get('services-table-body').innerHTML, /Auditoria/);
+  assert.equal(harness.activity.length, 0);
+  assert.equal(harness.elements.get('service-toast').dataset.tone, 'error');
+  assert.equal(harness.elements.get('service-toast').textContent, 'No pudimos crear el servicio. Reintentá.');
 });
 
 test('Services edit does not announce success when the confirmation refetch fails', async () => {
@@ -145,6 +155,20 @@ test('Services edit does not announce success when the confirmation refetch fail
   await harness.form.getListener('submit')({ preventDefault() {} });
   assert.equal(harness.activity.length, 0);
   assert.equal(harness.elements.get('service-toast').dataset.tone, 'error');
+  assert.equal(harness.elements.get('service-toast').textContent, 'El servicio se actualizó, pero no pudimos actualizar el catálogo. Reintentá.');
+  assert.match(harness.elements.get('services-table-body').innerHTML, /Auditoria/);
+});
+
+test('Services create does not announce success when the confirmation refetch fails', async () => {
+  let reads = 0;
+  const harness = await loadController({
+    services: async () => { reads += 1; if (reads > 1) throw new Error('offline'); return { items: [{ public_id: 'srv_001', name: 'Auditoria', description: '', unit_of_measure: 'HOUR', rate: '10.00', currency: 'USD', status: 'ACTIVE', archived_at: null }], next_cursor: null }; },
+    createService: async () => ({ public_id: 'srv_002' })
+  });
+  await harness.form.getListener('submit')({ preventDefault() {} });
+  assert.equal(harness.activity.length, 0);
+  assert.equal(harness.elements.get('service-toast').dataset.tone, 'error');
+  assert.equal(harness.elements.get('service-toast').textContent, 'El servicio se creó, pero no pudimos actualizar el catálogo. Reintentá.');
   assert.match(harness.elements.get('services-table-body').innerHTML, /Auditoria/);
 });
 
@@ -157,4 +181,17 @@ test('Services create uses the API and never persists a local mutation', async (
   assert.equal(storage.writes, 0);
   assert.equal(activity.length, 1);
   assert.equal(elements.get('service-toast').hidden, false);
+  assert.equal(elements.get('service-toast').textContent, 'Servicio creado correctamente.');
+});
+
+test('Services edit announces the update success copy after confirmed refetch', async () => {
+  const harness = await loadController({
+    updateService: async () => ({ public_id: 'srv_001' }),
+    services: async () => ({ items: [{ public_id: 'srv_001', name: 'Updated', description: '', unit_of_measure: 'HOUR', rate: '10.00', currency: 'USD', status: 'ACTIVE', archived_at: null }], next_cursor: null })
+  });
+  harness.elements.get('main-content').getListener('click')({ target: { closest: () => ({ dataset: { action: 'edit-service', id: 'srv_001' } }) } });
+  await harness.form.getListener('submit')({ preventDefault() {} });
+  assert.equal(harness.activity.length, 1);
+  assert.equal(harness.activity[0].action, 'Servicio actualizado');
+  assert.equal(harness.elements.get('service-toast').textContent, 'Servicio actualizado correctamente.');
 });

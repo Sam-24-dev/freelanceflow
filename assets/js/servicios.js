@@ -73,7 +73,8 @@
   function data() { return Object.fromEntries(new FormData(elements.form).entries()); }
   async function submitForm(event) {
     event.preventDefault();
-    if (state.editingId ? !EDIT_ENABLED : !CREATE_ENABLED) return;
+    const isEditing = Boolean(state.editingId);
+    if (isEditing ? !EDIT_ENABLED : !CREATE_ENABLED) return;
     const form = data();
     const result = model.validateService({ ...form, id: state.editingId }, state.services.filter((service) => service.id !== state.editingId), { currencyOptions: ['USD'], allowZero: true });
     if (!result.valid) return showErrors(result.errors);
@@ -85,18 +86,18 @@
       currency: form.moneda
     };
     try {
-      if (state.editingId) await window.FreelanceFlowApi.updateService(state.editingId, payload);
+      if (isEditing) await window.FreelanceFlowApi.updateService(state.editingId, payload);
       else await window.FreelanceFlowApi.createService(payload);
     } catch (error) {
-      toast('No pudimos crear el servicio. Reintentá.', 'error');
+      toast(isEditing ? 'No pudimos actualizar el servicio. Reintentá.' : 'No pudimos crear el servicio. Reintentá.', 'error');
       return;
     }
     closeForm(false);
     if (await load()) {
-      activity(state.editingId ? 'Servicio actualizado' : 'Servicio creado', 'Servicio guardado.');
-      toast('Servicio guardado correctamente.');
+      activity(isEditing ? 'Servicio actualizado' : 'Servicio creado', 'Servicio guardado.');
+      toast(isEditing ? 'Servicio actualizado correctamente.' : 'Servicio creado correctamente.');
     } else {
-      toast('El servicio se creó, pero no pudimos actualizar el catálogo. Reintentá.', 'error');
+      toast(isEditing ? 'El servicio se actualizó, pero no pudimos actualizar el catálogo. Reintentá.' : 'El servicio se creó, pero no pudimos actualizar el catálogo. Reintentá.', 'error');
     }
   }
   function validateBlur(event) { if (!event.target.name) return; showErrors(model.validateService({ ...data(), id: state.editingId }, state.services.filter((service) => service.id !== state.editingId), { currencyOptions: ['USD'], allowZero: true }).errors, event.target.name); }
